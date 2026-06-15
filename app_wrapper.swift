@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var webView: WKWebView!
     var statusItem: NSStatusItem!
+    var updateCheckInProgress = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 尝试写入开机自启动配置
@@ -22,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // 创建状态栏下拉菜单
             let menu = NSMenu()
             menu.addItem(NSMenuItem(title: "显示大屏", action: #selector(showMainWindow), keyEquivalent: "s"))
+            menu.addItem(NSMenuItem(title: "检查更新...", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "u"))
             menu.addItem(NSMenuItem.separator())
             menu.addItem(NSMenuItem(title: "退出应用", action: #selector(quitApp), keyEquivalent: "q"))
             statusItem.menu = menu
@@ -81,6 +83,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let resourceDir = URL(fileURLWithPath: Bundle.main.resourcePath ?? ".")
         let htmlFile = resourceDir.appendingPathComponent("index.html")
         webView.loadFileURL(htmlFile, allowingReadAccessTo: resourceDir)
+
+        checkForUpdates(silent: true)
     }
 
     func startLocalServer() {
@@ -105,6 +109,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    @objc func checkForUpdatesFromMenu() {
+        checkForUpdates(silent: false)
     }
     
     func startTokenUpdateTimer() {
@@ -198,6 +206,163 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // 静默
             }
         }
+    }
+
+    func configuredUpdateFeedURL() -> URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "TokenMonitorUpdateFeedURL") as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.hasPrefix("https://example.com/") {
+            return nil
+        }
+        return URL(string: trimmed)
+    }
+
+    func checkForUpdates(silent: Bool) {
+        guard !updateCheckInProgress else { return }
+        guard let feedURL = configuredUpdateFeedURL() else {
+            if !silent {
+                showAlert(
+                    title: "未配置更新源",
+                    message: "请先在 Info.plist 的 TokenMonitorUpdateFeedURL 中填入更新 JSON 或 GitHub Releases latest API 地址。"
+                )
+            }
+            return
+        }
+
+        updateCheckInProgress = true
+        var request = URLRequest(url: feedURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        request.setValue("Token Monitor", forHTTPHeaderField: "User-Agent")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            defer {
+                DispatchQueue.main.async {
+                    self.updateCheckInProgress = false
+                }
+            }
+
+            if let error = error {
+                if !silent {
+                    DispatchQueue.main.async {
+                        self.showAlert(title: "检查更新失败", message: error.localizedDescription)
+                    }
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  200..<300 ~= httpResponse.statusCode,
+                  let data = data else {
+                if !silent {
+                    DispatchQueue.main.async {
+                        self.showAlert(title: "检查更新失败", message: "更新源没有返回有效响应。")
+                    }
+                }
+                return
+            }
+
+            guard let update = self.parseUpdateInfo(from: data, fallbackURL: feedURL) else {
+                if !silent {
+                    DispatchQueue.main.async {
+                        self.showAlert(title: "检查更新失败", message: "更新源 JSON 格式不符合预期。")
+                    }
+                }
+                return
+            }
+
+            let currentVersion = self.currentAppVersion()
+            let isNewer = self.compareVersions(update.version, currentVersion) == .orderedDescending
+
+            DispatchQueue.main.async {
+                if isNewer {
+                    self.showUpdateAvailable(update: update, currentVersion: currentVersion)
+                } else if !silent {
+                    self.showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。")
+                }
+            }
+        }.resume()
+    }
+
+    struct UpdateInfo {
+        let version: String
+        let title: String
+        let notes: String
+        let downloadURL: URL
+    }
+
+    func parseUpdateInfo(from data: Data, fallbackURL: URL) -> UpdateInfo? {
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+            return nil
+        }
+
+        let rawVersion = (json["version"] as? String) ?? (json["tag_name"] as? String) ?? ""
+        let version = rawVersion.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
+        guard !version.isEmpty else { return nil }
+
+        let title = (json["title"] as? String) ?? (json["name"] as? String) ?? "Token Monitor \(version)"
+        let notes = (json["notes"] as? String) ?? (json["body"] as? String) ?? ""
+
+        var downloadString = (json["download_url"] as? String) ?? (json["downloadUrl"] as? String) ?? (json["html_url"] as? String)
+        let assetList = (json["assets"] as? [[String: Any]]) ?? (json["files"] as? [[String: Any]])
+        if downloadString == nil, let assets = assetList {
+            let preferredAsset = assets.first { asset in
+                let name = (asset["name"] as? String ?? "").lowercased()
+                return name.hasSuffix(".dmg") || name.hasSuffix(".zip")
+            } ?? assets.first
+            downloadString =
+                (preferredAsset?["browser_download_url"] as? String) ??
+                (preferredAsset?["download_url"] as? String) ??
+                (preferredAsset?["downloadUrl"] as? String) ??
+                (preferredAsset?["url"] as? String) ??
+                (preferredAsset?["html_url"] as? String)
+        }
+
+        guard let rawDownloadURL = downloadString,
+              let downloadURL = URL(string: rawDownloadURL, relativeTo: fallbackURL)?.absoluteURL else {
+            return nil
+        }
+
+        return UpdateInfo(version: version, title: title, notes: notes, downloadURL: downloadURL)
+    }
+
+    func currentAppVersion() -> String {
+        return (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
+    }
+
+    func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let lhsParts = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let rhsParts = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        let count = max(lhsParts.count, rhsParts.count)
+
+        for i in 0..<count {
+            let left = i < lhsParts.count ? lhsParts[i] : 0
+            let right = i < rhsParts.count ? rhsParts[i] : 0
+            if left > right { return .orderedDescending }
+            if left < right { return .orderedAscending }
+        }
+        return .orderedSame
+    }
+
+    func showUpdateAvailable(update: UpdateInfo, currentVersion: String) {
+        let alert = NSAlert()
+        alert.messageText = "发现新版本 \(update.version)"
+        let noteText = update.notes.isEmpty ? "" : "\n\n\(update.notes)"
+        alert.informativeText = "当前版本：\(currentVersion)\n最新版本：\(update.version)\(noteText)"
+        alert.addButton(withTitle: "下载更新")
+        alert.addButton(withTitle: "稍后")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(update.downloadURL)
+        }
+    }
+
+    func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
     
     // 炫酷极简磨砂脉冲加载骨架屏

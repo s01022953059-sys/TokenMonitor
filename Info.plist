@@ -12,6 +12,8 @@
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
+    <key>TokenMonitorUpdateFeedURL</key>
+    <string>https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>NSHighResolutionCapable</key>
