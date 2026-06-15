@@ -25,6 +25,8 @@ import (
 var staticFS embed.FS
 
 const port = 15723
+const appVersion = "1.0"
+const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest"
 
 // ───── 数据结构 ─────
 
@@ -60,10 +62,17 @@ type UsageResponse struct {
 }
 
 type HistoryResponse struct {
-	Labels  []string             `json:"labels"`
-	Values  []int64              `json:"values"`
-	ByTool  map[string][]int64   `json:"by_tool"`
-	ByModel map[string][]int64   `json:"by_model"`
+	Labels  []string           `json:"labels"`
+	Values  []int64            `json:"values"`
+	ByTool  map[string][]int64 `json:"by_tool"`
+	ByModel map[string][]int64 `json:"by_model"`
+}
+
+type AppInfoResponse struct {
+	Name          string `json:"name"`
+	Version       string `json:"version"`
+	UpdateFeedURL string `json:"update_feed_url"`
+	UpdateEnabled bool   `json:"update_enabled"`
 }
 
 // ───── 路径工具 ─────
@@ -135,8 +144,8 @@ func estimateTokens(text string) int {
 // ───── DeepSeek 余额（异步缓存） ─────
 
 var (
-	balanceCache   = BalanceInfo{"0.00", "CNY", "Loading..."}
-	balanceMu      sync.RWMutex
+	balanceCache = BalanceInfo{"0.00", "CNY", "Loading..."}
+	balanceMu    sync.RWMutex
 )
 
 func getCachedBalance() BalanceInfo {
@@ -380,12 +389,12 @@ func scanAntigravityTokens() []LogEntry {
 // ───── Codex 原生日志 ─────
 
 var (
-	reCodexTurnID      = regexp.MustCompile(`turn\.id=([0-9a-f-]+)`)
-	reCodexModel       = regexp.MustCompile(`model=([^ }]+)`)
-	reCodexInput       = regexp.MustCompile(`codex\.turn\.token_usage\.input_tokens=([0-9]+)`)
-	reCodexOutput      = regexp.MustCompile(`codex\.turn\.token_usage\.output_tokens=([0-9]+)`)
-	reCodexCached      = regexp.MustCompile(`codex\.turn\.token_usage\.cached_input_tokens=([0-9]+)`)
-	reCodexTotal       = regexp.MustCompile(`codex\.turn\.token_usage\.total_tokens=([0-9]+)`)
+	reCodexTurnID = regexp.MustCompile(`turn\.id=([0-9a-f-]+)`)
+	reCodexModel  = regexp.MustCompile(`model=([^ }]+)`)
+	reCodexInput  = regexp.MustCompile(`codex\.turn\.token_usage\.input_tokens=([0-9]+)`)
+	reCodexOutput = regexp.MustCompile(`codex\.turn\.token_usage\.output_tokens=([0-9]+)`)
+	reCodexCached = regexp.MustCompile(`codex\.turn\.token_usage\.cached_input_tokens=([0-9]+)`)
+	reCodexTotal  = regexp.MustCompile(`codex\.turn\.token_usage\.total_tokens=([0-9]+)`)
 )
 
 func parseCodexInt(re *regexp.Regexp, s string) int64 {
@@ -955,6 +964,20 @@ func main() {
 		data := getHistoricalUsage(30)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(data)
+	})
+
+	http.HandleFunc("/api/app-info", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(AppInfoResponse{
+			Name:          "Token Monitor",
+			Version:       appVersion,
+			UpdateFeedURL: updateFeedURL,
+			UpdateEnabled: updateFeedURL != "",
+		})
 	})
 
 	// 静态文件（嵌入的 index.html + chart.js）

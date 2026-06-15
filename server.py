@@ -15,6 +15,8 @@ except ImportError:
 
 PORT = 15723
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+APP_VERSION = "1.0"
+UPDATE_FEED_URL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest"
 
 class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -69,6 +71,20 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 self.end_headers()
                 err_resp = json.dumps({"error": str(e)}).encode('utf-8')
                 self.wfile.write(err_resp)
+        elif self.path == '/api/app-info':
+            data = {
+                "name": "Token Monitor",
+                "version": APP_VERSION,
+                "update_feed_url": UPDATE_FEED_URL,
+                "update_enabled": bool(UPDATE_FEED_URL),
+            }
+            response_body = json.dumps(data).encode('utf-8')
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(response_body)))
+            self.end_headers()
+            self.wfile.write(response_body)
         else:
             # 路由重定向，输入根路径默认分发 index.html
             if self.path == '/' or self.path == '':
