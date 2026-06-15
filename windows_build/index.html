@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tokens 极简并列大屏</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <script src="chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #050609;
+            --card-bg: rgba(9, 11, 16, 0.7);
+            --card-border: rgba(255, 255, 255, 0.05);
+            --text-main: #f3f4f6;
+            --text-muted: #6e7681;
+            
+            --neon-green: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 缓慢飘动的梦幻极光背景 */
+        .aurora-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .aurora-1 {
+            position: absolute;
+            top: -20%;
+            left: -10%;
+            width: 80vw;
+            height: 80vw;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+            filter: blur(130px);
+            animation: float-aurora-1 25s infinite alternate ease-in-out;
+        }
+
+        .aurora-2 {
+            position: absolute;
+            bottom: -20%;
+            right: -10%;
+            width: 70vw;
+            height: 70vw;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(0, 0, 0, 0) 70%);
+            filter: blur(130px);
+            animation: float-aurora-2 30s infinite alternate ease-in-out;
+        }
+
+        @keyframes float-aurora-1 {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(6vw, 5vh) scale(1.1); }
+        }
+
+        @keyframes float-aurora-2 {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(-6vw, -8vh) scale(1.05); }
+        }
+
+        /* 极简高科技大卡片 - 宽度自适应并列布局 */
+        .container {
+            max-width: 960px;
+            width: 95%;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 35px;
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.3), transparent);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 11px;
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* 并列网格布局 */
+        .dashboard-grid {
+            display: flex;
+            gap: 40px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .dashboard-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .col-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        /* 环形图和数据叠合的主体区域 */
+        .chart-section {
+            position: relative;
+            width: 250px;
+            height: 250px;
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chart-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 位于 Donut 心脏的今日总消耗字样 */
+        .donut-center {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        .donut-center .total-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .donut-center .total-value {
+            font-size: 32px;
+            font-weight: 800;
+            color: #ffffff;
+            line-height: 1.1;
+            margin-top: 4px;
+            letter-spacing: -1px;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+
+        /* 工具占比卡片分布 */
+        .legend-section {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .legend-item {
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .legend-item:hover {
+            background: rgba(255, 255, 255, 0.02);
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .tool-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .tool-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            box-shadow: 0 0 6px currentColor;
+        }
+
+        .tool-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+
+
+        /* 移动端自适应 */
+        @media (max-width: 850px) {
+            body {
+                overflow-y: auto;
+                padding: 40px 20px;
+            }
+            .container {
+                padding: 25px 20px;
+            }
+            .dashboard-grid {
+                flex-direction: column;
+                gap: 45px;
+            }
+        }
+
+        /* 右上角趋势按钮 */
+        .history-btn {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            color: var(--text-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 50;
+        }
+        .history-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(168, 85, 247, 0.4);
+            color: #a855f7;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.15);
+        }
+        .history-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* 磨砂毛玻璃弹窗遮罩 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(5, 6, 9, 0.6);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* 弹窗主体面板 */
+        .modal-content {
+            background: rgba(9, 11, 16, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            width: 90%;
+            max-width: 620px;
+            padding: 30px;
+            position: relative;
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.8), 0 0 40px rgba(168, 85, 247, 0.05);
+            transform: scale(0.95);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #a855f7, transparent);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff 0%, #c7d2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .close-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 24px;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+        .close-btn:hover {
+            color: #ffffff;
+        }
+
+        /* 胶囊型 Segmented Tab */
+        .tab-container {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 3px;
+            border-radius: 12px;
+            display: inline-flex;
+            gap: 2px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 6px 16px;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .tab-btn.active {
+            background: rgba(168, 85, 247, 0.15);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            color: #d8b4fe;
+            text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+        }
+
+        /* 折线图绘制区 */
+        .modal-chart-wrapper {
+            width: 100%;
+            height: 300px;
+            position: relative;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="aurora-bg">
+        <div class="aurora-1"></div>
+        <div class="aurora-2"></div>
+    </div>
+
+    <div class="container">
+        <button id="historyOpenBtn" class="history-btn" title="查看历史统计趋势">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"></line>
+                <line x1="12" y1="20" x2="12" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+        </button>
+        <header>
+            <h1>今日 Token 消耗统计</h1>
+            <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span></p>
+        </header>
+
+        <!-- 工具/模型并列网格 -->
+        <div class="dashboard-grid">
+            <!-- 左侧：按工具分布 -->
+            <div class="dashboard-col">
+                <h2 class="col-title">工具维度统计</h2>
+                <div class="chart-section">
+                    <div class="chart-wrapper">
+                        <canvas id="toolChart"></canvas>
+                    </div>
+                    <div class="donut-center">
+                        <span class="total-label">今日总数</span>
+                        <span class="total-value" id="toolTotTokens">0</span>
+                    </div>
+                </div>
+                <div class="legend-section" id="toolLegendContainer">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 右侧：按模型分布 -->
+            <div class="dashboard-col">
+                <h2 class="col-title">模型维度统计</h2>
+                <div class="chart-section">
+                    <div class="chart-wrapper">
+                        <canvas id="modelChart"></canvas>
+                    </div>
+                    <div class="donut-center">
+                        <span class="total-label">今日总数</span>
+                        <span class="total-value" id="modelTotTokens">0</span>
+                    </div>
+                </div>
+                <div class="legend-section" id="modelLegendContainer">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+
+    <!-- 历史统计弹窗 -->
+    <div id="historyModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>大模型消耗趋势</h3>
+                <button id="historyCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; width: 100%;">
+                <div class="tab-container" id="timeTabContainer">
+                    <button class="tab-btn active" data-days="7">周统计</button>
+                    <button class="tab-btn" data-days="30">月统计</button>
+                </div>
+                <div class="tab-container" id="dimTabContainer">
+                    <button class="tab-btn active" data-dim="tool">按工具统计</button>
+                    <button class="tab-btn" data-dim="model">按模型统计</button>
+                </div>
+            </div>
+            <div class="modal-chart-wrapper">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let toolChartInstance = null;
+        let modelChartInstance = null;
+        let historyChartInstance = null;
+
+        // 包含“鹏”字的多句古诗词与励志格言，按日期哈希每天自动更换
+                        const pengSayings = [
+            "鲲鹏自有凌云志",
+            "鲲鹏展翅乘风起",
+            "鲲鹏有志飞千里",
+            "鲲鹏展翅风雷动",
+            "鲲鹏一跃出沧海",
+            "鲲鹏展翼迎朝阳",
+            "鲲鹏振羽九重天",
+            "鲲鹏九万展雄姿",
+            "鲲鹏振翅冲天去",
+            "鲲鹏一飞知天地",
+            "鲲鹏展翅跃龙门",
+            "鲲鹏有路志当先",
+            "鲲鹏展翼越千山",
+            "鲲鹏飞天靠实力",
+            "鲲鹏振羽展宏图",
+            "鲲鹏一跃破惊涛",
+            "鲲鹏得志傲风霜",
+            "鲲鹏逐日展风华",
+            "鲲鹏戏海弄潮头",
+            "鲲鹏怒飞云水翻",
+            "鲲鹏傲骨斗严寒",
+            "鲲鹏万里任遨游",
+            "鲲鹏展翅九霄中",
+            "鲲鹏振翼气如虹",
+            "鲲鹏击水三千里",
+            "鲲鹏破雾见青天",
+            "鲲鹏吞吐万重山",
+            "鲲鹏展翼纳乾坤",
+            "鲲鹏直上九霄巅",
+            "鲲鹏破浪驭长风",
+            "鲲鹏指引星河路",
+            "鲲鹏踏破重关险",
+            "鲲鹏展翅天地宽",
+            "鲲鹏点火亮星空",
+            "鲲鹏化羽登仙籍",
+            "鲲鹏一诺重千金",
+            "鲲鹏展翼避俗尘",
+            "鲲鹏乘风登大雅",
+            "鲲鹏起舞乾坤跃",
+            "鲲鹏振翅追日月",
+            "鲲鹏一鸣天下惊",
+            "鲲鹏傲视万重峦",
+            "鲲鹏凌云写春秋",
+            "鲲鹏入海化蛟龙",
+            "鲲鹏展翼渡余生",
+            "鲲鹏气象冠群雄",
+            "鲲鹏远涉关山重",
+            "鲲鹏振羽亮晶莹",
+            "鲲鹏展翅御天风",
+            "鲲鹏展翼绘宏图",
+            "大鹏一日同风起",
+            "大鹏展翅九重天",
+            "大鹏展翅恨天低",
+            "大鹏飞兮振八裔",
+            "大鹏昂首傲苍穹",
+            "大鹏展翼揽星河",
+            "大鹏起舞风雷动",
+            "大鹏冲天扫群魔",
+            "大鹏乘风去万里",
+            "大鹏展翅舒长空",
+            "大鹏一飞震九荒",
+            "大鹏展翼越千重",
+            "大鹏破浪斩波澜",
+            "大鹏怒飞震寰宇",
+            "大鹏凌空傲雪霜",
+            "大鹏展翅冲云汉",
+            "大鹏御风踏歌行",
+            "大鹏振羽四海惊",
+            "大鹏展翼图复兴",
+            "大鹏高飞不染尘",
+            "大鹏展翅啸东风",
+            "大鹏振臂揽月明",
+            "大鹏心怀万里图",
+            "大鹏得水更腾飞",
+            "大鹏展翅凌寒冬",
+            "大鹏一怒乾坤侧",
+            "大鹏展翼追新光",
+            "大鹏飞越千古界",
+            "大鹏凌虚上青云",
+            "大鹏振羽写华章",
+            "大鹏有志破难关",
+            "大鹏直上九重云",
+            "大鹏破雾展雄姿",
+            "大鹏凌空纳万川",
+            "大鹏傲骨撑天地",
+            "大鹏振翼舞东风",
+            "大鹏展翅越重洋",
+            "大鹏逐浪立潮头",
+            "大鹏高歌志不休",
+            "大鹏指路步青天",
+            "大鹏展翼振雄风",
+            "大鹏乘时更展翅",
+            "大鹏昂首啸苍茫",
+            "大鹏展翼越重关",
+            "大鹏搏击风雨频",
+            "大鹏一飞冲天去",
+            "大鹏舒翼拂乾坤",
+            "大鹏凌风写传奇",
+            "大鹏得道脱凡尘",
+            "大鹏起步上征途",
+            "九万里风鹏正举",
+            "万里鹏程从此始",
+            "万里鹏程展宏图",
+            "万里鹏程任翱翔",
+            "鹏程无阻向远方",
+            "鹏程万里风正劲",
+            "长风送我鹏程远",
+            "一生豪迈看鹏程",
+            "鹏翼展时风浪静",
+            "鹏翼搏风三万里",
+            "志在苍穹展鹏翼",
+            "乘风破浪展鹏翼",
+            "鹏翼搏风尘不染",
+            "朝为飞鹏暮万里",
+            "飞鹏万里追风去",
+            "豪气冲天看飞鹏",
+            "一展雄风飞鹏舞",
+            "飞鹏展翅凌太虚",
+            "独步青云展鹏图",
+            "九霄云外展鹏图",
+            "心怀天下展鹏图",
+            "金鹏起舞风雷激",
+            "万里风烟看鹏翼",
+            "青云直上展鹏程",
+            "千里关山渡鹏影",
+            "鹏翼垂天风雷动",
+            "鹏影入云天地宽",
+            "金鹏抖羽乾坤动",
+            "飞鹏越海弄潮头",
+            "鹏飞九天追红日",
+            "极客展鹏拓新界",
+            "算力为风鹏起舞",
+            "代码为翼化飞鹏",
+            "智能云端展鹏图",
+            "算力长风送鹏程",
+            "云端展翅化飞鹏",
+            "飞鹏踏破万重浪",
+            "鹏翼指引星河航",
+            "鲲化为鹏天际宽",
+            "鹏程有爱筑梦想",
+            "一帆风顺送鹏程",
+            "鹏游海天任逍遥",
+            "鹏翼舒展乾坤大",
+            "飞鹏有心登巅峰",
+            "鹏程无限创奇迹",
+            "金鹏展翅震乾坤",
+            "鹏飞高处无阻挡",
+            "鹏翼轻摇过万山",
+            "鹏影凌空世无双",
+            "鹏飞万里不回头",
+            "鹏程似锦路悠长",
+            "鹏翼搏击九重霄",
+            "鹏程志在云海深",
+            "鹏飞万里越重洋",
+            "鹏程漫漫信念坚",
+            "鹏翼乘风越天险",
+            "鹏程高远志昂扬",
+            "鹏飞无限逐星光",
+            "鹏程无畏勇向前",
+            "鹏翼展翅迎风暴",
+            "鹏影横空四海平",
+            "鹏飞霄汉写传奇",
+            "鹏程万里任平吞",
+            "鹏翼搏风上碧霄",
+            "鹏影入画意悠然",
+            "鹏飞九天歌声亮",
+            "鹏程有路勤为径",
+            "鹏翼垂天云雾开",
+            "鹏飞高空览河山",
+            "鹏程有志克万难",
+            "鹏翼舒展写春秋",
+            "鹏影傲立风雨中",
+            "鹏飞霄汉创辉煌",
+            "鹏程无阻破云出",
+            "鹏翼生辉耀乾坤",
+            "鹏影轻掠万重波",
+            "鹏飞碧空傲苍穹",
+            "鹏程远涉万里程",
+            "鹏翼搏风显峥嵘",
+            "鹏影拂动百川流",
+            "鹏飞极速追风行",
+            "鹏程高筑新世界",
+            "鹏翼迎风展大图",
+            "鹏影翱翔入九天",
+            "鹏飞浩瀚星河间",
+            "鹏程万里步步高",
+            "鹏翼挥洒写诗篇",
+            "鹏影漫步云雾间",
+            "鹏飞万里向未来",
+            "鹏程无限耀华夏",
+            "鹏翼垂天傲九霄",
+            "鹏影当空乾坤明",
+            "鹏飞万里志不渝",
+            "鹏程如画任描摹",
+            "鹏翼狂舞碎风云",
+            "鹏影随风越千山",
+            "鹏飞绝顶笑天低",
+            "鹏程风顺挂帆行",
+            "鹏翼展翅亮星河",
+            "鹏影入画写风流",
+            "鹏飞万里踏征程",
+            "鹏程万里展雄姿",
+            "鹏翼挥洒乾坤阔",
+            "鹏影凌空天下知",
+            "鹏飞万里更辉煌"
+];
+
+        function getDailyPengSaying(dateStr) {
+            if (!dateStr) return "九万里风鹏正举";
+            let hash = 0;
+            for (let i = 0; i < dateStr.length; i++) {
+                hash = dateStr.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % pengSayings.length;
+            return pengSayings[index];
+        }
+
+        // 大数值智能格式化 (KISS且防溢出)
+        function formatTokens(num) {
+            if (num >= 100000000) {
+                return (num / 100000000).toFixed(2) + ' 亿';
+            }
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(2) + ' M';
+            }
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + ' K';
+            }
+            return num.toString();
+        }
+
+        // 定义工具的指定颜色映射
+        const toolColors = {
+            'codex': '#3b82f6',
+            'antigravity': '#a855f7',
+            'hermes': '#10b981',
+            'other': '#6b7280'
+        };
+
+        // 定义模型的指定颜色映射
+        const modelColors = {
+            'deepseek-v4-flash': '#0ea5e9',
+            'gemini 3.5 flash': '#a855f7',
+            'deepseek-v4-pro': '#2563eb',
+            'gpt-5.5': '#10b981',
+            'deepseek-v4-flash-free': '#14b8a6',
+            'other': '#6b7280'
+        };
+
+        function getToolColor(toolName) {
+            const name = toolName.toLowerCase();
+            return toolColors[name] || toolColors['other'];
+        }
+
+        function getModelColor(modelName) {
+            const name = modelName.toLowerCase();
+            return modelColors[name] || modelColors['other'];
+        }
+
+        function initCharts() {
+            const toolCtx = document.getElementById('toolChart').getContext('2d');
+            toolChartInstance = new Chart(toolCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [],
+                        borderColor: '#0b0d12',
+                        borderWidth: 3,
+                        hoverOffset: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '80%', // 完美的中空圆环
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    }
+                }
+            });
+
+            const modelCtx = document.getElementById('modelChart').getContext('2d');
+            modelChartInstance = new Chart(modelCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [],
+                        borderColor: '#0b0d12',
+                        borderWidth: 3,
+                        hoverOffset: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '80%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    }
+                }
+            });
+        }
+
+        const API_BASE = 'http://127.0.0.1:15723';
+
+        async function updateData() {
+            try {
+                const response = await fetch(API_BASE + '/api/usage');
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error("API Error:", data.error);
+                    return;
+                }
+
+                const formattedTotal = formatTokens(data.summary.total_tokens);
+
+                // 1. 更新圆心今日总数与日期
+                document.getElementById('toolTotTokens').innerText = formattedTotal;
+                document.getElementById('modelTotTokens').innerText = formattedTotal;
+                document.getElementById('hdrDate').innerText = data.summary.date;
+                document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
+
+
+
+                // 3. 渲染工具维度分布
+                const toolLegendContainer = document.getElementById('toolLegendContainer');
+                toolLegendContainer.innerHTML = '';
+
+                const threshold = data.summary.total_tokens * 0.001;
+
+                const tools = Object.keys(data.by_tool).filter(t => data.by_tool[t].total_tokens >= threshold);
+                tools.sort((a, b) => data.by_tool[b].total_tokens - data.by_tool[a].total_tokens);
+
+                const toolLabels = tools;
+                const toolValues = tools.map(t => data.by_tool[t].total_tokens);
+                const toolColorArr = tools.map(t => getToolColor(t));
+
+                tools.forEach((tool, idx) => {
+                    const toolVal = data.by_tool[tool].total_tokens;
+                    const percent = data.summary.total_tokens > 0 ? ((toolVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
+                    const color = toolColorArr[idx];
+
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    item.innerHTML = `
+                        <div class="tool-info">
+                            <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
+                            <span>${tool}</span>
+                        </div>
+                        <div class="tool-value" style="color: ${color};">
+                            ${formatTokens(toolVal)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
+                        </div>
+                    `;
+                    toolLegendContainer.appendChild(item);
+                });
+
+                toolChartInstance.data.labels = toolLabels;
+                toolChartInstance.data.datasets[0].data = toolValues;
+                toolChartInstance.data.datasets[0].backgroundColor = toolColorArr;
+                toolChartInstance.update();
+
+                if (tools.length === 0) {
+                    toolLegendContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">今日暂无活跃数据</div>';
+                }
+
+                // 4. 渲染模型维度分布
+                const modelLegendContainer = document.getElementById('modelLegendContainer');
+                modelLegendContainer.innerHTML = '';
+
+                const models = Object.keys(data.by_model).filter(m => data.by_model[m] >= threshold);
+                models.sort((a, b) => data.by_model[b] - data.by_model[a]);
+
+                const modelLabels = models;
+                const modelValues = models.map(m => data.by_model[m]);
+                const modelColorArr = models.map(m => getModelColor(m));
+
+                models.forEach((model, idx) => {
+                    const modelVal = data.by_model[model];
+                    const percent = data.summary.total_tokens > 0 ? ((modelVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
+                    const color = modelColorArr[idx];
+
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    item.innerHTML = `
+                        <div class="tool-info">
+                            <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
+                            <span>${model}</span>
+                        </div>
+                        <div class="tool-value" style="color: ${color};">
+                            ${formatTokens(modelVal)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
+                        </div>
+                    `;
+                    modelLegendContainer.appendChild(item);
+                });
+
+                modelChartInstance.data.labels = modelLabels;
+                modelChartInstance.data.datasets[0].data = modelValues;
+                modelChartInstance.data.datasets[0].backgroundColor = modelColorArr;
+                modelChartInstance.update();
+
+                if (models.length === 0) {
+                    modelLegendContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px;">今日暂无活跃数据</div>';
+                }
+
+            } catch (err) {
+                console.error("Fetch failed:", err);
+            }
+        }
+
+        // 历史图表全局变量
+        let rawHistoryData = null; // 缓存的 30 天原始数据
+
+        function initHistoryChart() {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+
+            historyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#6e7681',
+                                font: { family: 'Outfit', size: 10, weight: 600 },
+                                boxWidth: 8,
+                                boxHeight: 8,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.dataset.label}: ${formatTokens(context.parsed.y)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: {
+                                color: '#6e7681',
+                                font: { family: 'Outfit', size: 10 }
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                color: '#6e7681',
+                                font: { family: 'Outfit', size: 10 },
+                                callback: function(value) {
+                                    return formatTokens(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function fetchHistoryAndRender(days = 7, dimension = 'tool') {
+            if (!rawHistoryData) {
+                try {
+                    const res = await fetch(API_BASE + '/api/history');
+                    rawHistoryData = await res.json();
+                } catch (err) {
+                    console.error("加载历史统计数据出错:", err);
+                    return;
+                }
+            }
+
+            if (!rawHistoryData || !rawHistoryData.labels) return;
+
+            // 提取最新的 `days` 天数据作为横坐标标签
+            const slicedLabels = rawHistoryData.labels.slice(-days).map(dateStr => {
+                const parts = dateStr.split('-');
+                return parts.length >= 3 ? `${parts[1]}/${parts[2]}` : dateStr;
+            });
+
+            const newDatasets = [];
+
+            // 永远置顶添加“总消耗”折线，作为总量基准（虚线，且置于第一位以确保在 Tooltip 中最先体现）
+            const dailyTotals = rawHistoryData.values.slice(-days);
+            newDatasets.push({
+                label: "总消耗",
+                data: dailyTotals,
+                borderColor: "rgba(255, 255, 255, 0.45)",
+                borderWidth: 2,
+                borderDash: [5, 4],
+                fill: false,
+                tension: 0.4,
+                pointBackgroundColor: "rgba(255, 255, 255, 0.7)",
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 1,
+                pointRadius: 3.5,
+                pointHoverRadius: 6
+            });
+
+            if (dimension === 'tool') {
+                // 渲染工具维度折线
+                const toolsList = Object.keys(rawHistoryData.by_tool);
+                toolsList.forEach(tool => {
+                    const dailyValues = rawHistoryData.by_tool[tool].slice(-days);
+                    const hasData = dailyValues.some(v => v > 0);
+                    if (hasData) {
+                        const color = getToolColor(tool);
+                        newDatasets.push({
+                            label: tool,
+                            data: dailyValues,
+                            borderColor: color,
+                            borderWidth: 2.5,
+                            fill: false,
+                            tension: 0.4,
+                            pointBackgroundColor: color,
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 1,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        });
+                    }
+                });
+            } else {
+                // 渲染模型维度折线
+                const modelsList = Object.keys(rawHistoryData.by_model);
+                modelsList.forEach(model => {
+                    const dailyValues = rawHistoryData.by_model[model].slice(-days);
+                    const hasData = dailyValues.some(v => v > 0);
+                    if (hasData) {
+                        const color = getModelColor(model);
+                        newDatasets.push({
+                            label: model,
+                            data: dailyValues,
+                            borderColor: color,
+                            borderWidth: 2.5,
+                            fill: false,
+                            tension: 0.4,
+                            pointBackgroundColor: color,
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 1,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        });
+                    }
+                });
+            }
+
+            // 更新折线图
+            if (!historyChartInstance) {
+                initHistoryChart();
+            }
+            historyChartInstance.data.labels = slicedLabels;
+            historyChartInstance.data.datasets = newDatasets;
+            historyChartInstance.update();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+
+            // 首次启动快速重试：每 150ms 重试直到服务器就绪，然后切换为 3s 常规轮询
+            let bootRetryTimer = setInterval(async () => {
+                try {
+                    await updateData();
+                    // 首次成功，停止快速重试，切换为稳态 3 秒轮询
+                    clearInterval(bootRetryTimer);
+                    setInterval(updateData, 3000);
+                } catch (e) {
+                    // 服务器还没就绪，继续重试
+                }
+            }, 150);
+
+            // 绑定历史弹窗的触发事件
+            const historyModal = document.getElementById('historyModal');
+            const historyOpenBtn = document.getElementById('historyOpenBtn');
+            const historyCloseBtn = document.getElementById('historyCloseBtn');
+            
+            const timeTabBtns = document.querySelectorAll('#timeTabContainer .tab-btn');
+            const dimTabBtns = document.querySelectorAll('#dimTabContainer .tab-btn');
+
+            function getActiveParams() {
+                const activeTimeBtn = document.querySelector('#timeTabContainer .tab-btn.active');
+                const activeDimBtn = document.querySelector('#dimTabContainer .tab-btn.active');
+                const days = activeTimeBtn ? parseInt(activeTimeBtn.getAttribute('data-days')) : 7;
+                const dim = activeDimBtn ? activeDimBtn.getAttribute('data-dim') : 'tool';
+                return { days, dim };
+            }
+
+            historyOpenBtn.addEventListener('click', () => {
+                historyModal.classList.add('active');
+                const params = getActiveParams();
+                fetchHistoryAndRender(params.days, params.dim);
+            });
+
+            historyCloseBtn.addEventListener('click', () => {
+                historyModal.classList.remove('active');
+            });
+
+            // 点击遮罩外部区域关闭
+            historyModal.addEventListener('click', (e) => {
+                if (e.target === historyModal) {
+                    historyModal.classList.remove('active');
+                }
+            });
+
+            // 绑定时间 Tab 点击
+            timeTabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    timeTabBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const params = getActiveParams();
+                    fetchHistoryAndRender(params.days, params.dim);
+                });
+            });
+
+            // 绑定维度 Tab 点击
+            dimTabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    dimTabBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const params = getActiveParams();
+                    fetchHistoryAndRender(params.days, params.dim);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

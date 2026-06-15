@@ -1,0 +1,16 @@
+# macOS metadata
+.DS_Store
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Build and release artifacts
+*.app/
+*.dmg
+*.exe
+*.zip
+
+# Logs and temporary files
+*.log
+*.tmp
