@@ -15,7 +15,7 @@ except ImportError:
 
 PORT = 15723
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 UPDATE_FEED_URL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest"
 
 class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):

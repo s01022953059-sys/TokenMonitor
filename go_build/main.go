@@ -25,7 +25,7 @@ import (
 var staticFS embed.FS
 
 const port = 15723
-const appVersion = "1.0"
+const appVersion = "1.1"
 const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest"
 
 // ───── 数据结构 ─────
