@@ -809,7 +809,12 @@
             });
         }
 
-        const API_BASE = 'http://127.0.0.1:15723';
+        // API 根地址优先由 Swift 注入 (window.__API_BASE__)，
+        // 回退到当前 origin (HTTP/HTTPS 直接打开) 或默认 localhost:15723
+        const API_BASE = window.__API_BASE__
+            || (location.protocol === 'http:' || location.protocol === 'https:'
+                ? location.origin
+                : 'http://127.0.0.1:15723');
 
         async function updateData() {
             try {

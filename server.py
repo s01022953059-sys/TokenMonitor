@@ -1,125 +1,286 @@
 #!/usr/bin/env python3
+"""Token Monitor 本地仪表盘 HTTP 服务。
+
+设计目标：
+* 所有可配置项 (端口 / 更新源 URL) 通过命令行注入，
+  Swift 启动器从 Info.plist 读出后透传给本进程，避免在 Python 层再次硬编码。
+* / api/app-info     公布版本号与更新源 (UI 静态展示)。
+* / api/check-update 真正去拉取 feed URL，比较版本号，返回 ok/latest/error。
+  前端调用此接口，About 弹窗里就能看到真实更新状态而非笼统的 "已启用"。
+"""
+
+import argparse
 import http.server
-import socketserver
 import json
 import os
+import socket
+import socketserver
 import sys
+import fcntl
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
-# 引入本地的 scanner 模块
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage
 except ImportError:
-    # 兼容相对路径执行
     from .scanner import get_today_usage, get_historical_usage
 
-PORT = 15723
-DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 APP_VERSION = "1.1"
-UPDATE_FEED_URL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest"
+USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/TokenMonitor)"
+
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--port", type=int, default=15723)
+_parser.add_argument("--update-feed-url", type=str, default="")
+_args, _ = _parser.parse_known_args()
+
+PORT = _args.port
+UPDATE_FEED_URL = (_args.update_feed_url or "").strip()
+DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+
+# ----- 单实例锁 -----
+# 同一个 Lock 文件 + fcntl.flock 是单实例最稳的真源。
+# lock fd 必须在进程生命周期内保持打开, 进程退出时由内核自动释放。
+# 多个 server.py 进程之间靠 LOCK_EX | LOCK_NB 互斥; start.sh / Swift 层只
+# 是友好提示, 真正能不能起得来还是看这里能不能拿到这把锁。
+SINGLETON_LOCK_PATH = os.environ.get(
+    "TOKEN_MONITOR_LOCK_FILE",
+    "/tmp/token_monitor_server.lock",
+)
+_singleton_lock_fd = None
+
+
+def _acquire_singleton_lock() -> bool:
+    """非阻塞尝试独占单实例锁。拿到返回 True, 拿不到返回 False。"""
+    global _singleton_lock_fd
+    try:
+        fd = open(SINGLETON_LOCK_PATH, "w")
+    except OSError as exc:
+        print(f"[server] 无法打开单实例锁文件 {SINGLETON_LOCK_PATH}: {exc}", file=sys.stderr)
+        return False
+    try:
+        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        fd.close()
+        return False
+    fd.write(f"{os.getpid()}\\n")
+    fd.flush()
+    _singleton_lock_fd = fd
+    return True
+
+
+
+
+def _normalize_version(value: str) -> str:
+    return (value or "").strip().lstrip("vV ").strip()
+
+
+def _parse_version_tuple(value: str):
+    parts = []
+    for token in _normalize_version(value).split("."):
+        try:
+            parts.append(int(token))
+        except ValueError:
+            try:
+                parts.append(int("".join(ch for ch in token if ch.isdigit()) or "0"))
+            except ValueError:
+                parts.append(0)
+    return tuple(parts)
+
+
+def _compare_versions(latest: str, current: str) -> int:
+    """Return 1 if latest > current, 0 if equal, -1 otherwise."""
+    a = _parse_version_tuple(latest)
+    b = _parse_version_tuple(current)
+    length = max(len(a), len(b))
+    a += (0,) * (length - len(a))
+    b += (0,) * (length - len(b))
+    if a == b:
+        return 0
+    return 1 if a > b else -1
+
+
+def _extract_release_info(payload):
+    """Best-effort 解析 release feed JSON,兼容 GitCode/GitHub/自托管多种格式。"""
+    if not isinstance(payload, dict):
+        return None
+    raw_version = payload.get("version") or payload.get("tag_name") or payload.get("tagName") or ""
+    version = _normalize_version(raw_version)
+    if not version:
+        return None
+    title = payload.get("title") or payload.get("name") or f"Token Monitor {version}"
+    notes = payload.get("notes") or payload.get("body") or ""
+    download_url = (
+        payload.get("download_url")
+        or payload.get("downloadUrl")
+        or payload.get("html_url")
+        or payload.get("htmlUrl")
+        or ""
+    )
+    return {
+        "version": version,
+        "title": title,
+        "notes": notes,
+        "download_url": download_url,
+    }
+
+
+def _check_update_remote():
+    """请求更新源,返回结构化结果。永远不会抛异常,失败信息封装在返回值里。"""
+    result = {
+        "ok": False,
+        "current_version": APP_VERSION,
+        "latest_version": None,
+        "update_available": False,
+        "feed_url": UPDATE_FEED_URL,
+        "http_status": None,
+        "error": None,
+        "raw_excerpt": None,
+        "title": None,
+        "download_url": None,
+    }
+    if not UPDATE_FEED_URL:
+        result["error"] = "未配置更新源 (Info.plist 缺少 TokenMonitorUpdateFeedURL)"
+        return result
+
+    req = urlrequest.Request(
+        UPDATE_FEED_URL,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain;q=0.9, */*;q=0.5",
+        },
+    )
+
+    try:
+        with urlrequest.urlopen(req, timeout=8) as response:
+            result["http_status"] = response.status
+            body = response.read(64 * 1024)
+    except urlerror.HTTPError as exc:
+        result["http_status"] = exc.code
+        try:
+            body = exc.read(2048)
+            result["raw_excerpt"] = body.decode("utf-8", errors="replace")[:512]
+        except Exception:
+            pass
+        result["error"] = f"HTTP {exc.code} {exc.reason}"
+        return result
+    except urlerror.URLError as exc:
+        result["error"] = f"网络错误: {exc.reason}"
+        return result
+    except socket.timeout:
+        result["error"] = "更新源请求超时"
+        return result
+    except Exception as exc:  # pragma: no cover - defensive
+        result["error"] = f"未预期错误: {exc}"
+        return result
+
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        result["raw_excerpt"] = body[:512].decode("utf-8", errors="replace")
+        result["error"] = "更新源返回的内容不是 JSON"
+        return result
+
+    info = _extract_release_info(payload)
+    if not info:
+        result["raw_excerpt"] = body[:512].decode("utf-8", errors="replace")
+        result["error"] = "更新源 JSON 中缺少版本字段"
+        return result
+
+    result["latest_version"] = info["version"]
+    result["title"] = info["title"]
+    result["download_url"] = info["download_url"] or None
+    result["update_available"] = _compare_versions(info["version"], APP_VERSION) > 0
+    result["ok"] = True
+    return result
+
 
 class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        # 托管当前文件夹，确保前端 html 页面和 Chart.js 被正确分发
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
     def end_headers(self):
-        # 开启跨域及缓存机制
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        # 确保静态页面和数据接口均不被客户端缓存，保证更新能即时呈现
-        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         super().end_headers()
+
+    def _write_json(self, status_code, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
 
     def do_GET(self):
-        if self.path == '/api/usage':
+        if self.path == "/api/usage":
             try:
-                data = get_today_usage()
-                response_body = json.dumps(data).encode('utf-8')
-                
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.send_header('Content-Length', str(len(response_body)))
-                self.end_headers()
-                self.wfile.write(response_body)
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.end_headers()
-                err_resp = json.dumps({"error": str(e)}).encode('utf-8')
-                self.wfile.write(err_resp)
-        elif self.path == '/api/history':
+                self._write_json(200, get_today_usage())
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+        if self.path == "/api/history":
             try:
-                data = get_historical_usage()
-                response_body = json.dumps(data).encode('utf-8')
-                
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.send_header('Content-Length', str(len(response_body)))
-                self.end_headers()
-                self.wfile.write(response_body)
-            except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.end_headers()
-                err_resp = json.dumps({"error": str(e)}).encode('utf-8')
-                self.wfile.write(err_resp)
-        elif self.path == '/api/app-info':
-            data = {
+                self._write_json(200, get_historical_usage())
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+        if self.path == "/api/app-info":
+            self._write_json(200, {
                 "name": "Token Monitor",
                 "version": APP_VERSION,
                 "update_feed_url": UPDATE_FEED_URL,
                 "update_enabled": bool(UPDATE_FEED_URL),
-            }
-            response_body = json.dumps(data).encode('utf-8')
+            })
+            return
+        if self.path == "/api/check-update":
+            self._write_json(200, _check_update_remote())
+            return
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Content-Length', str(len(response_body)))
-            self.end_headers()
-            self.wfile.write(response_body)
-        else:
-            # 路由重定向，输入根路径默认分发 index.html
-            if self.path == '/' or self.path == '':
-                self.path = '/index.html'
-            super().do_GET()
+        if self.path in ("", "/"):
+            self.path = "/index.html"
+        super().do_GET()
 
-# 采用多线程继承类，防止单线程被 IO (如 sqlite 读写) 锁死导致网页无响应
+
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
     def server_bind(self):
-        """覆写 server_bind，跳过 socket.getfqdn() 反向 DNS 查询。
-        
-        原因：Python 标准库 HTTPServer.server_bind() 会调用 socket.getfqdn(host)
-        进行反向 DNS 解析，在某些网络环境下该调用会超时 30 秒，导致服务器启动极慢。
-        这里直接绑定 socket 并手动设置 server_name，完全绕过 DNS 查询。
-        """
-        self.socket.setsockopt(__import__('socket').SOL_SOCKET, __import__('socket').SO_REUSEADDR, 1)
+        """跳过 socket.getfqdn() 反向 DNS 查询,避免在受限网络环境下卡 30s。"""
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind(self.server_address)
         self.server_address = self.socket.getsockname()
-        # 直接硬编码 server_name，不走 getfqdn
         host, port = self.server_address[:2]
-        self.server_name = host or 'localhost'
+        self.server_name = host or "localhost"
         self.server_port = port
 
+
 def main():
-    server_address = ('127.0.0.1', PORT)
-    httpd = ThreadingHTTPServer(server_address, TokenMonitorHandler)
-    print(f"[+] Token Monitor 实时仪表盘已开启: http://127.0.0.1:{PORT}")
+    if not _acquire_singleton_lock():
+        print(
+            f"[server] 已有 Token Monitor 实例在运行 (单实例锁 {SINGLETON_LOCK_PATH} 被占用), 退出本次启动。",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+    httpd = ThreadingHTTPServer(("127.0.0.1", PORT), TokenMonitorHandler)
+    feed_status = UPDATE_FEED_URL or "<not configured>"
+    print(f"[+] Token Monitor 仪表盘已启动: http://127.0.0.1:{PORT}")
+    print(f"[+] 更新源 (TokenMonitorUpdateFeedURL): {feed_status}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n[-] 正在关闭 Web 服务器...")
         httpd.server_close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

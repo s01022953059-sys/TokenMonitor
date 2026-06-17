@@ -7,7 +7,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem!
     var updateCheckInProgress = false
 
+    // 单一来源: API 端口从 Info.plist 的 TokenMonitorAPIPort 读取，
+    // 启动 server 时透传给 start.sh, 并注入到 WebView 全局。
+    private var apiPort: Int {
+        if let p = Bundle.main.object(forInfoDictionaryKey: "TokenMonitorAPIPort") as? String,
+           let n = Int(p), n > 0, n < 65536 {
+            return n
+        }
+        return 15723
+    }
+
+    private var apiBaseURL: String {
+        return "http://127.0.0.1:\(apiPort)"
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例闸门: 同一个 bundleId (com.baggio.tokenmonitor) 只允许一个 GUI 实例.
+        // 第二次启动时把已有实例抢到前台, 自己直接退出.
+        if !enforceSingleInstance() {
+            NSApplication.shared.terminate(nil)
+            return
+        }
         // 尝试写入开机自启动配置
         setupAutostart()
         
@@ -58,6 +78,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.backgroundColor = NSColor(red: 0.02, green: 0.02, blue: 0.04, alpha: 1.0)
         
         let config = WKWebViewConfiguration()
+        // Swift 在 documentStart 注入 API 根地址，避免 JS 端硬编码端口
+        let userContentController = WKUserContentController()
+        let injectionScript = "window.__API_BASE__ = '\(apiBaseURL)';"
+        let apiBaseScript = WKUserScript(
+            source: injectionScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        userContentController.addUserScript(apiBaseScript)
+        config.userContentController = userContentController
         // 允许本地 file:// 页面发起对 localhost 的跨域 fetch 请求
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
@@ -91,13 +121,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let resourceDir = Bundle.main.resourcePath ?? "."
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["\(resourceDir)/start.sh", "start"]
-        
-        // 静默运行，不污染当前日志
+
+        // 把 Info.plist 中的 TokenMonitorUpdateFeedURL 透传给 server.py,
+        // 让 /api/check-update 知道去哪里查最新版本。
+        // 端口、更新源都只来自 Info.plist 这一个真源。
+        var args: [String] = ["\(resourceDir)/start.sh", "start", String(apiPort)]
+        if let feedURLString = configuredUpdateFeedURL()?.absoluteString,
+           !feedURLString.isEmpty {
+            args.append(feedURLString)
+        }
+        process.arguments = args
+
+        // 静默运行,不污染当前日志
         let devNull = FileHandle.nullDevice
         process.standardOutput = devNull
         process.standardError = devNull
-        
+
         try? process.run()
     }
 
@@ -175,6 +214,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
     
+    // 单实例检查: 若发现同 bundleId 的其他进程在跑, 把它抢到前台后返回 false
+    // (调用者应当 NSApplication.shared.terminate 退出自己). 找不到就返回 true.
+    private func enforceSingleInstance() -> Bool {
+        guard let bundleId = Bundle.main.bundleIdentifier else {
+            // 没有 bundleId 时不做拦截, 避免开发期调试卡死
+            return true
+        }
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+            .filter { $0.processIdentifier != currentPID }
+        guard let existing = others.first else { return true }
+        // 已有实例: 抢到前台
+        existing.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        return false
+    }
+
     // 写入并配置开机自启动 LaunchAgent plist
     func setupAutostart() {
         let appBundlePath = Bundle.main.bundlePath
@@ -348,13 +403,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func showUpdateAvailable(update: UpdateInfo, currentVersion: String) {
         let alert = NSAlert()
         alert.messageText = "发现新版本 \(update.version)"
-        let noteText = update.notes.isEmpty ? "" : "\n\n\(update.notes)"
+        let notesSummary = summarizedReleaseNotes(update.notes)
+        let noteText = notesSummary.isEmpty ? "" : "\n\n更新说明：\n\(notesSummary)"
         alert.informativeText = "当前版本：\(currentVersion)\n最新版本：\(update.version)\(noteText)"
         alert.addButton(withTitle: "下载更新")
+        alert.addButton(withTitle: "查看说明")
         alert.addButton(withTitle: "稍后")
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(update.downloadURL)
+        alert.addButton(withTitle: "关闭")
+        // ESC 直接走关闭按钮,避免弹窗卡住主线程时整个 app 没法退。
+        if let closeButton = alert.buttons.last {
+            closeButton.keyEquivalent = "\u{1b}"
         }
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSWorkspace.shared.open(update.downloadURL)
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.open(update.downloadURL)
+        case .alertThirdButtonReturn:
+            break
+        default:
+            break
+        }
+    }
+
+    func summarizedReleaseNotes(_ notes: String, limit: Int = 280) -> String {
+        let cleaned = notes
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .split(separator: "\n")
+            .map { line in
+                line.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]+\)"#, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+            .prefix(3)
+            .joined(separator: "\n")
+
+        guard cleaned.count > limit else { return cleaned }
+        let end = cleaned.index(cleaned.startIndex, offsetBy: limit)
+        return String(cleaned[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 
     func showAlert(title: String, message: String) {

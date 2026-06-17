@@ -1028,7 +1028,12 @@
             });
         }
 
-        const API_BASE = 'http://127.0.0.1:15723';
+        // API 根地址优先由 Swift 注入 (window.__API_BASE__)，
+        // 回退到当前 origin (HTTP/HTTPS 直接打开) 或默认 localhost:15723
+        const API_BASE = window.__API_BASE__
+            || (location.protocol === 'http:' || location.protocol === 'https:'
+                ? location.origin
+                : 'http://127.0.0.1:15723');
 
         async function updateData() {
             try {
@@ -1357,7 +1362,46 @@
             }
         }
 
+        // 把 `/api/check-update` 的真实结果落到 About 弹窗里, 失败时显示 HTTP 码和原文片段。
+        async function runUpdateCheck() {
+            const stateEl = document.getElementById('aboutUpdateState');
+            if (!stateEl) return;
+            stateEl.title = '';
+            try {
+                const res = await fetch(API_BASE + '/api/check-update', { cache: 'no-store' });
+                if (!res.ok) {
+                    stateEl.innerText = `检查失败 (本地 HTTP ${res.status})`;
+                    stateEl.classList.remove('update-state');
+                    return;
+                }
+                const data = await res.json();
+                if (data && data.ok) {
+                    const latest = data.latest_version || '?';
+                    const current = data.current_version || '?';
+                    if (data.update_available) {
+                        stateEl.innerText = `有新版本 v${latest} (当前 v${current})`;
+                    } else {
+                        stateEl.innerText = `已是最新版本 (v${current})`;
+                    }
+                    stateEl.classList.add('update-state');
+                } else {
+                    const status = data && data.http_status ? ` (HTTP ${data.http_status})` : '';
+                    const reason = (data && data.error) || '更新检查失败';
+                    stateEl.innerText = `检查失败${status}: ${reason}`;
+                    stateEl.classList.remove('update-state');
+                    if (data && data.raw_excerpt) {
+                        stateEl.title = String(data.raw_excerpt).slice(0, 400);
+                    }
+                }
+            } catch (err) {
+                console.error('check-update 调用失败:', err);
+                stateEl.innerText = '检查请求异常: ' + ((err && err.message) || err);
+                stateEl.classList.remove('update-state');
+            }
+        }
+
         async function loadAppInfo() {
+            const stateEl = document.getElementById('aboutUpdateState');
             try {
                 const response = await fetch(API_BASE + '/api/app-info');
                 const info = await response.json();
@@ -1367,13 +1411,23 @@
 
                 document.getElementById('appVersionBadge').innerText = versionText;
                 document.getElementById('aboutVersionValue').innerText = versionText;
-                document.getElementById('aboutUpdateState').innerText = updateEnabled ? '自动更新已启用' : '未启用';
-                document.getElementById('aboutUpdateState').classList.toggle('update-state', updateEnabled);
                 document.getElementById('aboutUpdateFeed').innerText = feedText;
+
+                if (!stateEl) return;
+                if (!updateEnabled) {
+                    stateEl.innerText = '未配置更新源';
+                    stateEl.classList.remove('update-state');
+                    return;
+                }
+                stateEl.innerText = '检查中…';
+                stateEl.classList.add('update-state');
+                await runUpdateCheck();
             } catch (err) {
-                console.error("加载应用版本信息失败:", err);
-                document.getElementById('aboutUpdateState').innerText = '读取失败';
-                document.getElementById('aboutUpdateState').classList.remove('update-state');
+                console.error('加载应用版本信息失败:', err);
+                if (stateEl) {
+                    stateEl.innerText = '读取失败';
+                    stateEl.classList.remove('update-state');
+                }
             }
         }
 
@@ -1478,6 +1532,8 @@
 
             aboutOpenBtn.addEventListener('click', () => {
                 aboutModal.classList.add('active');
+                // 每次打开 About 都重新跑一次真实检查, 避免显示过期状态
+                loadAppInfo();
             });
             aboutCloseBtn.addEventListener('click', () => {
                 aboutModal.classList.remove('active');
