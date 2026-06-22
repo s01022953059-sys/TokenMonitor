@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     // 不缓存的话前端点了"立即更新"还要再走一遍网络, 体验更差。
     private var pendingUpdate: UpdateInfo?
     private var pendingCurrentVersion: String = "0"
+    // 下载进度 KVO observation 的关联 key, 避免 ARC 释放导致进度回调失效
+    private static var downloadObservationKey: UInt8 = 0
 
     // 单一来源: API 端口从 Info.plist 的 TokenMonitorAPIPort 读取，
     // 启动 server 时透传给 start.sh, 并注入到 WebView 全局。
@@ -552,22 +554,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         try? fm.removeItem(atPath: zipPath)
         try? fm.createDirectory(atPath: "/tmp/TokenMonitor", withIntermediateDirectories: true)
 
-        // 弹非模态进度窗口, 用户能看到当前阶段
+        // 弹非模态进度窗口, 用户能看到当前阶段。
+        // RegardlessVisibility + makeKey 一起, 确保窗口在所有空间前置显示,
+        // 即便主窗口 WebView 在全屏 + 焦点态, 进度窗也会盖在前面。
         let progressWindow = makeUpdateProgressWindow(version: update.version)
         self.inProgressUpdateWindow = progressWindow
-        progressWindow.makeKeyAndOrderFront(nil)
+        progressWindow.makeKeyAndOrderFrontRegardlessVisibility(true)
+        progressWindow.orderFrontRegardless()
         updateProgress(stage: "下载更新包 (\(update.version))")
 
-        // 1. 下载
-        let downloadTask = URLSession.shared.downloadTask(with: update.downloadURL) { [weak self] tempURL, response, error in
+        // 1. 下载, 显式 30s timeout, 走 URLSessionConfiguration 而不是默认全局
+        // (默认 URLSession.shared timeoutIntervalForRequest=60s, 加上 connect 等等
+        //  卡 90s 都有可能。30s 用户能接受, 真卡了给个明确错误比沉默好。)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        let session = URLSession(configuration: config)
+
+        // progress 观察 (用 KVO observation 关联到 task 防止 ARC 释放)
+        var lastReportedBytes: Int64 = 0
+
+        let downloadTask = session.downloadTask(with: update.downloadURL) { [weak self] tempURL, response, error in
             guard let self = self else { return }
             if let error = error {
-                self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)")
+                self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)\n\n请检查网络连接, 或点 NSAlert 的'下载 zip'手动下载。")
                 return
             }
             guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)")
+                self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)\n\n可能是 release 源 502/504, 稍后再试。")
                 return
             }
             do {
@@ -578,6 +593,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             }
             self.continueAutoUpdateAfterDownload(update: update, zipPath: zipPath, updateDir: updateDir)
         }
+        // 进度反馈: 每收到 ~64KB 更新一次文案, 让用户知道在下载
+        let observation = downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+            guard let self = self else { return }
+            let received = progress.completedUnitCount
+            if received - lastReportedBytes > 64 * 1024 || progress.fractionCompleted >= 1.0 {
+                lastReportedBytes = received
+                let total = progress.totalUnitCount
+                let pct = total > 0 ? Int(progress.fractionCompleted * 100) : 0
+                let totalKB = total / 1024
+                let receivedKB = received / 1024
+                self.updateProgress(stage: "下载更新包 (\(pct)%, \(receivedKB)KB / \(totalKB)KB)")
+            }
+        }
+        // 持有 observation, 防止 ARC 释放
+        objc_setAssociatedObject(downloadTask, &self.downloadObservationKey, observation, .OBJC_ASSOCIATION_RETAIN)
         downloadTask.resume()
     }
 
@@ -725,6 +755,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         )
         window.title = "正在更新到 \(version)"
         window.isReleasedWhenClosed = false
+        // 进度窗置顶 modalPanel 层级, 盖在主窗口 WebView 上面, 不会被遮住。
+        // 用户要点过"立即更新"会期望看到反馈, 而不是面对一片漆黑主窗口发呆。
+        window.level = .modalPanel
+        window.hidesOnDeactivate = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let label = NSTextField(labelWithString: "准备中...")
         label.frame = NSRect(x: 30, y: 100, width: 400, height: 30)
         label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
