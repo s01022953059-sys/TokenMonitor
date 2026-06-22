@@ -456,6 +456,59 @@
             color: var(--text-main);
         }
 
+        /* About 弹窗里的更新操作按钮 */
+        .primary-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--tab-active-border);
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .primary-btn:hover {
+            background: var(--btn-hover-accent);
+            box-shadow: 0 4px 14px var(--btn-hover-shadow);
+        }
+        .secondary-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-subtle);
+            color: var(--text-muted);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .secondary-btn:hover {
+            background: var(--bg-subtle-hover);
+            color: var(--text-main);
+        }
+
+        /* 首页版本徽章上的红点提示有新版本 */
+        .version-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #f97316;
+            margin-left: 5px;
+            vertical-align: middle;
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+            animation: pulse-dot 1.8s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+        }
+
         /* 胶囊型 Segmented Tab */
         .tab-container {
             background: var(--bg-subtle);
@@ -559,7 +612,7 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
         </button>
-        <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.5; letter-spacing: 0.5px; pointer-events: none;">v--</span>
+        <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.7; letter-spacing: 0.5px; cursor: pointer; user-select: none; transition: opacity 0.2s;" title="点击查看关于">v--</span>
         <header>
             <h1>今日 Token 消耗统计</h1>
             <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span></p>
@@ -649,6 +702,10 @@
                         <span class="version-label">更新源</span>
                         <span id="aboutUpdateFeed" class="version-value">--</span>
                     </div>
+                </div>
+                <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px;">
+                    <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
+                    <button id="aboutDownloadBtn" class="secondary-btn" style="display: none;">下载 zip</button>
                 </div>
                 <p style="margin-bottom: 12px; color: var(--text-primary); font-size: 13px; font-weight: 600;">已支持平台</p>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -1529,18 +1586,76 @@
             const aboutModal = document.getElementById('aboutModal');
             const aboutOpenBtn = document.getElementById('aboutOpenBtn');
             const aboutCloseBtn = document.getElementById('aboutCloseBtn');
+            const appVersionBadge = document.getElementById('appVersionBadge');
+            const aboutUpdateBtn = document.getElementById('aboutUpdateBtn');
+            const aboutDownloadBtn = document.getElementById('aboutDownloadBtn');
 
             aboutOpenBtn.addEventListener('click', () => {
                 aboutModal.classList.add('active');
                 // 每次打开 About 都重新跑一次真实检查, 避免显示过期状态
                 loadAppInfo();
             });
+            // 首页左上角的版本徽章也作为一个入口
+            appVersionBadge.addEventListener('click', () => aboutOpenBtn.click());
+            appVersionBadge.addEventListener('mouseenter', () => {
+                appVersionBadge.style.opacity = '1';
+            });
+            appVersionBadge.addEventListener('mouseleave', () => {
+                appVersionBadge.style.opacity = '0.7';
+            });
+
             aboutCloseBtn.addEventListener('click', () => {
                 aboutModal.classList.remove('active');
             });
             aboutModal.addEventListener('click', (e) => {
                 if (e.target === aboutModal) aboutModal.classList.remove('active');
             });
+
+            // 立即更新 → 调 Swift 端的 performAutoUpdate
+            aboutUpdateBtn.addEventListener('click', () => {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
+                    window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'triggerAutoUpdate' });
+                    aboutUpdateBtn.disabled = true;
+                    aboutUpdateBtn.innerText = '已请求, 请稍候...';
+                } else {
+                    // 浏览器直接打开 index.html 的场景 (开发/调试), 降级提示
+                    if (typeof alert === 'function') alert('当前不是 macOS app 环境, 无法触发应用内更新。\n请用 macOS .app 打开此页面。');
+                }
+            });
+            // 下载 zip → 调 Swift 端用默认浏览器打开 release 下载页
+            aboutDownloadBtn.addEventListener('click', () => {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
+                    window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'openUpdatePage' });
+                }
+            });
+
+            // Swift 端检测到新版本时主动 push, 我们更新徽章红点 + 显示按钮
+            window.__tokenMonitorOnUpdateAvailable = function(info) {
+                if (!info || !info.version) return;
+                // 徽章加红点
+                const badge = document.getElementById('appVersionBadge');
+                if (badge && !badge.querySelector('.version-dot')) {
+                    badge.insertAdjacentHTML('beforeend', '<span class="version-dot" title="有新版本可用"></span>');
+                    badge.style.opacity = '1';
+                }
+                // About 弹窗里显示按钮
+                const ub = document.getElementById('aboutUpdateBtn');
+                const db = document.getElementById('aboutDownloadBtn');
+                if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + info.version; }
+                if (db) db.style.display = '';
+            };
+            window.__tokenMonitorOnNoUpdate = function() {
+                const badge = document.getElementById('appVersionBadge');
+                if (badge) {
+                    const dot = badge.querySelector('.version-dot');
+                    if (dot) dot.remove();
+                    badge.style.opacity = '0.7';
+                }
+                const ub = document.getElementById('aboutUpdateBtn');
+                const db = document.getElementById('aboutDownloadBtn');
+                if (ub) { ub.style.display = 'none'; ub.disabled = false; }
+                if (db) db.style.display = 'none';
+            };
         });
     </script>
 </body>

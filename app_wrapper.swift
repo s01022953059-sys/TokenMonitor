@@ -1,13 +1,17 @@
 import Cocoa
 import WebKit
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler {
     var window: NSWindow!
     var webView: WKWebView!
     var statusItem: NSStatusItem!
     var updateCheckInProgress = false
     // 持有 server 进程引用, 防止 ARC 回收 Process 对象时杀掉子进程。
     var serverProcess: Process?
+    // 缓存最近一次检测到的可用更新, 等前端通过 webkit.messageHandlers 触发时直接用。
+    // 不缓存的话前端点了"立即更新"还要再走一遍网络, 体验更差。
+    private var pendingUpdate: UpdateInfo?
+    private var pendingCurrentVersion: String = "0"
 
     // 单一来源: API 端口从 Info.plist 的 TokenMonitorAPIPort 读取，
     // 启动 server 时透传给 start.sh, 并注入到 WebView 全局。
@@ -98,6 +102,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             forMainFrameOnly: true
         )
         userContentController.addUserScript(apiBaseScript)
+        // 前端通过 webkit.messageHandlers.tokenMonitor.postMessage({...}) 触发
+        // 桥接的 Swift 端操作, 例如 triggerAutoUpdate 调起自更新流程。
+        // 所有 handler 集中到 self 处理, 见 userContentController(_:didReceive:)。
+        userContentController.add(self, name: "tokenMonitor")
         config.userContentController = userContentController
         // 允许本地 file:// 页面发起对 localhost 的跨域 fetch 请求
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
@@ -370,12 +378,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
             DispatchQueue.main.async {
                 if isNewer {
+                    // 缓存 update, 等前端通过 message handler 触发自更新时直接用
+                    self.pendingUpdate = update
+                    self.pendingCurrentVersion = currentVersion
                     self.showUpdateAvailable(update: update, currentVersion: currentVersion)
+                    // 通知前端"有新版本", 让 About 弹窗和首页徽章反映状态
+                    self.notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion)
                 } else if !silent {
+                    self.pendingUpdate = nil
+                    self.notifyFrontendNoUpdate(currentVersion: currentVersion)
                     self.showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。")
                 }
             }
         }.resume()
+    }
+
+    // MARK: - 前端桥接
+    //
+    // JS 端通过 window.webkit.messageHandlers.tokenMonitor.postMessage({action: 'triggerAutoUpdate'})
+    // 触发自更新。我们解析 action, 路由到对应 Swift 行为。
+    // 任何前端→Swift 的调用都走这里, 避免散落的 handler 名字。
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "tokenMonitor" else { return }
+        guard let body = message.body as? [String: Any] else { return }
+        let action = (body["action"] as? String) ?? ""
+        switch action {
+        case "triggerAutoUpdate":
+            if let update = pendingUpdate {
+                performAutoUpdate(update: update)
+            } else {
+                showAlert(title: "暂无可用更新", message: "没有缓存的更新信息, 请稍后重试或手动检查更新。")
+            }
+        case "openUpdatePage":
+            if let url = pendingUpdate?.downloadURL {
+                NSWorkspace.shared.open(url)
+            } else if let feedURL = configuredUpdateFeedURL() {
+                NSWorkspace.shared.open(feedURL)
+            }
+        default:
+            break
+        }
+    }
+
+    // 前端调用: window.webkit.messageHandlers.tokenMonitor.postMessage({...})
+    // 反向通道: Swift 主动 push 状态给前端, 通过 evaluateJavaScript 注入 JS 调用。
+    private func notifyFrontendUpdateAvailable(version: String, currentVersion: String) {
+        let js = "window.__tokenMonitorOnUpdateAvailable && window.__tokenMonitorOnUpdateAvailable({version: '\(version)', currentVersion: '\(currentVersion)'});"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func notifyFrontendNoUpdate(currentVersion: String) {
+        let js = "window.__tokenMonitorOnNoUpdate && window.__tokenMonitorOnNoUpdate({currentVersion: '\(currentVersion)'});"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
     struct UpdateInfo {
