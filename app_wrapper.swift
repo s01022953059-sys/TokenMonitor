@@ -447,24 +447,254 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let notesSummary = summarizedReleaseNotes(update.notes)
         let noteText = notesSummary.isEmpty ? "" : "\n\n更新说明：\n\(notesSummary)"
         alert.informativeText = "当前版本：\(currentVersion)\n最新版本：\(update.version)\(noteText)"
-        alert.addButton(withTitle: "下载更新")
+        // 按钮重排: "立即更新" 走自更新, "下载 zip" 走浏览器, "查看说明" 也走浏览器, "稍后" 关闭。
+        // 这样无论用户偏好"全自动"还是"手动下载源码"都能满足。
+        alert.addButton(withTitle: "立即更新")
+        alert.addButton(withTitle: "下载 zip")
         alert.addButton(withTitle: "查看说明")
         alert.addButton(withTitle: "稍后")
-        alert.addButton(withTitle: "关闭")
-        // ESC 直接走关闭按钮,避免弹窗卡住主线程时整个 app 没法退。
         if let closeButton = alert.buttons.last {
             closeButton.keyEquivalent = "\u{1b}"
         }
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            NSWorkspace.shared.open(update.downloadURL)
+            performAutoUpdate(update: update)
         case .alertSecondButtonReturn:
             NSWorkspace.shared.open(update.downloadURL)
         case .alertThirdButtonReturn:
-            break
+            NSWorkspace.shared.open(update.downloadURL)
         default:
             break
         }
+    }
+
+    // MARK: - 应用内自动更新
+    //
+    // 流程:
+    //   1. 下载 release zip 到 /tmp/TokenMonitor/update-vX.Y.Z/
+    //   2. 解压到同一目录
+    //   3. 跑 build_macos.sh 编译 + 拼装新 .app
+    //   4. 杀掉 server.py 子进程, 退出主 app
+    //   5. 启动 update_helper.sh, 它在主 app 退出后做替换 + 重启
+    //   6. 任何一步失败 → 弹错误 + 兜底到浏览器下载
+    //
+    // 工作目录: 优先用 .app 内 Resources/ 的 build_macos.sh, 找不到就
+    // 退到 /Applications/Token Monitor.app/Contents/Resources/, 再不行
+    // 就放弃自更新走浏览器兜底。
+
+    private var inProgressUpdateWindow: NSWindow?
+
+    func performAutoUpdate(update: UpdateInfo) {
+        guard !updateCheckInProgress else { return }
+        updateCheckInProgress = true
+
+        let updateDir = "/tmp/TokenMonitor/update-\(update.version)"
+        let zipPath = "\(updateDir).zip"
+        let fm = FileManager.default
+
+        // 准备暂存目录
+        try? fm.removeItem(atPath: updateDir)
+        try? fm.removeItem(atPath: zipPath)
+        try? fm.createDirectory(atPath: "/tmp/TokenMonitor", withIntermediateDirectories: true)
+
+        // 弹非模态进度窗口, 用户能看到当前阶段
+        let progressWindow = makeUpdateProgressWindow(version: update.version)
+        self.inProgressUpdateWindow = progressWindow
+        progressWindow.makeKeyAndOrderFront(nil)
+        updateProgress(stage: "下载更新包 (\(update.version))")
+
+        // 1. 下载
+        let downloadTask = URLSession.shared.downloadTask(with: update.downloadURL) { [weak self] tempURL, response, error in
+            guard let self = self else { return }
+            if let error = error {
+                self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)")
+                return
+            }
+            guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)")
+                return
+            }
+            do {
+                try fm.moveItem(at: tempURL, to: URL(fileURLWithPath: zipPath))
+            } catch {
+                self.failAutoUpdate(update: update, message: "暂存下载文件失败: \(error.localizedDescription)")
+                return
+            }
+            self.continueAutoUpdateAfterDownload(update: update, zipPath: zipPath, updateDir: updateDir)
+        }
+        downloadTask.resume()
+    }
+
+    private func continueAutoUpdateAfterDownload(update: UpdateInfo, zipPath: String, updateDir: String) {
+        DispatchQueue.main.async { self.updateProgress(stage: "解压源码包") }
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
+            // 用 /usr/bin/unzip 解压, 比 Process 起来 Process 简单
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            unzip.arguments = ["-q", "-o", zipPath, "-d", updateDir]
+            let pipe = Pipe()
+            unzip.standardOutput = pipe
+            unzip.standardError = pipe
+            try unzip.run()
+            unzip.waitUntilExit()
+            if unzip.terminationStatus != 0 {
+                let errData = pipe.fileHandleForReading.readDataToEndOfFile()
+                let msg = String(data: errData, encoding: .utf8) ?? "未知错误"
+                self.failAutoUpdate(update: update, message: "解压失败: \(msg)")
+                return
+            }
+        } catch {
+            self.failAutoUpdate(update: update, message: "解压阶段异常: \(error.localizedDescription)")
+            return
+        }
+
+        // gitcode 的 zip 解压后是 TokenMonitor-<tag>-<sha>/ 这样的子目录,
+        // build_macos.sh 期望在源码根运行, 所以找这个子目录。
+        guard let sourceRoot = locateSourceRoot(in: updateDir) else {
+            self.failAutoUpdate(update: update, message: "在 \(updateDir) 下找不到源码根目录")
+            return
+        }
+
+        DispatchQueue.main.async { self.updateProgress(stage: "编译新版本") }
+
+        // 2. 跑 build_macos.sh
+        let buildScript = "\(sourceRoot)/build_macos.sh"
+        guard fm.fileExists(atPath: buildScript) else {
+            self.failAutoUpdate(update: update, message: "暂存源码里没有 build_macos.sh")
+            return
+        }
+        let build = Process()
+        build.executableURL = URL(fileURLWithPath: "/bin/bash")
+        build.arguments = [buildScript]
+        build.currentDirectoryURL = URL(fileURLWithPath: sourceRoot)
+        let buildLog = Pipe()
+        build.standardOutput = buildLog
+        build.standardError = buildLog
+        do {
+            try build.run()
+            build.waitUntilExit()
+        } catch {
+            self.failAutoUpdate(update: update, message: "编译启动失败: \(error.localizedDescription)")
+            return
+        }
+        if build.terminationStatus != 0 {
+            let logData = buildLog.fileHandleForReading.readDataToEndOfFile()
+            let snippet = String(data: logData, encoding: .utf8) ?? "未知错误"
+            self.failAutoUpdate(update: update, message: "编译失败 (exit \(build.terminationStatus))\n\(snippet.prefix(400))")
+            return
+        }
+
+        let builtApp = "\(sourceRoot)/build/Token Monitor.app"
+        guard fm.fileExists(atPath: builtApp) else {
+            self.failAutoUpdate(update: update, message: "编译完成但找不到产物 \(builtApp)")
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.updateProgress(stage: "准备安装, 即将重启 app")
+        }
+        // 给用户半秒看"准备安装"的提示, 然后退出主 app。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.performAppReplacement(stagedApp: builtApp, update: update)
+        }
+    }
+
+    private func performAppReplacement(stagedApp: String, update: UpdateInfo) {
+        // 杀掉自己启动的 server.py 子进程, 否则 update_helper 替换 .app 时
+        // 仍然有 python 在跑 (虽然不影响, 但保持干净)。
+        self.serverProcess?.terminate()
+
+        // helper 脚本跟当前主 app 同 bundle, 不写死 /Applications/ 路径,
+        // 这样 dev 用户跑 build/Token Monitor.app 也能用自更新。
+        let bundlePath = Bundle.main.bundlePath
+        let helperPath = "\(bundlePath)/Contents/Resources/update_helper.sh"
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.baggio.tokenmonitor"
+        // 主 app 退出后 helper 还要活, 必须 nohup + disown (走 sh -c &)
+        // helper 内置 3 秒 sleep 等主 app 进程完全释放 /Applications/Token Monitor.app
+        let cmd = "nohup /bin/bash \"\(helperPath)\" \"\(stagedApp)\" \"\(bundlePath)\" \"\(bundleId)\" >/dev/null 2>&1 &"
+
+        let helperLauncher = Process()
+        helperLauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        helperLauncher.arguments = ["-c", cmd]
+        try? helperLauncher.run()
+
+        // 自己退出, helper 会接管替换 + 重启
+        NSApplication.shared.terminate(nil)
+    }
+
+    private func locateSourceRoot(in dir: String) -> String? {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { return nil }
+        // gitcode zip 解出来通常是 <repo>-<sha>/ 这种名字, 取第一个子目录
+        for entry in entries.sorted() {
+            let full = "\(dir)/\(entry)"
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: full, isDirectory: &isDir), isDir.boolValue {
+                if fm.fileExists(atPath: "\(full)/build_macos.sh") {
+                    return full
+                }
+            }
+        }
+        // 兜底: 解压出来的根直接就是源码 (罕见)
+        if fm.fileExists(atPath: "\(dir)/build_macos.sh") {
+            return dir
+        }
+        return nil
+    }
+
+    private func failAutoUpdate(update: UpdateInfo, message: String) {
+        DispatchQueue.main.async {
+            self.updateCheckInProgress = false
+            self.inProgressUpdateWindow?.orderOut(nil)
+            self.inProgressUpdateWindow = nil
+            self.showAlert(
+                title: "自动更新失败",
+                message: "\(message)\n\n你可以选择手动下载 zip 后替换 /Applications/Token Monitor.app, 或打开浏览器下载页面。"
+            )
+            // 兜底: 直接打开浏览器, 用户至少能下载到文件
+            NSWorkspace.shared.open(update.downloadURL)
+        }
+    }
+
+    private func makeUpdateProgressWindow(version: String) -> NSWindow {
+        // 不要 .closable: 自更新流程一旦启动就不能中断,
+        // 用户关掉进度窗会导致 UI 状态混乱。让用户只能等待完成。
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 180),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "正在更新到 \(version)"
+        window.isReleasedWhenClosed = false
+        let label = NSTextField(labelWithString: "准备中...")
+        label.frame = NSRect(x: 30, y: 100, width: 400, height: 30)
+        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        label.tag = 9001  // 用 tag 找回来更新文案
+        let detail = NSTextField(labelWithString: "更新过程中请勿关闭 app。")
+        detail.frame = NSRect(x: 30, y: 60, width: 400, height: 20)
+        detail.font = NSFont.systemFont(ofSize: 11)
+        detail.textColor = NSColor.secondaryLabelColor
+        let spinner = NSProgressIndicator()
+        spinner.frame = NSRect(x: 30, y: 30, width: 20, height: 20)
+        spinner.style = .spinning
+        spinner.startAnimation(nil)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 180))
+        container.addSubview(label)
+        container.addSubview(detail)
+        container.addSubview(spinner)
+        window.contentView = container
+        window.center()
+        return window
+    }
+
+    private func updateProgress(stage: String) {
+        guard let window = inProgressUpdateWindow,
+              let label = window.contentView?.viewWithTag(9001) as? NSTextField else { return }
+        label.stringValue = stage
     }
 
     func summarizedReleaseNotes(_ notes: String, limit: Int = 280) -> String {
