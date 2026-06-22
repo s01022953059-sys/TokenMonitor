@@ -707,11 +707,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // 仍然有 python 在跑 (虽然不影响, 但保持干净)。
         self.serverProcess?.terminate()
 
-        // helper 脚本跟当前主 app 同 bundle, 不写死 /Applications/ 路径,
-        // 这样 dev 用户跑 build/Token Monitor.app 也能用自更新。
+        // helper 路径优先用 stagedApp (新版本) 里的, 而不是当前 app (旧版本) 里的。
+        // 原因: 自更新代码会"自我升级", 旧 .app 里的 helper 不知道新代码的设计
+        // (例如 v1.3.12 引入了 osascript sudo 弹窗, v1.3.10 的 helper 没有)。
+        // 如果用旧 helper, 永远装不上新代码 (helper 自己不知道如何处理新需求)。
+        // 兜底: 如果 stagedApp 里没找到 helper, 用当前 app 里的 (向后兼容)。
         let bundlePath = Bundle.main.bundlePath
-        let helperPath = "\(bundlePath)/Contents/Resources/update_helper.sh"
         let bundleId = Bundle.main.bundleIdentifier ?? "com.baggio.tokenmonitor"
+        let stagedHelper = "\(stagedApp)/Contents/Resources/update_helper.sh"
+        let legacyHelper = "\(bundlePath)/Contents/Resources/update_helper.sh"
+        let helperPath = fm.fileExists(atPath: stagedHelper) ? stagedHelper : legacyHelper
         // 主 app 退出后 helper 还要活, 必须 nohup + disown (走 sh -c &)
         // helper 内置 3 秒 sleep 等主 app 进程完全释放 /Applications/Token Monitor.app
         let cmd = "nohup /bin/bash \"\(helperPath)\" \"\(stagedApp)\" \"\(bundlePath)\" \"\(bundleId)\" >/dev/null 2>&1 &"
