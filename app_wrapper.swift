@@ -619,10 +619,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // progress 观察 (用 KVO observation 关联到 task 防止 ARC 释放)
         var lastReportedBytes: Int64 = 0
 
-        // 给 download URL 加一个 cache buster 随机数, 强制 URLSession 不
+        // 给 download URL 加一个 cache buster query 参数, 强制 URLSession 不
         // 命中任何 path-based 缓存 (NSURLCache 也会按 path 匹配, 即使
         // requestCachePolicy=reloadIgnoringLocalData 也可能命中 path 缓存)。
-        // query 不影响 gitcode 后端 (它忽略未识别的 query 参数)。
+        // 双重保险: 同时设 If-None-Match header, 因为某些中间层 (公司代理 / VPN)
+        // 会 strip query 参数, 但不会改 header。
         var downloadURL = update.downloadURL
         if var comps = URLComponents(url: update.downloadURL, resolvingAgainstBaseURL: false) {
             comps.queryItems = (comps.queryItems ?? []) + [
@@ -637,6 +638,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         var request = URLRequest(url: downloadURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
+        // 用 Cache-Control: no-cache header 强制 gitcode CDN 每次生成新响应
+        // (生成新的 myhuaweicloud 签名 URL, 24h Expires 不会过期)。
+        // header 不会被中间代理 strip (代理改 query, 不改 standard headers)。
+        // If-None-Match 可能触发 304, 不用。
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
         let downloadTask = session.downloadTask(with: request) { [weak self] tempURL, response, error in
             guard let self = self else { return }
@@ -720,6 +727,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         var request = URLRequest(url: downloadURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
+        // 双重保险: Cache-Control no-cache 强制新响应
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
         var lastReportedBytes: Int64 = 0
         let task = session.downloadTask(with: request) { [weak self] tempURL, response, error in
