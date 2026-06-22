@@ -8,8 +8,20 @@ import re
 import glob
 
 # 数据源路径
+# 注: 历史上还设过 ANTIGRAVITY_BRAIN_DIR = ~/.gemini/antigravity/brain,
+# 实际冰茶 (Antigravity) 的官方统计走的是下面的 BingchaAI 路径, 那个常量早已
+# 没有任何引用, 这里不再保留以免误导。
 CC_SWITCH_DB_PATH = os.path.expanduser("~/.cc-switch/cc-switch.db")
-ANTIGRAVITY_BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
+ANTIGRAVITY_STATS_PATH = os.path.expanduser(
+    "~/Library/Application Support/BingchaAI/usage_stats.json"
+)
+HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
+
+# 三源去重的"时间窗口", 单位秒。
+# 同一时间窗口内 + 同模型 + 同 token 量视为同一事件, 只计一次。
+# 2 秒足够覆盖"客户端 → 代理 → 数据库落盘"的端到端抖动,
+# 又不至于把两次独立的相邻请求合并掉。
+DEDUP_WINDOW_SECONDS = 2
 
 def get_today_midnight_timestamp():
     """获取今天本地时间零点的时间戳"""
@@ -34,25 +46,48 @@ def estimate_tokens(text):
     return int(chinese_tokens + english_tokens + other_tokens)
 
 def get_deepseek_balance():
-    """从 cc-switch 中安全提取 DeepSeek 密钥，并请求官网 API 获取账户实时余额"""
+    """从 cc-switch 中安全提取 DeepSeek 密钥，并请求官网 API 获取账户实时余额。
+
+    不再硬编码 provider id, 而是按 provider_type / name 语义匹配,
+    兼容用户重命名 provider 后仍然能拿到 DeepSeek 余额。
+    """
     if not os.path.exists(CC_SWITCH_DB_PATH):
         return {"balance": "0.00", "currency": "CNY", "status": "Offline"}
-        
+
     try:
         conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
         cursor = conn.cursor()
-        cursor.execute("SELECT settings_config FROM providers WHERE id='ddsds'")
-        row = cursor.fetchone()
+        # 三种常见的字段命名都试一遍: provider_type / name / app_type,
+        # 任一字段含 deepseek (大小写不敏感) 即视为 DeepSeek provider。
+        cursor.execute(
+            """
+            SELECT id, settings_config FROM providers
+            WHERE LOWER(COALESCE(provider_type, '')) LIKE '%deepseek%'
+               OR LOWER(COALESCE(name, '')) LIKE '%deepseek%'
+               OR LOWER(COALESCE(app_type, '')) LIKE '%deepseek%'
+            """
+        )
+        rows = cursor.fetchall()
         conn.close()
-        
-        if not row:
+
+        if not rows:
             return {"balance": "0.00", "currency": "CNY", "status": "Provider Not Found"}
-            
-        cfg = json.loads(row[0])
-        key = cfg.get("apiKey", cfg.get("api_key"))
+
+        # 多条匹配时取第一条能解析出 apiKey 的; 都没有就报 No Key。
+        key = ""
+        for _, cfg_raw in rows:
+            try:
+                cfg = json.loads(cfg_raw)
+            except (TypeError, ValueError):
+                continue
+            candidate = cfg.get("apiKey") or cfg.get("api_key")
+            if candidate:
+                key = candidate
+                break
+
         if not key:
             return {"balance": "0.00", "currency": "CNY", "status": "No Key"}
-            
+
         # 请求 DeepSeek 官方余额接口
         req = urllib.request.Request(
             "https://api.deepseek.com/user/balance",
@@ -72,7 +107,7 @@ def get_deepseek_balance():
                 }
     except Exception as e:
         return {"balance": "0.00", "currency": "CNY", "status": f"Error: {str(e)}"}
-        
+
     return {"balance": "0.00", "currency": "CNY", "status": "Unknown"}
 
 def scan_cc_switch_logs(today_start):
@@ -125,13 +160,12 @@ def scan_cc_switch_logs(today_start):
 def scan_antigravity_tokens(today_start):
     """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件，精确提取今日消耗"""
     tokens_data = []
-    stats_path = os.path.expanduser("~/Library/Application Support/BingchaAI/usage_stats.json")
-    
-    if not os.path.exists(stats_path):
+
+    if not os.path.exists(ANTIGRAVITY_STATS_PATH):
         return tokens_data
-        
+
     try:
-        with open(stats_path, 'r', encoding='utf-8') as f:
+        with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
             stats = json.load(f)
             
         # 获取今天的日期字符串，格式如 2026-06-04
@@ -169,12 +203,11 @@ def scan_antigravity_tokens(today_start):
 def scan_hermes_tokens(today_start):
     """只读扫描 Hermes 数据库中今天的会话记录，提取包含缓存细节的高精度 Token 消耗"""
     logs_data = []
-    db_path = os.path.expanduser("~/.hermes/state.db")
-    if not os.path.exists(db_path):
+    if not os.path.exists(HERMES_DB_PATH):
         return logs_data
-        
+
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
         cursor = conn.cursor()
         
         # 筛选今天生成的成功会话 (started_at >= today_start)
@@ -216,30 +249,58 @@ def scan_hermes_tokens(today_start):
         
     return logs_data
 
+def _dedup_events(events):
+    """跨数据源去重: 把同一笔请求在多源里都被记录的事件合并为一条。
+
+    判定规则: 时间戳在 DEDUP_WINDOW_SECONDS 窗口内 + 同 model + 同 total_tokens
+    视为同一事件, 只保留 timestamp 最早的一条。cc-switch / Hermes / Antigravity
+    之间偶有重叠 (例如 Hermes 把经过 cc-switch 代理的请求再记一次),
+    用这个简单启发式足以消掉大部分重复, 又不会误伤相邻请求。
+    返回按 timestamp 升序排列的列表。
+    """
+    if not events:
+        return []
+    # 按时间升序, 保证 group key 相同时保留最早的
+    ordered = sorted(events, key=lambda x: x["timestamp"])
+    seen_keys = set()
+    deduped = []
+    for ev in ordered:
+        bucket = ev["timestamp"] // DEDUP_WINDOW_SECONDS
+        key = (bucket, (ev.get("model") or "").lower(), ev.get("total_tokens", 0))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(ev)
+    return deduped
+
+
 def get_today_usage():
-    """汇总今日所有的大模型 Token 消耗情况以及官方余额"""
+    """汇总今日所有的大模型 Token 消耗情况以及 DeepSeek 官方余额。
+
+    三源 (cc-switch / 冰茶 Antigravity / Hermes) 加和后做跨源去重,
+    避免同一笔请求被多个数据源重复计入。
+    """
     today_start = get_today_midnight_timestamp()
-    
+
     # 1. 扫描三个独立的数据源
     cc_logs = scan_cc_switch_logs(today_start)
     antigravity_logs = scan_antigravity_tokens(today_start)
     hermes_logs = scan_hermes_tokens(today_start)
-    
-    # 2. 合并并按时间戳排序
-    all_logs = cc_logs + antigravity_logs + hermes_logs
-    all_logs.sort(key=lambda x: x["timestamp"])
-    
+
+    # 2. 合并去重 + 按时间戳排序
+    all_logs = _dedup_events(cc_logs + antigravity_logs + hermes_logs)
+
     # 3. 统计汇总
     total_tokens = 0
     input_tokens = 0
     output_tokens = 0
     input_cached = 0
     input_uncached = 0
-    
+
     # 初始化工具统计 (动态支持从日志中提取的各种客户端如 hermes, codex 等)
     by_tool = {}
     by_model = {}
-    
+
     for log in all_logs:
         t_tokens = log["total_tokens"]
         i_tokens = log["input_tokens"]
@@ -248,32 +309,26 @@ def get_today_usage():
         i_uncached = log["input_uncached"]
         tool = log["tool"]
         model = log["model"]
-        
+
         total_tokens += t_tokens
         input_tokens += i_tokens
         output_tokens += o_tokens
         input_cached += i_cached
         input_uncached += i_uncached
-        
+
         # 累加按工具
         if tool not in by_tool:
             by_tool[tool] = {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0}
         by_tool[tool]["total_tokens"] += t_tokens
         by_tool[tool]["input_tokens"] += i_tokens
         by_tool[tool]["output_tokens"] += o_tokens
-            
+
         # 累加按模型
         by_model[model] = by_model.get(model, 0) + t_tokens
 
     # 获取 DeepSeek 官方实时余额
     ds_balance = get_deepseek_balance()
-    
-    # 估算成本 (结合 cached tokens 便宜的特征进行科学估算)
-    # DeepSeek V4 Flash 缓存价格通常是 0.1$/1M，未缓存价格是 1$/1M，输出是 2$/1M
-    # 如果是 Gemini 或其它模型，则进行普通估算。
-    # 这里按整体大模型账单的加权进行相对精准计算
-    estimated_cost = (input_cached * 0.0000001) + (input_uncached * 0.000001) + (output_tokens * 0.000002)
-    
+
     return {
         "summary": {
             "total_tokens": total_tokens,
@@ -281,11 +336,13 @@ def get_today_usage():
             "output_tokens": output_tokens,
             "input_cached": input_cached,
             "input_uncached": input_uncached,
-            "estimated_cost_usd": round(estimated_cost, 4),
             "date": datetime.datetime.now().strftime("%Y-%m-%d"),
             "deepseek_balance": ds_balance.get("balance", "0.00"),
             "deepseek_currency": ds_balance.get("currency", "CNY"),
-            "deepseek_status": ds_balance.get("status", "Offline")
+            "deepseek_status": ds_balance.get("status", "Offline"),
+            # 去重后的事件条数, 给前端做"是否发生跨源重复"的提示
+            "events_after_dedup": len(all_logs),
+            "events_before_dedup": len(cc_logs) + len(antigravity_logs) + len(hermes_logs),
         },
         "by_tool": by_tool,
         "by_model": by_model,
@@ -327,13 +384,20 @@ def get_historical_usage(days=30):
         if "codex" in t_lower or "code" in t_lower:
             return "Codex"
         return "Other"
-        
+
     def get_normalized_model(model_name):
+        """长前缀优先匹配, 避免 'gpt-5.4' 抢 'gpt-5.4-mini'。"""
         if not model_name:
             return "Other"
         m_lower = model_name.lower().strip()
-        for m in models:
-            if m != "Other" and m in m_lower:
+        # 把 'Other' 排除掉, 其余按 key 长度倒序, 长的先匹配
+        candidates = sorted(
+            (m for m in models if m != "Other"),
+            key=len,
+            reverse=True,
+        )
+        for m in candidates:
+            if m in m_lower:
                 return m
         return "Other"
     
@@ -366,10 +430,9 @@ def get_historical_usage(days=30):
             print(f"[-] 历史扫描 cc-switch 出错: {e}")
             
     # 2. 扫描 Hermes 数据库
-    hermes_db = os.path.expanduser("~/.hermes/state.db")
-    if os.path.exists(hermes_db):
+    if os.path.exists(HERMES_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{hermes_db}?mode=ro", uri=True)
+            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
             cursor = conn.cursor()
             query = """
                 SELECT started_at, input_tokens, output_tokens, cache_read_tokens, model 
@@ -394,10 +457,9 @@ def get_historical_usage(days=30):
             print(f"[-] 历史扫描 Hermes 出错: {e}")
             
     # 3. 扫描 Antigravity 统计文件
-    stats_path = os.path.expanduser("~/Library/Application Support/BingchaAI/usage_stats.json")
-    if os.path.exists(stats_path):
+    if os.path.exists(ANTIGRAVITY_STATS_PATH):
         try:
-            with open(stats_path, 'r', encoding='utf-8') as f:
+            with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
                 stats = json.load(f)
             records = stats.get("records", {})
             for d_str in daily_totals:

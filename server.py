@@ -13,6 +13,7 @@ import argparse
 import http.server
 import json
 import os
+import plistlib
 import socket
 import socketserver
 import sys
@@ -26,7 +27,32 @@ try:
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage
 
-APP_VERSION = "1.1"
+# 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
+# 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
+# 透传过来, 版本号属于"应用标识"层级, 让 Python 自己读 plist 避免
+# Swift ↔ Python 之间再多一份同步。
+#
+# 直接执行 server.py 做调试 (不在 .app bundle 内) 时回退到 "0.0-dev",
+# 这种情况下前端 About 弹窗会显示 dev 版本, 不会触发误升级提示。
+def _read_app_version() -> str:
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "Info.plist"),
+        "/Applications/Token Monitor.app/Contents/Info.plist",
+    ]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                data = plistlib.load(f)
+            version = (data or {}).get("CFBundleShortVersionString")
+            if version:
+                return str(version).strip()
+        except (OSError, ValueError):
+            continue
+    return "0.0-dev"
+
+APP_VERSION = _read_app_version()
 USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/TokenMonitor)"
 
 _parser = argparse.ArgumentParser(add_help=False)
@@ -100,6 +126,37 @@ def _compare_versions(latest: str, current: str) -> int:
     return 1 if a > b else -1
 
 
+def _pick_asset_url(payload):
+    """从 assets/files 数组里挑出安装包下载地址,优先 .dmg/.zip。"""
+    asset_list = payload.get("assets") or payload.get("files") or []
+    if not isinstance(asset_list, list):
+        return ""
+    # 两轮扫描: 先找安装包 .dmg, 再退到 .zip, 避免误选源码包。
+    preferred = None
+    for suffix in (".dmg", ".zip"):
+        for asset in asset_list:
+            if not isinstance(asset, dict):
+                continue
+            name = (asset.get("name") or "").lower()
+            if name.endswith(suffix):
+                preferred = asset
+                break
+        if preferred:
+            break
+    if preferred is None and asset_list:
+        preferred = asset_list[0] if isinstance(asset_list[0], dict) else None
+    if not preferred:
+        return ""
+    return (
+        preferred.get("browser_download_url")
+        or preferred.get("download_url")
+        or preferred.get("downloadUrl")
+        or preferred.get("url")
+        or preferred.get("html_url")
+        or ""
+    )
+
+
 def _extract_release_info(payload):
     """Best-effort 解析 release feed JSON,兼容 GitCode/GitHub/自托管多种格式。"""
     if not isinstance(payload, dict):
@@ -117,6 +174,9 @@ def _extract_release_info(payload):
         or payload.get("htmlUrl")
         or ""
     )
+    # GitCode/GitHub 把安装包放在 assets 数组里,顶层没有 download_url 时回退到 assets。
+    if not download_url:
+        download_url = _pick_asset_url(payload)
     return {
         "version": version,
         "title": title,

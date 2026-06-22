@@ -6,11 +6,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var webView: WKWebView!
     var statusItem: NSStatusItem!
     var updateCheckInProgress = false
+    // 持有 server 进程引用, 防止 ARC 回收 Process 对象时杀掉子进程。
+    var serverProcess: Process?
 
     // 单一来源: API 端口从 Info.plist 的 TokenMonitorAPIPort 读取，
     // 启动 server 时透传给 start.sh, 并注入到 WebView 全局。
+    private var fallbackPlistDict: NSDictionary? {
+        let path = "/Applications/Token Monitor.app/Contents/Info.plist"
+        return NSDictionary(contentsOfFile: path)
+    }
+
     private var apiPort: Int {
         if let p = Bundle.main.object(forInfoDictionaryKey: "TokenMonitorAPIPort") as? String,
+           let n = Int(p), n > 0, n < 65536 {
+            return n
+        }
+        if let p = fallbackPlistDict?["TokenMonitorAPIPort"] as? String,
            let n = Int(p), n > 0, n < 65536 {
             return n
         }
@@ -21,16 +32,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return "http://127.0.0.1:\(apiPort)"
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    @objc func applicationDidFinishLaunching(_ notification: Notification) {
         // 单实例闸门: 同一个 bundleId (com.baggio.tokenmonitor) 只允许一个 GUI 实例.
         // 第二次启动时把已有实例抢到前台, 自己直接退出.
-        if !enforceSingleInstance() {
+        let singleOK = enforceSingleInstance()
+        if !singleOK {
             NSApplication.shared.terminate(nil)
             return
         }
         // 尝试写入开机自启动配置
         setupAutostart()
-        
         // 尝试自动启动本地 python 统计服务
         startLocalServer()
         
@@ -109,8 +120,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         
         // 直接从 .app/Contents/Resources 加载大屏 HTML，不等待 Python 服务就绪
-        // 这使得 UI 在 <200ms 内完整呈现，数据由 JS 侧异步重试填充
-        let resourceDir = URL(fileURLWithPath: Bundle.main.resourcePath ?? ".")
+        // 符号链接启动时 Bundle.main.resourcePath 可能不指向 bundle, 加 fallback。
+        var resourcePath = Bundle.main.resourcePath ?? ""
+        if !FileManager.default.fileExists(atPath: resourcePath + "/index.html") {
+            let fallback = "/Applications/Token Monitor.app/Contents/Resources"
+            if FileManager.default.fileExists(atPath: fallback + "/index.html") {
+                resourcePath = fallback
+            }
+        }
+        let resourceDir = URL(fileURLWithPath: resourcePath)
         let htmlFile = resourceDir.appendingPathComponent("index.html")
         webView.loadFileURL(htmlFile, allowingReadAccessTo: resourceDir)
 
@@ -118,26 +136,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func startLocalServer() {
-        let resourceDir = Bundle.main.resourcePath ?? "."
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-
-        // 把 Info.plist 中的 TokenMonitorUpdateFeedURL 透传给 server.py,
-        // 让 /api/check-update 知道去哪里查最新版本。
-        // 端口、更新源都只来自 Info.plist 这一个真源。
-        var args: [String] = ["\(resourceDir)/start.sh", "start", String(apiPort)]
+        // Bundle.main.resourcePath 在符号链接启动方式下可能不指向 bundle 内的 Resources,
+        // 用 bundlePath 推导, 并加固定 fallback 确保能找到 server.py。
+        var resourceDir = Bundle.main.resourcePath ?? ""
+        let serverCheck = resourceDir + "/server.py"
+        if !FileManager.default.fileExists(atPath: serverCheck) {
+            // fallback: 从已知 app bundle 路径找 Resources
+            let fallback = "/Applications/Token Monitor.app/Contents/Resources"
+            if FileManager.default.fileExists(atPath: fallback + "/server.py") {
+                resourceDir = fallback
+            }
+        }
+        var cmd = "/usr/bin/python3 \"\(resourceDir)/server.py\" --port \(apiPort)"
         if let feedURLString = configuredUpdateFeedURL()?.absoluteString,
            !feedURLString.isEmpty {
-            args.append(feedURLString)
+            cmd += " --update-feed-url \"\(feedURLString)\""
         }
-        process.arguments = args
+        cmd += " &"
 
-        // 静默运行,不污染当前日志
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", cmd]
         let devNull = FileHandle.nullDevice
-        process.standardOutput = devNull
-        process.standardError = devNull
+        proc.standardOutput = devNull
+        proc.standardError = devNull
 
-        try? process.run()
+        do {
+            try proc.run()
+            self.serverProcess = proc
+        } catch {
+            let msg = "startLocalServer error: \(error)\n"
+            try? msg.write(toFile: "/tmp/tm_swift_error.log", atomically: true, encoding: .utf8)
+        }
     }
 
     @objc func showMainWindow() {
@@ -161,7 +191,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func updateStatusBarToken() {
-        guard let url = URL(string: "http://127.0.0.1:15723/api/usage") else { return }
+        // 端口必须跟着 Info.plist 的 TokenMonitorAPIPort 走,
+        // 否则改端口后状态栏永远拿到 "🔥--" 而主窗口正常, 用户无法理解。
+        guard let url = URL(string: apiBaseURL + "/api/usage") else { return }
         let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let data = data, error == nil else { return }
             do {
@@ -264,10 +296,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func configuredUpdateFeedURL() -> URL? {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: "TokenMonitorUpdateFeedURL") as? String else {
-            return nil
+        var raw = Bundle.main.object(forInfoDictionaryKey: "TokenMonitorUpdateFeedURL") as? String
+        // 符号链接启动时 Bundle.main 可能不指向 app bundle, 从已知路径读 Info.plist
+        if raw == nil {
+            let fallbackPlist = "/Applications/Token Monitor.app/Contents/Info.plist"
+            if let dict = NSDictionary(contentsOfFile: fallbackPlist) {
+                raw = dict["TokenMonitorUpdateFeedURL"] as? String
+            }
         }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let feedURL = raw else { return nil }
+        let trimmed = feedURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed.hasPrefix("https://example.com/") {
             return nil
         }
@@ -383,7 +421,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func currentAppVersion() -> String {
-        return (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"
+        if let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            return v
+        }
+        return (fallbackPlistDict?["CFBundleShortVersionString"] as? String) ?? "0"
     }
 
     func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
@@ -585,6 +626,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 }
 
 let app = NSApplication.shared
+app.setActivationPolicy(.accessory)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

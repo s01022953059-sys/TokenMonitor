@@ -40,15 +40,30 @@ fi
 
 case "$1" in
     start)
-        # 单实例闸门: 调用 _singleton_check.py 做原子非阻塞检查。
-        # 该脚本走 fcntl.flock, 跟 server.py 用的是同一把锁文件, 退出码:
-        #   0 = 锁空闲 (可以继续拉起 server.py)
-        #   1 = 锁被占 (已有 server.py 持有, start.sh 直接退出)
-        #   2 = 锁文件打开失败 (权限/磁盘问题, 报给用户)
-        # 不要再用 python3 -c "..." 嵌进 bash, bash 的转义会把 f-string + 嵌套引号吃掉.
+        # 单实例闸门: _singleton_check.py 走 fcntl.flock, 跟 server.py 用同一把锁。
+        # 锁被占时先确认持锁进程是否真的在监听端口; 如果是僵尸/卡死进程,
+        # 强杀并清锁后重试一次, 避免空锁或死锁进程永久挡住启动。
         if ! python3 "$DIR/_singleton_check.py" "$SINGLETON_LOCK_FILE" 2>/dev/null; then
-            echo "[!] Token Monitor 已经在运行 (单实例锁 $SINGLETON_LOCK_FILE 被占用), 启动请求被忽略。"
-            exit 0
+            STALE_PID=""
+            if [ -f "$PID_FILE" ]; then
+                STALE_PID=$(cat "$PID_FILE" 2>/dev/null)
+            fi
+            # 持锁进程活着且在监听 → 真的在运行, 放弃启动
+            if [ -n "$STALE_PID" ] && ps -p "$STALE_PID" > /dev/null 2>&1; then
+                if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -a -p "$STALE_PID" > /dev/null 2>&1; then
+                    echo "[!] Token Monitor 服务已在运行 (PID: $STALE_PID), 启动请求被忽略。"
+                    exit 0
+                fi
+                # 进程活着但没监听端口 → 卡死了, 强杀
+                echo "[*] 检测到卡死的服务进程 (PID: $STALE_PID 未监听端口), 正在清理..."
+                kill -9 "$STALE_PID" 2>/dev/null || true
+            fi
+            # 清掉陈旧的锁和 pid, 重试一次
+            rm -f "$SINGLETON_LOCK_FILE" "$PID_FILE" 2>/dev/null || true
+            if ! python3 "$DIR/_singleton_check.py" "$SINGLETON_LOCK_FILE" 2>/dev/null; then
+                echo "[!] 无法获取单实例锁 $SINGLETON_LOCK_FILE, 启动请求被忽略。"
+                exit 0
+            fi
         fi
         if [ -f "$PID_FILE" ]; then
             PID=$(cat "$PID_FILE")
@@ -60,12 +75,15 @@ case "$1" in
         fi
 
         echo "[*] 正在后台启动 Token Monitor 统计服务..."
+        # nohup + disown 让 server 脱离 start.sh 的进程组,
+        # 这样 Swift Process.run() 退出时不会用 SIGHUP 杀掉 server。
         if [ -n "$UPDATE_FEED_URL" ]; then
-            python3 "$DIR/server.py" --port "$PORT" --update-feed-url "$UPDATE_FEED_URL" > /dev/null 2>&1 &
+            nohup python3 "$DIR/server.py" --port "$PORT" --update-feed-url "$UPDATE_FEED_URL" > /dev/null 2>&1 &
         else
-            python3 "$DIR/server.py" --port "$PORT" > /dev/null 2>&1 &
+            nohup python3 "$DIR/server.py" --port "$PORT" > /dev/null 2>&1 &
         fi
         NEW_PID=$!
+        disown $NEW_PID 2>/dev/null || true
         echo $NEW_PID > "$PID_FILE"
         sleep 1.5
 
