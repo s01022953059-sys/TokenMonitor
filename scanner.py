@@ -140,12 +140,12 @@ def scan_cc_switch_logs(today_start):
             input_cached = cache_read_t
             input_uncached = max(0, input_t - cache_read_t)
             total_t = input_t + output_t
-            
+
             logs_data.append({
                 "time": local_time,
                 "timestamp": created_at,
                 "tool": app_type.capitalize() if app_type else "Other",
-                "model": model,
+                "model": normalize_model_name(model),
                 "input_tokens": input_t,
                 "output_tokens": output_t,
                 "total_tokens": total_t,
@@ -154,8 +154,42 @@ def scan_cc_switch_logs(today_start):
             })
     except Exception as e:
         print(f"[-] 扫描 cc-switch 数据库出错: {e}")
-        
+
     return logs_data
+
+
+def normalize_model_name(raw_model):
+    """归一化 model 字符串, 合并 cc-switch 噪声变体。
+
+    cc-switch 在某些场景下会把同一个 model 写成多个变体字符串, 例如
+    'qwen3.6-plus' / 'qwen3.6-Plus' (大写 P) / 'qwen3.6-plus-2026-04-02' (带日期)。
+    这些是 cc-switch 的写入 bug, 不是真实不同的模型。我们把变体折叠到主名,
+    避免数据展示里出现 'qwen3.6-plus' 和 'qwen3.6-Plus' 两个独立条目。
+
+    折叠规则 (按顺序匹配):
+    1. 转小写、strip 空白
+    2. 去掉 '日期后缀' 形式 -YYYY-MM-DD (cc-switch 版本快照)
+    3. 找到最长前缀匹配 (例如 'qwen3.6-plus' 是 'qwen3.6-plus-...' 的前缀)
+    """
+    if not raw_model:
+        return "Other"
+    s = str(raw_model).strip().lower()
+    # 去掉 '-YYYY-MM-DD' 这种日期后缀
+    s = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', s)
+    # 别名表: 多个变体指向同一标准名
+    aliases = {
+        "qwen3.6-plus": "qwen3.6-plus",
+        "qwen3.6-plus-vl": "qwen3.6-plus-vl",
+        "qwen3.7-plus": "qwen3.7-plus",
+        "qwen3.7-max": "qwen3.7-max",
+    }
+    if s in aliases:
+        return aliases[s]
+    # 启发式: 如果是 'qwen3.6-plus' 家族, 折叠到 'qwen3.6-plus'
+    if s.startswith("qwen3.6-plus") and s != "qwen3.6-plus-vl":
+        return "qwen3.6-plus"
+    # 兜底: 原样返回 (大小写归一化后的)
+    return s
 
 def scan_antigravity_tokens(today_start):
     """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件，精确提取今日消耗"""
