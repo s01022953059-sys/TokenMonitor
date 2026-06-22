@@ -619,7 +619,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             // 用 /usr/bin/unzip 解压, 比 Process 起来 Process 简单
             let unzip = Process()
             unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            unzip.arguments = ["-q", "-o", zipPath, "-d", updateDir]
+            unzip.arguments = ["-q", "-o", zipPath, "-d", updateDir, "-x", "*/windows_build/*"]
             let pipe = Pipe()
             unzip.standardOutput = pipe
             unzip.standardError = pipe
