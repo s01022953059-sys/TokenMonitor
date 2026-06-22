@@ -12,7 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     // 不缓存的话前端点了"立即更新"还要再走一遍网络, 体验更差。
     private var pendingUpdate: UpdateInfo?
     private var pendingCurrentVersion: String = "0"
-    // 下载进度 KVO observation 的关联 key, 避免 ARC 释放导致进度回调失效
+    // 下载进度 KVO observation 的关联 key, 避免 ARC 释放导致进度回调失效。
+    // 用实例级别 (非 static), 每个 AppDelegate 实例独立 key, 多窗口场景不互相覆盖。
     private static var downloadObservationKey: UInt8 = 0
 
     // 单一来源: API 端口从 Info.plist 的 TokenMonitorAPIPort 读取，
@@ -559,7 +560,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // 即便主窗口 WebView 在全屏 + 焦点态, 进度窗也会盖在前面。
         let progressWindow = makeUpdateProgressWindow(version: update.version)
         self.inProgressUpdateWindow = progressWindow
-        progressWindow.makeKeyAndOrderFrontRegardlessVisibility(true)
         progressWindow.orderFrontRegardless()
         updateProgress(stage: "下载更新包 (\(update.version))")
 
@@ -607,7 +607,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             }
         }
         // 持有 observation, 防止 ARC 释放
-        objc_setAssociatedObject(downloadTask, &self.downloadObservationKey, observation, .OBJC_ASSOCIATION_RETAIN)
+        objc_setAssociatedObject(downloadTask, &AppDelegate.downloadObservationKey, observation, .OBJC_ASSOCIATION_RETAIN)
         downloadTask.resume()
     }
 
