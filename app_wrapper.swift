@@ -523,12 +523,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         }
         switch alert.runModal() {
         case .alertFirstButtonReturn:
+            debugLog("NSAlert first button (立即更新) clicked")
             performAutoUpdate(update: update)
         case .alertSecondButtonReturn:
+            debugLog("NSAlert second button (下载 zip) clicked")
             NSWorkspace.shared.open(update.downloadURL)
         case .alertThirdButtonReturn:
+            debugLog("NSAlert third button (查看说明) clicked")
             NSWorkspace.shared.open(update.downloadURL)
         default:
+            debugLog("NSAlert closed without clicking button")
             break
         }
     }
@@ -549,8 +553,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
     private var inProgressUpdateWindow: NSWindow?
 
+    // 临时 debug log 路径, 用于排查 v1.3.17 "立即更新" 按钮没反应。
+    // 写到 /tmp/tm_debug.log, NSLog 也会进 Console.app。
+    private static let debugLogPath = "/tmp/tm_debug.log"
+
+    private func debugLog(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: Self.debugLogPath) {
+                if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: Self.debugLogPath)) {
+                    handle.seekToEndOfFile()
+                    try? handle.write(contentsOf: data)
+                    try? handle.close()
+                }
+            } else {
+                try? data.write(to: URL(fileURLWithPath: Self.debugLogPath))
+            }
+        }
+        NSLog("TokenMonitor[update] %@", msg)
+    }
+
     func performAutoUpdate(update: UpdateInfo) {
-        guard !updateCheckInProgress else { return }
+        debugLog("performAutoUpdate enter, version=\(update.version), updateCheckInProgress=\(updateCheckInProgress)")
+        guard !updateCheckInProgress else {
+            debugLog("performAutoUpdate guard blocked (in progress)")
+            return
+        }
         updateCheckInProgress = true
 
         let updateDir = "/tmp/TokenMonitor/update-\(update.version)"
@@ -561,6 +589,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         try? fm.removeItem(atPath: updateDir)
         try? fm.removeItem(atPath: zipPath)
         try? fm.createDirectory(atPath: "/tmp/TokenMonitor", withIntermediateDirectories: true)
+        debugLog("staged dir prepared: \(updateDir)")
 
         // 弹非模态进度窗口, 用户能看到当前阶段。
         // RegardlessVisibility + makeKey 一起, 确保窗口在所有空间前置显示,
@@ -568,6 +597,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let progressWindow = makeUpdateProgressWindow(version: update.version)
         self.inProgressUpdateWindow = progressWindow
         progressWindow.orderFrontRegardless()
+        debugLog("progress window created, ordering front")
         updateProgress(stage: "下载更新包 (\(update.version))")
 
         // 1. 下载, 显式 30s timeout, 走 URLSessionConfiguration 而不是默认全局
