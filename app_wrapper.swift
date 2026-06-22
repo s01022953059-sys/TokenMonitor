@@ -349,9 +349,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             defer {
-                DispatchQueue.main.async {
-                    self.updateCheckInProgress = false
-                }
+                // 同步设 false, 不走 DispatchQueue.main.async: async 会让
+                // defer 排队到主线程, 但闭包已经 return, ordering 不保证
+                // defer 在 performAutoUpdate 之前完成。结果: 用户点 NSAlert
+                // 立即更新按钮时, updateCheckInProgress 还是 true, guard
+                // 阻断。同步设保证 showUpdateAvailable 进入时 (同主线程
+                // 后续代码) updateCheckInProgress 已经是 false。
+                self.updateCheckInProgress = false
             }
 
             if let error = error {
