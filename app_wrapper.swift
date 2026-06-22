@@ -616,21 +616,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let fm = FileManager.default
         do {
             try fm.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
-            // 用 /usr/bin/unzip 解压, 比 Process 起来 Process 简单
-            let unzip = Process()
-            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            unzip.arguments = ["-q", "-o", zipPath, "-d", updateDir, "-x", "*/windows_build/*"]
+            // 用 macOS 原生 ditto -x -k 解压 zip, 它是给 .app bundle / pkg 设计的,
+            // 对 UTF-8 文件名 (例如中文 "启动 Token Monitor.bat") 处理比 /usr/bin/unzip 好。
+            // -x 后跟 glob 排除目录, ditto 支持递归 glob。
+            let ditto = Process()
+            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            ditto.arguments = ["-x", "-k", zipPath, updateDir, "--sequesterRsrc", "--noacl"]
             let pipe = Pipe()
-            unzip.standardOutput = pipe
-            unzip.standardError = pipe
-            try unzip.run()
-            unzip.waitUntilExit()
-            if unzip.terminationStatus != 0 {
+            ditto.standardOutput = pipe
+            ditto.standardError = pipe
+            try ditto.run()
+            ditto.waitUntilExit()
+            if ditto.terminationStatus != 0 {
                 let errData = pipe.fileHandleForReading.readDataToEndOfFile()
                 let msg = String(data: errData, encoding: .utf8) ?? "未知错误"
                 self.failAutoUpdate(update: update, message: "解压失败: \(msg)")
                 return
             }
+            // ditto 解出来后可能在 updateDir/<entry>/windows_build, 删掉整个
+            // windows_build 目录, 避免后续 build_macos.sh 误把它当源码。
+            // 用 find 比 rm -rf 稳, 一次清掉所有嵌套的 windows_build。
+            let find = Process()
+            find.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+            find.arguments = [updateDir, "-type", "d", "-name", "windows_build", "-exec", "rm", "-rf", "{}", "+"]
+            let findPipe = Pipe()
+            find.standardOutput = findPipe
+            find.standardError = findPipe
+            try? find.run()
+            find.waitUntilExit()
         } catch {
             self.failAutoUpdate(update: update, message: "解压阶段异常: \(error.localizedDescription)")
             return
