@@ -38,7 +38,11 @@ def _read_app_version() -> str:
     candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "Info.plist"),
         "/Applications/Token Monitor.app/Contents/Info.plist",
+        # 1.3.28 起 silent update 路径, server.py 必须能识别 ~/Applications/ 安装。
+        os.path.expanduser("~/Applications/Token Monitor.app/Contents/Info.plist"),
     ]
+
+
     for path in candidates:
         if not os.path.exists(path):
             continue
