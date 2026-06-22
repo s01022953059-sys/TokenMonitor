@@ -606,7 +606,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
         // 1. 下载, 显式 30s timeout, 走 URLSessionConfiguration 而不是默认全局
         // (默认 URLSession.shared timeoutIntervalForRequest=60s, 加上 connect 等等
-        //  卡 90s 都有可能。30s 用户能接受, 真卡了给个明确错误比沉默好。)
+        //  卡 90s 都有可能。30s 用户能接受, 真卡了给一个明确错误比沉默好。)
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
@@ -619,7 +619,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // progress 观察 (用 KVO observation 关联到 task 防止 ARC 释放)
         var lastReportedBytes: Int64 = 0
 
-        var request = URLRequest(url: update.downloadURL)
+        // 给 download URL 加一个 cache buster 随机数, 强制 URLSession 不
+        // 命中任何 path-based 缓存 (NSURLCache 也会按 path 匹配, 即使
+        // requestCachePolicy=reloadIgnoringLocalData 也可能命中 path 缓存)。
+        // query 不影响 gitcode 后端 (它忽略未识别的 query 参数)。
+        var downloadURL = update.downloadURL
+        if var comps = URLComponents(url: update.downloadURL, resolvingAgainstBaseURL: false) {
+            comps.queryItems = (comps.queryItems ?? []) + [
+                URLQueryItem(name: "_tm", value: "\(Int(Date().timeIntervalSince1970))")
+            ]
+            if let newURL = comps.url {
+                downloadURL = newURL
+            }
+        }
+        debugLog("download URL: \(downloadURL.absoluteString)")
+
+        var request = URLRequest(url: downloadURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
 
