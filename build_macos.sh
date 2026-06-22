@@ -70,7 +70,7 @@ RESOURCE_FILES=(
     "_singleton_check.py"
     "index.html"
     "chart.js"
-    "icon.png"
+    "icon.png"  # master 图标, 下面的 3.5 步骤会用它生成 AppIcon.icns
     # 自更新相关: update_helper.sh 必须随 .app 走, 否则主 app 退出后
     # 没有脚本能执行"替换 + 重启"。build_macos.sh 自身不放进 Resources
     # (那是给构建用的, 不需要给最终用户), 但 helper 必须放。
@@ -83,6 +83,32 @@ for f in "${RESOURCE_FILES[@]}"; do
     fi
     cp "$SOURCE_ROOT/$f" "$APP_BUNDLE/Contents/Resources/$f"
 done
+
+# 3.5 生成 .icns app 图标。
+# Info.plist 的 CFBundleIconFile=AppIcon 让 macOS 找 Contents/Resources/AppIcon.icns。
+# 我们仓里只有 icon.png (1024x1024 master), 用 Pillow 转一份 icns 出来。
+# Pillow 在 macOS 自带的 python3 通常有 (Pillow 走系统 libjpeg/libpng), 失败时
+# 给出明确错误而不是静默放一个没有图标的 app。
+if [[ -f "$SOURCE_ROOT/icon.png" ]]; then
+    if python3 -c "from PIL import Image" 2>/dev/null; then
+        python3 - "$SOURCE_ROOT/icon.png" "$APP_BUNDLE/Contents/Resources/AppIcon.icns" <<'PYEOF'
+import sys
+from PIL import Image
+src, dst = sys.argv[1], sys.argv[2]
+img = Image.open(src).convert("RGBA")
+img.save(dst, format="ICNS")
+PYEOF
+        if [[ -f "$APP_BUNDLE/Contents/Resources/AppIcon.icns" ]]; then
+            echo "[build_macos] [✔] 生成 AppIcon.icns"
+        else
+            echo "[build_macos] [!] AppIcon.icns 生成失败, 系统会用占位图标" >&2
+        fi
+    else
+        echo "[build_macos] [!] Pillow 未安装, 跳过 .icns 生成 (用 pip3 install Pillow 修复)" >&2
+    fi
+else
+    echo "[build_macos] [!] icon.png 缺失, 跳过图标生成" >&2
+fi
 
 # 4. 修正可执行权限
 chmod +x "$APP_BUNDLE/Contents/MacOS/TokenMonitor"
