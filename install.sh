@@ -7,7 +7,47 @@ set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="Token Monitor"
-INSTALL_PATH="/Applications/$APP_NAME.app"
+# 默认装到 /Applications/, 但如果用户没给 sudo, fallback 到 ~/Applications/
+# 这样 silent install 不需要密码。
+APP_INSTALL_PATH="/Applications/$APP_NAME.app"
+USER_INSTALL_PATH="$HOME/Applications/$APP_NAME.app"
+# 检测当前 effective user id 是否是 root (sudo 调用) 或能否 sudo -n true
+SUDO_OK=0
+if [[ "$(id -u)" == "0" ]]; then
+    SUDO_OK=1
+fi
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    SUDO_OK=1
+fi
+
+# 自动选择路径: 有 sudo 能力装 /Applications/, 否则装 ~/Applications/
+if [[ "$SUDO_OK" == "1" && ! -f "$SOURCE_ROOT/.install-user-only" ]]; then
+    INSTALL_PATH="$APP_INSTALL_PATH"
+    INSTALL_MODE="system"
+else
+    INSTALL_PATH="$USER_INSTALL_PATH"
+    INSTALL_MODE="user"
+fi
+
+# 允许用户用 --user 强制 user 模式
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user)
+            INSTALL_PATH="$USER_INSTALL_PATH"
+            INSTALL_MODE="user"
+            shift
+            ;;
+        --system)
+            INSTALL_PATH="$APP_INSTALL_PATH"
+            INSTALL_MODE="system"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
 BUILD_OUTPUT="$SOURCE_ROOT/build/$APP_NAME.app"
 
 cd "$SOURCE_ROOT"
@@ -75,18 +115,28 @@ osascript -e "quit app \"$APP_NAME\"" 2>/dev/null || true
 sleep 2
 echo "[install] [✔] 旧进程已清理"
 
-# ===== 步骤 4: 替换 .app (sudo) =====
+# ===== 步骤 4: 替换 .app (sudo 或直接复制) =====
 echo ""
-echo "[install] [4/5] 替换 $INSTALL_PATH (需要 sudo 密码)"
-echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if [[ ! -d "$INSTALL_PATH" ]]; then
-    echo "[install] [!] 第一次安装, $INSTALL_PATH 不存在, 跳过 rm"
+echo "[install] [4/5] 替换 $INSTALL_PATH"
+if [[ "$INSTALL_MODE" == "system" ]]; then
+    echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "[install] 系统安装 (/Applications/), 需要 sudo 密码"
+    if [[ ! -d "$INSTALL_PATH" ]]; then
+        echo "[install] [!] 第一次安装, $INSTALL_PATH 不存在, 跳过 rm"
+    fi
+    sudo rm -rf "$INSTALL_PATH"
+    sudo cp -R "$BUILD_OUTPUT" "$INSTALL_PATH"
+    sudo xattr -dr com.apple.quarantine "$INSTALL_PATH" 2>/dev/null || true
+    echo "[install] [✔] $INSTALL_PATH 已就位"
+else
+    echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "[install] 用户安装 (~/$APP_INSTALL_PATH), 无需 sudo (silent)"
+    mkdir -p "$(dirname "$INSTALL_PATH")"
+    rm -rf "$INSTALL_PATH"
+    cp -R "$BUILD_OUTPUT" "$INSTALL_PATH"
+    xattr -dr com.apple.quarantine "$INSTALL_PATH" 2>/dev/null || true
+    echo "[install] [✔] $INSTALL_PATH 已就位 (无密码)"
 fi
-sudo rm -rf "$INSTALL_PATH"
-sudo cp -R "$BUILD_OUTPUT" "$INSTALL_PATH"
-# 去 quarantine, 避免 Gatekeeper 拦截
-sudo xattr -dr com.apple.quarantine "$INSTALL_PATH" 2>/dev/null || true
-echo "[install] [✔] $INSTALL_PATH 已就位"
 
 # ===== 步骤 5: 启动 =====
 echo ""
@@ -99,5 +149,6 @@ echo ""
 echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "[install]   安装完成!"
 echo "[install]   版本: $INSTALLED_VERSION"
+echo "[install]   路径: $INSTALL_PATH ($INSTALL_MODE mode)"
 echo "[install]   大屏左上角应该显示 v$INSTALLED_VERSION"
 echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
