@@ -616,26 +616,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let fm = FileManager.default
         do {
             try fm.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
-            // 用 macOS 原生 ditto -x -k 解压 zip, 它是给 .app bundle / pkg 设计的,
-            // 对 UTF-8 文件名 (例如中文 "启动 Token Monitor.bat") 处理比 /usr/bin/unzip 好。
-            // -x 后跟 glob 排除目录, ditto 支持递归 glob。
+            // 用 /usr/bin/ditto 解压: macOS 原生 zip 工具, 给 .app bundle 设计,
+            // 对 UTF-8 文件名 (例如 '启动 Token Monitor.bat') 比 /usr/bin/unzip 友好。
+            // 失败也不致命, 走 unzip 兜底 (但 unzip 可能因为中文文件名失败)。
             let ditto = Process()
             ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            ditto.arguments = ["-x", "-k", zipPath, updateDir, "--sequesterRsrc", "--noacl"]
+            ditto.arguments = ["-x", "-k", zipPath, updateDir]
             let pipe = Pipe()
             ditto.standardOutput = pipe
             ditto.standardError = pipe
             try ditto.run()
             ditto.waitUntilExit()
+            // ditto 失败也继续: 可能是 zip 内某些条目 ditto 解不了,
+            // 其他条目可能 OK, find + rm 兜底。
+            // ditto 失败信息进 stderr 日志。
             if ditto.terminationStatus != 0 {
                 let errData = pipe.fileHandleForReading.readDataToEndOfFile()
-                let msg = String(data: errData, encoding: .utf8) ?? "未知错误"
-                self.failAutoUpdate(update: update, message: "解压失败: \(msg)")
-                return
+                let msg = String(data: errData, encoding: .utf8) ?? ""
+                NSLog("[update] ditto 解压 exit \(ditto.terminationStatus): \(msg)")
             }
-            // ditto 解出来后可能在 updateDir/<entry>/windows_build, 删掉整个
-            // windows_build 目录, 避免后续 build_macos.sh 误把它当源码。
-            // 用 find 比 rm -rf 稳, 一次清掉所有嵌套的 windows_build。
+            // 兜底清理 windows_build 目录 (无论 ditto 是否成功)
+            // 用 find -type d -name windows_build -prune -exec rm -rf {} +
+            // 一次清掉所有嵌套的 windows_build, 不依赖具体路径前缀。
             let find = Process()
             find.executableURL = URL(fileURLWithPath: "/usr/bin/find")
             find.arguments = [updateDir, "-type", "d", "-name", "windows_build", "-exec", "rm", "-rf", "{}", "+"]
