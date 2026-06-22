@@ -610,16 +610,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        // 不缓存任何响应, 避免下载到 gitcode 重定向到 myhuaweicloud
+        // 后的过期签名 URL (Expires 24h), 那会导致下载到 AccessDenied XML。
+        config.urlCache = nil
         let session = URLSession(configuration: config)
 
         // progress 观察 (用 KVO observation 关联到 task 防止 ARC 释放)
         var lastReportedBytes: Int64 = 0
 
-        let downloadTask = session.downloadTask(with: update.downloadURL) { [weak self] tempURL, response, error in
+        var request = URLRequest(url: update.downloadURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
+
+        let downloadTask = session.downloadTask(with: request) { [weak self] tempURL, response, error in
             guard let self = self else { return }
             if let error = error {
                 self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)\n\n请检查网络连接, 或点 NSAlert 的'下载 zip'手动下载。")
                 return
+            }
+            // 调试用: 检查 HTTP body 大小和 content-type
+            if let http = response as? HTTPURLResponse {
+                debugLog("download HTTP \(http.statusCode), content-length=\(http.expectedContentLength), url=\(http.url?.absoluteString ?? "?")")
             }
             guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
