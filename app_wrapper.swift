@@ -712,6 +712,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // (例如 v1.3.12 引入了 osascript sudo 弹窗, v1.3.10 的 helper 没有)。
         // 如果用旧 helper, 永远装不上新代码 (helper 自己不知道如何处理新需求)。
         // 兜底: 如果 stagedApp 里没找到 helper, 用当前 app 里的 (向后兼容)。
+        let fm = FileManager.default
         let bundlePath = Bundle.main.bundlePath
         let bundleId = Bundle.main.bundleIdentifier ?? "com.baggio.tokenmonitor"
         let stagedHelper = "\(stagedApp)/Contents/Resources/update_helper.sh"
