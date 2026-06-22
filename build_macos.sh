@@ -75,6 +75,7 @@ RESOURCE_FILES=(
     # 没有脚本能执行"替换 + 重启"。build_macos.sh 自身不放进 Resources
     # (那是给构建用的, 不需要给最终用户), 但 helper 必须放。
     "update_helper.sh"
+    "extract_zip.py"  # 自更新流程用的 Python 解压器 (避开 macOS unzip 的中文文件名 bug)
 )
 for f in "${RESOURCE_FILES[@]}"; do
     if [[ ! -f "$SOURCE_ROOT/$f" ]]; then
