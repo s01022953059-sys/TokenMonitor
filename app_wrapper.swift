@@ -143,7 +143,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let htmlFile = resourceDir.appendingPathComponent("index.html")
         webView.loadFileURL(htmlFile, allowingReadAccessTo: resourceDir)
 
-        checkForUpdates(silent: true)
+        // 延迟 1.5 秒再调 checkForUpdates, 给 webView 留时间把 index.html
+        // 的 DOMContentLoaded 跑完 (那时 JS 端 __tokenMonitorOnUpdateAvailable
+        // 已经注册, Swift 推过去能收到)。之前立即调会竞态: 异步
+        // checkForUpdates 拉到 release 后 evaluateJavaScript, 但 JS 还没注册
+        // callback, push 丢失, About 弹窗"立即更新"按钮不显示。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.checkForUpdates(silent: true)
+        }
     }
 
     func startLocalServer() {
