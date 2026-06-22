@@ -653,6 +653,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)\n\n可能是 release 源 502/504, 稍后再试。")
                 return
             }
+            // gitcode CDN 在某些节点会返回 download-error 占位页 (3606 字节 HTML),
+            // 而不是真 zip (470+ KB)。检测到小文件就 retry 一次, 多数情况
+            // 第二次能拿到真 zip (CDN 节点可能抖动)。
+            if let attr = try? FileManager.default.attributesOfItem(atPath: tempURL.path),
+               let size = attr[.size] as? Int64, size < 10_000 {
+                debugLog("download too small (\(size) bytes), retrying once")
+                // 删除占位文件, 重试
+                try? FileManager.default.removeItem(atPath: tempURL.path)
+                self.retryDownload(update: update, attempt: 1, lastError: "CDN 返回占位 (\(size) bytes)")
+                return
+            }
             do {
                 try fm.moveItem(at: tempURL, to: URL(fileURLWithPath: zipPath))
             } catch {
@@ -677,6 +688,86 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // 持有 observation, 防止 ARC 释放
         objc_setAssociatedObject(downloadTask, &AppDelegate.downloadObservationKey, observation, .OBJC_ASSOCIATION_RETAIN)
         downloadTask.resume()
+    }
+
+    // 重试下载: 给下载 URL 加一个新的 cache buster 重新下载, 最多 2 次。
+    // gitcode CDN 节点会返回 download-error 占位 (3.6 KB), retry 一次通常
+    // 能命中另一个 CDN 节点拿真 zip。
+    private func retryDownload(update: UpdateInfo, attempt: Int, lastError: String) {
+        if attempt > 1 {
+            // 2 次都失败, 报失败
+            self.failAutoUpdate(update: update, message: "下载失败: \(lastError)\n\nCDN 节点异常, 稍后再试或手动下载。")
+            return
+        }
+        // 用新的 cache buster 重试
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        config.urlCache = nil
+        let session = URLSession(configuration: config)
+
+        var downloadURL = update.downloadURL
+        if var comps = URLComponents(url: update.downloadURL, resolvingAgainstBaseURL: false) {
+            comps.queryItems = (comps.queryItems ?? []) + [
+                URLQueryItem(name: "_tm", value: "\(Int(Date().timeIntervalSince1970))_retry\(attempt)")
+            ]
+            if let newURL = comps.url {
+                downloadURL = newURL
+            }
+        }
+        debugLog("retry \(attempt) URL: \(downloadURL.absoluteString)")
+
+        var request = URLRequest(url: downloadURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
+
+        var lastReportedBytes: Int64 = 0
+        let task = session.downloadTask(with: request) { [weak self] tempURL, response, error in
+            guard let self = self else { return }
+            if let error = nil as Error? {
+                // placeholder, real check below
+            }
+            if let http = response as? HTTPURLResponse {
+                debugLog("retry \(attempt) HTTP \(http.statusCode), content-length=\(http.expectedContentLength)")
+            }
+            if let error = error {
+                self.failAutoUpdate(update: update, message: "下载失败 (重试): \(error.localizedDescription)")
+                return
+            }
+            guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+                self.retryDownload(update: update, attempt: attempt + 1, lastError: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+                return
+            }
+            if let attr = try? FileManager.default.attributesOfItem(atPath: tempURL.path),
+               let size = attr[.size] as? Int64, size < 10_000 {
+                try? FileManager.default.removeItem(atPath: tempURL.path)
+                debugLog("retry \(attempt) too small (\(size) bytes), retrying")
+                self.retryDownload(update: update, attempt: attempt + 1, lastError: "CDN 占位 (\(size) bytes)")
+                return
+            }
+            let zipPath = "/tmp/TokenMonitor/update-\(update.version).zip"
+            do {
+                try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: zipPath))
+            } catch {
+                self.failAutoUpdate(update: update, message: "暂存下载文件失败 (重试): \(error.localizedDescription)")
+                return
+            }
+            self.continueAutoUpdateAfterDownload(update: update, zipPath: zipPath, updateDir: "/tmp/TokenMonitor/update-\(update.version)")
+        }
+        let observation = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+            guard let self = self else { return }
+            let received = progress.completedUnitCount
+            if received - lastReportedBytes > 64 * 1024 || progress.fractionCompleted >= 1.0 {
+                lastReportedBytes = received
+                let total = progress.totalUnitCount
+                let pct = total > 0 ? Int(progress.fractionCompleted * 100) : 0
+                let totalKB = total / 1024
+                let receivedKB = received / 1024
+                self.updateProgress(stage: "下载更新包 (重试 \(attempt), \(pct)%, \(receivedKB)KB / \(totalKB)KB)")
+            }
+        }
+        objc_setAssociatedObject(task, &AppDelegate.downloadObservationKey, observation, .OBJC_ASSOCIATION_RETAIN)
+        task.resume()
     }
 
     private func continueAutoUpdateAfterDownload(update: UpdateInfo, zipPath: String, updateDir: String) {
