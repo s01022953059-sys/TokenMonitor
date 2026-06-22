@@ -63,6 +63,8 @@ swiftc \
 cp "$SOURCE_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 
 # 3. 拷贝 Resources (脚本 + 前端资源)
+# 注意: Resources/ 里的文件**不**多不少, 多了是冗余 (占 .app 体积), 少了
+# 运行时找不到。原则: 启动 + 运行 + 自更新必需的, 放进来。
 RESOURCE_FILES=(
     "scanner.py"
     "server.py"
@@ -70,12 +72,10 @@ RESOURCE_FILES=(
     "_singleton_check.py"
     "index.html"
     "chart.js"
-    "icon.png"  # master 图标, 下面的 3.5 步骤会用它生成 AppIcon.icns
-    # 自更新相关: update_helper.sh 必须随 .app 走, 否则主 app 退出后
-    # 没有脚本能执行"替换 + 重启"。build_macos.sh 自身不放进 Resources
-    # (那是给构建用的, 不需要给最终用户), 但 helper 必须放。
-    "update_helper.sh"
-    "extract_zip.py"  # 自更新流程用的 Python 解压器 (避开 macOS unzip 的中文文件名 bug)
+    "update_helper.sh"  # 自更新 helper, 主 app 退出后接管替换 + 重启
+    # 注意: extract_zip.py 和 icon.png **不**放这里。extract_zip.py 不用
+    # (走 ditto 不用 Python); icon.png 是 master 图标, build 完生成
+    # AppIcon.icns, 源文件不打包进 .app。
 )
 for f in "${RESOURCE_FILES[@]}"; do
     if [[ ! -f "$SOURCE_ROOT/$f" ]]; then
