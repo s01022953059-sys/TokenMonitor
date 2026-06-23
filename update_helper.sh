@@ -89,11 +89,19 @@ SCPT_EOF
     echo "[update_helper] ✔ 系统目录替换完成"
 fi
 
-# 重启 app。优先用 open -b 按 bundle id 启动, 失败 fallback 到 open -a 路径。
-echo "[update_helper] 重启 app"
+# 重启 app。先 kill 老进程 (bundle id), 再 open 拉新的。
+# 之前直接 open -b, 老进程还活着时 open 看到"已在跑"就不拉新,
+# 导致新 .app 没真启动, 大屏还显示老版本号。
+echo "[update_helper] 重启 app (先 kill 老进程)"
 if [ -n "$RELAUNCH_BUNDLE_ID" ]; then
+    # kill 老进程 (bundle id), 给 1 秒退出
+    pkill -f "$RELAUNCH_BUNDLE_ID" 2>/dev/null || true
+    sleep 1
+    # 再用 open -b 拉 (这时老进程已退, open 会启动新 .app)
     open -b "$RELAUNCH_BUNDLE_ID" || open -a "$TARGET_APP" || true
 else
+    pkill -f "Token Monitor" 2>/dev/null || true
+    sleep 1
     open -a "$TARGET_APP" || true
 fi
 
