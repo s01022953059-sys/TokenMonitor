@@ -56,6 +56,9 @@ def _read_app_version() -> str:
             continue
     return "0.0-dev"
 
+# 启动时读一次, 之后每次请求重读 (自更新装新 .app 后, 旧 server.py 进程
+# 仍跑, 不重启 — 每次请求重读 Info.plist 保证返回当前 .app 的版本号,
+# 不让 About 弹窗显示过期版本)。
 APP_VERSION = _read_app_version()
 USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/TokenMonitor)"
 
@@ -193,7 +196,7 @@ def _check_update_remote():
     """请求更新源,返回结构化结果。永远不会抛异常,失败信息封装在返回值里。"""
     result = {
         "ok": False,
-        "current_version": APP_VERSION,
+        "current_version": _read_app_version(),
         "latest_version": None,
         "update_available": False,
         "feed_url": UPDATE_FEED_URL,
@@ -254,7 +257,7 @@ def _check_update_remote():
     result["latest_version"] = info["version"]
     result["title"] = info["title"]
     result["download_url"] = info["download_url"] or None
-    result["update_available"] = _compare_versions(info["version"], APP_VERSION) > 0
+    result["update_available"] = _compare_versions(info["version"], _read_app_version()) > 0
     result["ok"] = True
     return result
 
@@ -300,7 +303,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/app-info":
             self._write_json(200, {
                 "name": "Token Monitor",
-                "version": APP_VERSION,
+                "version": _read_app_version(),
                 "update_feed_url": UPDATE_FEED_URL,
                 "update_enabled": bool(UPDATE_FEED_URL),
             })
