@@ -516,11 +516,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let notesSummary = summarizedReleaseNotes(update.notes)
         let noteText = notesSummary.isEmpty ? "" : "\n\n更新说明：\n\(notesSummary)"
         alert.informativeText = "当前版本：\(currentVersion)\n最新版本：\(update.version)\(noteText)"
-        // 按钮重排: "立即更新" 走自更新, "下载 zip" 走浏览器, "查看说明" 也走浏览器, "稍后" 关闭。
-        // 这样无论用户偏好"全自动"还是"手动下载源码"都能满足。
+        // 极简 NSAlert: 只留 立即更新 + 稍后 两个按钮。
+        // 下载 zip / 查看说明 移除 (用户要求), 想要手动装的走 About 弹窗里紫色按钮。
         alert.addButton(withTitle: "立即更新")
-        alert.addButton(withTitle: "下载 zip")
-        alert.addButton(withTitle: "查看说明")
         alert.addButton(withTitle: "稍后")
         if let closeButton = alert.buttons.last {
             closeButton.keyEquivalent = "\u{1b}"
@@ -529,14 +527,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         case .alertFirstButtonReturn:
             debugLog("NSAlert first button (立即更新) clicked")
             performAutoUpdate(update: update)
-        case .alertSecondButtonReturn:
-            debugLog("NSAlert second button (下载 zip) clicked")
-            NSWorkspace.shared.open(update.downloadURL)
-        case .alertThirdButtonReturn:
-            debugLog("NSAlert third button (查看说明) clicked")
-            NSWorkspace.shared.open(update.downloadURL)
         default:
-            debugLog("NSAlert closed without clicking button")
+            // 稍后 / ESC / 关闭按钮: 不动作
+            debugLog("NSAlert 稍后/关闭, 不更新")
             break
         }
     }
