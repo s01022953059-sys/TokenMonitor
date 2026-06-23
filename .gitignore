@@ -7,9 +7,11 @@ __pycache__/
 
 # Build and release artifacts
 *.app/
-*.dmg
 *.exe
 *.zip
+# dmg: 忽略根目录和 build/ 下的, 但保留 dist/ 下的 (发布的 dmg)
+/*.dmg
+build/*.dmg
 
 # Logs and temporary files
 *.log
