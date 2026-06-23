@@ -267,26 +267,27 @@
             width: 140px;
             height: 140px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 70%, transparent 100%);
-            border: 1px solid rgba(59,130,246,0.2);
+            background: radial-gradient(circle, rgba(59,130,246,0.45) 0%, rgba(59,130,246,0.15) 70%, transparent 100%);
+            border: 1.5px solid rgba(59,130,246,0.6);
             transition: background 0.6s ease, border-color 0.6s ease;
         }
         /* 级别 class 挂在 .donut-center 上, 改背景 + 边框颜色 */
+        /* 透明度加深: 0.45/0.15 (之前 0.15/0.05 太淡看不清) */
         .donut-center.low {
-            background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 70%, transparent 100%);
-            border-color: rgba(59,130,246,0.2);
+            background: radial-gradient(circle, rgba(59,130,246,0.45) 0%, rgba(59,130,246,0.15) 70%, transparent 100%);
+            border-color: rgba(59,130,246,0.6);
         }
         .donut-center.medium {
-            background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.05) 70%, transparent 100%);
-            border-color: rgba(16,185,129,0.25);
+            background: radial-gradient(circle, rgba(16,185,129,0.45) 0%, rgba(16,185,129,0.15) 70%, transparent 100%);
+            border-color: rgba(16,185,129,0.65);
         }
         .donut-center.high {
-            background: radial-gradient(circle, rgba(234,179,8,0.18) 0%, rgba(234,179,8,0.06) 70%, transparent 100%);
-            border-color: rgba(234,179,8,0.3);
+            background: radial-gradient(circle, rgba(234,179,8,0.5) 0%, rgba(234,179,8,0.18) 70%, transparent 100%);
+            border-color: rgba(234,179,8,0.7);
         }
         .donut-center.extreme {
-            background: radial-gradient(circle, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.07) 70%, transparent 100%);
-            border-color: rgba(239,68,68,0.35);
+            background: radial-gradient(circle, rgba(239,68,68,0.55) 0%, rgba(239,68,68,0.2) 70%, transparent 100%);
+            border-color: rgba(239,68,68,0.75);
         }
 
         .donut-center .total-label {
@@ -1063,8 +1064,8 @@
         };
 
         // 定义模型的指定颜色映射
-        // 高对比度: qwen3.6-plus / qwen3.7-plus / qwen3.7-max 用差别大的颜色 (橙/青/红),
-        // 不再让相邻 model 用近似色, 避免大屏上分不清。
+        // 高对比度: 每个常用 model 用差别大的颜色, 避免大屏上分不清。
+        // GLM-5.2 / MiniMax-M3 之前没映射走 other 灰色, 现在补上。
         const modelColors = {
             'deepseek-v4-flash': '#06b6d4',          // 青
             'gemini 3.5 flash': '#a855f7',           // 紫
@@ -1073,12 +1074,14 @@
             'gpt-5.4': '#f59e0b',                    // 橙
             'gpt-5.4-mini': '#fbbf24',               // 黄
             'glm-5.1': '#ef4444',                    // 红
+            'glm-5.2': '#d946ef',                    // 品红 (跟 glm-5.1 红 区分)
             'kimi-for-coding': '#ec4899',             // 粉
             'qwen3.6-plus': '#f97316',                // 橙 (跟 gpt-5.4 区分)
             'qwen3.6-plus-vl': '#84cc16',             // 草绿
             'qwen3.7-plus': '#14b8a6',                // 青绿
             'qwen3.7-max': '#dc2626',                 // 暗红
             'deepseek-v4-flash-free': '#0ea5e9',      // 蓝青
+            'minimax-m3': '#22d3ee',                  // 亮青 (跟 deepseek-v4-flash 青 区分, 更亮)
             'other': '#6b7280'
         };
 
