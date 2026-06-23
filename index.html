@@ -253,6 +253,7 @@
         }
 
         /* 位于 Donut 心脏的今日总消耗字样 */
+        /* 内圈背景按总量级别变色: 冷→暖 (蓝→绿→黄→红) */
         .donut-center {
             position: relative;
             z-index: 10;
@@ -262,6 +263,30 @@
             justify-content: center;
             align-items: center;
             pointer-events: none;
+            /* 内圈圆形背景, 半透明, 按级别变色 */
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 70%, transparent 100%);
+            border: 1px solid rgba(59,130,246,0.2);
+            transition: background 0.6s ease, border-color 0.6s ease;
+        }
+        /* 级别 class 挂在 .donut-center 上, 改背景 + 边框颜色 */
+        .donut-center.low {
+            background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 70%, transparent 100%);
+            border-color: rgba(59,130,246,0.2);
+        }
+        .donut-center.medium {
+            background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.05) 70%, transparent 100%);
+            border-color: rgba(16,185,129,0.25);
+        }
+        .donut-center.high {
+            background: radial-gradient(circle, rgba(234,179,8,0.18) 0%, rgba(234,179,8,0.06) 70%, transparent 100%);
+            border-color: rgba(234,179,8,0.3);
+        }
+        .donut-center.extreme {
+            background: radial-gradient(circle, rgba(239,68,68,0.2) 0%, rgba(239,68,68,0.07) 70%, transparent 100%);
+            border-color: rgba(239,68,68,0.35);
         }
 
         .donut-center .total-label {
@@ -281,34 +306,6 @@
             letter-spacing: -1px;
             text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
         }
-
-        /* 总量级别灯: 圆点 + 文字标签, 颜色按用量级别 */
-        .total-level {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            margin-top: 6px;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid currentColor;
-        }
-        .total-level .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: currentColor;
-            box-shadow: 0 0 8px currentColor;
-            animation: pulse-dot 1.8s infinite ease-in-out;
-        }
-        .total-level.low { color: #3b82f6; }       // 蓝 (正常, 冷)
-        .total-level.medium { color: #10b981; }    // 绿 (注意, 冷偏冷)
-        .total-level.high { color: #eab308; }       // 黄 (高负载, 暖)
-        .total-level.extreme { color: #ef4444; }    // 红 (异常, 暖)
 
         /* 工具占比卡片分布 */
         .legend-section {
@@ -655,13 +652,9 @@
                     <div class="chart-wrapper">
                         <canvas id="toolChart"></canvas>
                     </div>
-                    <div class="donut-center">
+                    <div class="donut-center low" id="toolDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="toolTotTokens">0</span>
-                        <span class="total-level low" id="toolLevel">
-                            <span class="dot"></span>
-                            <span class="level-text">正常</span>
-                        </span>
                     </div>
                 </div>
                 <div class="legend-section" id="toolLegendContainer">
@@ -676,13 +669,9 @@
                     <div class="chart-wrapper">
                         <canvas id="modelChart"></canvas>
                     </div>
-                    <div class="donut-center">
+                    <div class="donut-center low" id="modelDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="modelTotTokens">0</span>
-                        <span class="total-level low" id="modelLevel">
-                            <span class="dot"></span>
-                            <span class="level-text">正常</span>
-                        </span>
                     </div>
                 </div>
                 <div class="legend-section" id="modelLegendContainer">
@@ -1035,28 +1024,28 @@
         //   20-100M 黄 "注意" (你要求 2000 万以上亮黄灯, 我合并到 20M-100M 这段)
         //   100-300M 绿 "高负载" (你要求 1 亿以上亮绿灯)
         //   > 300M 红 "异常" (你要求 3 亿以上亮其他颜色, 我用红)
+        // 总量级别映射: 给 donut-center 加 level class, 内圈背景按冷→暖变色
+        // 冷→暖: 蓝(low) → 绿(medium) → 黄(high) → 红(extreme)
+        // 阈值:
+        //   < 20M    low     蓝
+        //   20-100M  medium  绿
+        //   100-300M high    黄
+        //   > 300M   extreme 红
         function updateTotalLevel(elementId, totalTokens) {
             const el = document.getElementById(elementId);
             if (!el) return;
-            const text = el.querySelector('.level-text');
-            let level, text_;
+            let level;
             if (totalTokens < 20_000_000) {
                 level = 'low';
-                text_ = '正常';
             } else if (totalTokens < 100_000_000) {
                 level = 'medium';
-                text_ = '注意';
             } else if (totalTokens < 300_000_000) {
                 level = 'high';
-                text_ = '高负载';
             } else {
                 level = 'extreme';
-                text_ = '异常';
             }
-            // 切换 class
             el.classList.remove('low', 'medium', 'high', 'extreme');
             el.classList.add(level);
-            if (text) text.innerText = text_;
         }
 
         // 定义工具的指定颜色映射
@@ -1185,8 +1174,8 @@
                 //   20-100M 黄 "注意"      (重度使用)
                 //   100-300M 绿 "高负载"   (重度, 应观察)
                 //   > 300M  红 "异常"      (异常, 几乎不可能)
-                updateTotalLevel('toolLevel', data.summary.total_tokens);
-                updateTotalLevel('modelLevel', data.summary.total_tokens);
+                updateTotalLevel('toolDonutCenter', data.summary.total_tokens);
+                updateTotalLevel('modelDonutCenter', data.summary.total_tokens);
 
 
 
