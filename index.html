@@ -282,6 +282,34 @@
             text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
         }
 
+        /* 总量级别灯: 圆点 + 文字标签, 颜色按用量级别 */
+        .total-level {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 6px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid currentColor;
+        }
+        .total-level .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+            animation: pulse-dot 1.8s infinite ease-in-out;
+        }
+        .total-level.low { color: #6b7280; }
+        .total-level.medium { color: #eab308; }
+        .total-level.high { color: #10b981; }
+        .total-level.extreme { color: #ef4444; }
+
         /* 工具占比卡片分布 */
         .legend-section {
             width: 100%;
@@ -630,6 +658,10 @@
                     <div class="donut-center">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="toolTotTokens">0</span>
+                        <span class="total-level low" id="toolLevel">
+                            <span class="dot"></span>
+                            <span class="level-text">正常</span>
+                        </span>
                     </div>
                 </div>
                 <div class="legend-section" id="toolLegendContainer">
@@ -647,6 +679,10 @@
                     <div class="donut-center">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="modelTotTokens">0</span>
+                        <span class="total-level low" id="modelLevel">
+                            <span class="dot"></span>
+                            <span class="level-text">正常</span>
+                        </span>
                     </div>
                 </div>
                 <div class="legend-section" id="modelLegendContainer">
@@ -993,34 +1029,67 @@
             return num.toString();
         }
 
+        // 总量级别灯映射
+        // 用户要求:
+        //   < 20M  灰 "正常"
+        //   20-100M 黄 "注意" (你要求 2000 万以上亮黄灯, 我合并到 20M-100M 这段)
+        //   100-300M 绿 "高负载" (你要求 1 亿以上亮绿灯)
+        //   > 300M 红 "异常" (你要求 3 亿以上亮其他颜色, 我用红)
+        function updateTotalLevel(elementId, totalTokens) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            const text = el.querySelector('.level-text');
+            let level, text_;
+            if (totalTokens < 20_000_000) {
+                level = 'low';
+                text_ = '正常';
+            } else if (totalTokens < 100_000_000) {
+                level = 'medium';
+                text_ = '注意';
+            } else if (totalTokens < 300_000_000) {
+                level = 'high';
+                text_ = '高负载';
+            } else {
+                level = 'extreme';
+                text_ = '异常';
+            }
+            // 切换 class
+            el.classList.remove('low', 'medium', 'high', 'extreme');
+            el.classList.add(level);
+            if (text) text.innerText = text_;
+        }
+
         // 定义工具的指定颜色映射
+        // 用 Tailwind 全套对比性强的颜色, 避免相邻颜色混淆 (例如深紫 + 浅紫)。
         const toolColors = {
-            'codex': '#3b82f6',
-            'codex-native': '#f59e0b',
-            'antigravity': '#a855f7',
-            'hermes': '#10b981',
-            'hermes-native': '#06d6a0',
-            'claudecode': '#ec4899',
-            'cursor': '#6366f1',
-            'cline': '#0ea5e9',
+            'codex': '#3b82f6',           // 蓝
+            'codex-native': '#f59e0b',    // 橙
+            'antigravity': '#a855f7',     // 紫
+            'hermes': '#10b981',          // 绿
+            'hermes-native': '#06d6a0',   // 青绿
+            'claudecode': '#ec4899',      // 粉
+            'cursor': '#6366f1',          // 靛
+            'cline': '#eab308',           // 黄
             'other': '#6b7280'
         };
 
         // 定义模型的指定颜色映射
+        // 高对比度: qwen3.6-plus / qwen3.7-plus / qwen3.7-max 用差别大的颜色 (橙/青/红),
+        // 不再让相邻 model 用近似色, 避免大屏上分不清。
         const modelColors = {
-            'deepseek-v4-flash': '#0ea5e9',
-            'gemini 3.5 flash': '#a855f7',
-            'deepseek-v4-pro': '#2563eb',
-            'gpt-5.5': '#10b981',
-            'gpt-5.4': '#f59e0b',
-            'gpt-5.4-mini': '#fb923c',
-            'glm-5.1': '#ef4444',
-            'kimi-for-coding': '#ec4899',
-            'qwen3.6-plus': '#8b5cf6',
-            'qwen3.6-plus-vl': '#c084fc',
-            'qwen3.7-plus': '#6366f1',
-            'qwen3.7-max': '#4f46e5',
-            'deepseek-v4-flash-free': '#14b8a6',
+            'deepseek-v4-flash': '#06b6d4',          // 青
+            'gemini 3.5 flash': '#a855f7',           // 紫
+            'deepseek-v4-pro': '#3b82f6',            // 蓝
+            'gpt-5.5': '#10b981',                    // 绿
+            'gpt-5.4': '#f59e0b',                    // 橙
+            'gpt-5.4-mini': '#fbbf24',               // 黄
+            'glm-5.1': '#ef4444',                    // 红
+            'kimi-for-coding': '#ec4899',             // 粉
+            'qwen3.6-plus': '#f97316',                // 橙 (跟 gpt-5.4 区分)
+            'qwen3.6-plus-vl': '#84cc16',             // 草绿
+            'qwen3.7-plus': '#14b8a6',                // 青绿
+            'qwen3.7-max': '#dc2626',                 // 暗红
+            'deepseek-v4-flash-free': '#0ea5e9',      // 蓝青
             'other': '#6b7280'
         };
 
@@ -1109,6 +1178,15 @@
                 document.getElementById('modelTotTokens').innerText = formattedTotal;
                 document.getElementById('hdrDate').innerText = data.summary.date;
                 document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
+
+                // 2. 更新总量级别灯
+                // 用原始 total_tokens 数值 (非 formatted) 映射颜色:
+                //   < 20M   灰 "正常"      (日常用量)
+                //   20-100M 黄 "注意"      (重度使用)
+                //   100-300M 绿 "高负载"   (重度, 应观察)
+                //   > 300M  红 "异常"      (异常, 几乎不可能)
+                updateTotalLevel('toolLevel', data.summary.total_tokens);
+                updateTotalLevel('modelLevel', data.summary.total_tokens);
 
 
 
