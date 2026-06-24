@@ -1526,8 +1526,31 @@
                     const current = data.current_version || '?';
                     if (data.update_available) {
                         stateEl.innerText = `有新版本 v${latest} (当前 v${current})`;
+                        // 显示更新按钮
+                        var ub = document.getElementById('aboutUpdateBtn');
+                        var db = document.getElementById('aboutDownloadBtn');
+                        if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + latest; }
+                        if (db) db.style.display = '';
+                        // 徽章加红点
+                        var badge = document.getElementById('appVersionBadge');
+                        if (badge && !badge.querySelector('.version-dot')) {
+                            badge.insertAdjacentHTML('beforeend', '<span class="version-dot" title="有新版本可用"></span>');
+                            badge.style.opacity = '1';
+                        }
                     } else {
                         stateEl.innerText = `已是最新版本 (v${current})`;
+                        // 隐藏按钮
+                        var ub2 = document.getElementById('aboutUpdateBtn');
+                        var db2 = document.getElementById('aboutDownloadBtn');
+                        if (ub2) { ub2.style.display = 'none'; ub2.disabled = false; }
+                        if (db2) db2.style.display = 'none';
+                        // 移除徽章红点
+                        var badge2 = document.getElementById('appVersionBadge');
+                        if (badge2) {
+                            var dot = badge2.querySelector('.version-dot');
+                            if (dot) dot.remove();
+                            badge2.style.opacity = '0.7';
+                        }
                     }
                     stateEl.classList.add('update-state');
                 } else {
