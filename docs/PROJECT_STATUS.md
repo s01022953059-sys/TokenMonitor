@@ -49,12 +49,12 @@ Token Monitor 是 macOS 本地仪表盘, 跨 Swift (UI 壳) + Python (scanner/se
 - `build_macos.sh`: swiftc 编译 + 拼装 .app/Contents 结构 + Pillow 转 AppIcon.icns + codesign ad-hoc
 - `build_dmg.sh`: hdiutil 打 dmg (UDZO + HFS+, 含 .app + /Applications symlink, 双击拖装)
 - `install.sh`: 一站式安装脚本, 自动选 system/user 模式 (`--user` flag 强制 `~/Applications/`)
-- `release_dmg.sh`: 一键 build + commit dmg 到 `dist/` (commit `ed02512`, **不在 v1.3.44 release zip 里**)
+- `release_dmg.sh`: 一键 build + 通过 GitCode Release API 上传 DMG 附件 (commit `5c89ea9`)
 - 代码层去冗余: 删 `extract_zip.py`, `icon.png` 不再进 Resources (节省 ~160 KB)
 
 ## git 状态
 
-- **main**: `ed02512` (含 release_dmg.sh)
+- **main**: `5c89ea9` (release_dmg.sh 改用 API 上传)
 - **latest release tag**: v1.3.44 (`b21567b`)
 - **release tag 列表**: v1.1, v1.2, v1.3, v1.3.1 ~ v1.3.44 (共 44+ 个)
 - **空 release commit** (仅 bump 版本号, 验证自更新用): v1.3.7, v1.3.8, v1.3.9, v1.3.18, v1.3.20, v1.3.22, v1.3.26, v1.3.29, v1.3.30 等 — **不删**, 是 git history 一部分
@@ -69,13 +69,11 @@ Token Monitor 是 macOS 本地仪表盘, 跨 Swift (UI 壳) + Python (scanner/se
 
 ## 未完成 / 待决定
 
-### dmg 发布的困境 (当前卡点)
-- **gitcode API 不支持上传 release asset**: `POST /releases/<tag>/attach_files` 和 `/assets` 都返回 404
-- gitcode release 只能靠 source archive (自动生成 zip/tar.gz/tar.bz2/tar)
-- dmg 是二进制 build 产物, 不在 source 里
-- **当前方案**: `release_dmg.sh` 把 dmg commit 到 `dist/` 目录, raw URL 下载 (`https://raw.gitcode.com/baggiopeng/TokenMonitor/main/dist/Token Monitor-<ver>.dmg`)
-- **问题**: `release_dmg.sh` 在 v1.3.44 之后才 push (commit `ed02512`), v1.3.44 source zip **不含** `release_dmg.sh`, 用户拉 v1.3.44 zip 跑 `release_dmg.sh` 报 "No such file"
-- **用户决定**: 找其他办法上传 dmg (待定)
+### dmg 发布 (已解决)
+- **GitCode API 支持上传 Release 附件**: 两步流程 — 先 `GET /releases/:tag/upload_url?file_name=xxx` 拿预签名 PUT 地址, 再 `PUT` DMG 到该地址
+- `release_dmg.sh` (commit `5c89ea9`) 自动完成编译 + 打 DMG + API 上传, 凭据从 `git credential` 读取
+- v1.3.44 的 DMG 已上传, 下载地址: `https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.44/Token Monitor.dmg`
+- 自动更新链路: `server.py` 的 `/api/check-update` 从 Release `assets` 数组里挑 `.dmg` 附件的 `browser_download_url`, Swift 端 `parseUpdateInfo` 同样从 `assets` 取下载地址
 
 ### 其他待办
 - UI 文案简化 (用户提过 "下载更新包" → "下载中" 等, **没**改)
@@ -103,5 +101,5 @@ Token Monitor 是 macOS 本地仪表盘, 跨 Swift (UI 壳) + Python (scanner/se
 | `build_macos.sh` | 编译 .app (swiftc + Pillow icns + codesign) |
 | `build_dmg.sh` | 打 dmg (hdiutil) |
 | `install.sh` | 一站式安装 (system/user 模式) |
-| `release_dmg.sh` | 一键 build + commit dmg 到 dist/ |
+| `release_dmg.sh` | 一键 build + GitCode API 上传 DMG 到 Release 附件 |
 | `Info.plist` | 版本号 + 端口 + 更新源 URL |
