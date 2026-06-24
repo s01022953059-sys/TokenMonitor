@@ -70,6 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // 启动状态栏 Token 实时刷新定时器 (每 5 秒一次)
         startTokenUpdateTimer()
         
+        // 启动定时更新检查 (每 30 分钟静默检查一次新版本)
+        startUpdateCheckTimer()
+        
         let screenRect = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 960, height: 600)
         let windowWidth: CGFloat = 1000
         let windowHeight: CGFloat = 720
@@ -205,6 +208,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     func startTokenUpdateTimer() {
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.updateStatusBarToken()
+        }
+    }
+    
+    // 定时静默检查更新: 每 30 分钟一次。发现新版本后通过
+    // notifyFrontendUpdateAvailable 推送红点徽章到首页, 不弹 NSAlert
+    // 避免打扰用户。启动时已有 1.5 秒延迟检查, 这里补一个 10 秒
+    // 后的二次检查防止启动时网络未就绪漏检。
+    func startUpdateCheckTimer() {
+        // 10 秒后补检一次 (启动时网络可能还没完全就绪)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            self?.checkForUpdates(silent: true)
+        }
+        // 之后每 30 分钟静默检查
+        Timer.scheduledTimer(withTimeInterval: 1800.0, repeats: true) { [weak self] _ in
+            self?.checkForUpdates(silent: true)
         }
     }
     
