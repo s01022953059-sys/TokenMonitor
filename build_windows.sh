@@ -23,7 +23,7 @@ cd go_build
 # 写入版本文件 (打包后 EXE 会读同目录 version.txt)
 echo "$APP_VERSION" > version.txt
 
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "TokenMonitor.exe" .
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H windowsgui" -o "TokenMonitor.exe" .
 
 if [[ ! -f "TokenMonitor.exe" ]]; then
     echo "[build_windows] ✘ EXE 没生成" >&2

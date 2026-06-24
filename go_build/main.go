@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -27,7 +28,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.45"
+var appVersion = "1.3.46"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1014,6 +1015,18 @@ func acquireSingletonLock() bool {
 
 // ───── HTTP 服务器 ─────
 
+// openBrowser 跨平台打开默认浏览器
+func openBrowser(url string) {
+	switch runtime.GOOS {
+	case "windows":
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		exec.Command("open", url).Start()
+	default:
+		exec.Command("xdg-open", url).Start()
+	}
+}
+
 func setCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
@@ -1124,6 +1137,13 @@ func main() {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	fmt.Printf("[+] Token Monitor 仪表盘已启动: http://%s\n", addr)
 	fmt.Printf("[+] 更新源: %s\n", feedURL)
+
+	// 延迟 1 秒后自动打开浏览器 (Windows GUI 模式下用户看不到控制台, 需要自动弹浏览器)
+	go func() {
+		time.Sleep(1 * time.Second)
+		url := fmt.Sprintf("http://127.0.0.1:%d", port)
+		openBrowser(url)
+	}()
 
 	server := &http.Server{Addr: addr}
 	if err := server.ListenAndServe(); err != nil {
