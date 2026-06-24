@@ -29,6 +29,10 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
 var appVersion = "1.3.44"
 
+// feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
+// 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
+var feedURL = updateFeedURL
+
 // ───── 数据结构 (与 Python 版 JSON 输出完全对齐) ─────
 
 type LogEntry struct {
@@ -827,12 +831,15 @@ func extractReleaseInfo(payload map[string]interface{}) (version, title, notes, 
 }
 
 func checkUpdateRemote() map[string]interface{} {
+	// 每次请求重读版本号 (对齐 Python 版 _read_app_version() 每次调用都重读)
+	currentVer := readAppVersion()
+
 	result := map[string]interface{}{
 		"ok":              false,
-		"current_version": appVersion,
+		"current_version": currentVer,
 		"latest_version":  nil,
 		"update_available": false,
-		"feed_url":        updateFeedURL,
+		"feed_url":        feedURL,
 		"http_status":     nil,
 		"error":           nil,
 		"raw_excerpt":     nil,
@@ -840,9 +847,15 @@ func checkUpdateRemote() map[string]interface{} {
 		"download_url":    nil,
 	}
 
+	// 未配置更新源时直接返回错误 (对齐 Python 版)
+	if feedURL == "" {
+		result["error"] = "未配置更新源 (--update-feed-url 参数缺失)"
+		return result
+	}
+
 	client := &http.Client{Timeout: 8 * time.Second}
-	req, _ := http.NewRequest("GET", updateFeedURL, nil)
-	req.Header.Set("User-Agent", fmt.Sprintf("TokenMonitor/%s (+https://gitcode.com/baggiopeng/TokenMonitor)", appVersion))
+	req, _ := http.NewRequest("GET", feedURL, nil)
+	req.Header.Set("User-Agent", fmt.Sprintf("TokenMonitor/%s (+https://gitcode.com/baggiopeng/TokenMonitor)", currentVer))
 	req.Header.Set("Accept", "application/json, text/plain;q=0.9, */*;q=0.5")
 
 	resp, err := client.Do(req)
@@ -898,7 +911,7 @@ func checkUpdateRemote() map[string]interface{} {
 	} else {
 		result["download_url"] = nil
 	}
-	result["update_available"] = compareVersions(version, appVersion) > 0
+	result["update_available"] = compareVersions(version, currentVer) > 0
 	result["ok"] = true
 	return result
 }
@@ -1022,9 +1035,8 @@ func main() {
 	// 读取版本号
 	appVersion = readAppVersion()
 
-	// 解析命令行参数
+	// 解析命令行参数 (feedURL 是包级变量, checkUpdateRemote 会用到)
 	port := defaultPort
-	feedURL := updateFeedURL
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
@@ -1075,7 +1087,7 @@ func main() {
 		}
 		writeJSON(w, 200, AppInfoResponse{
 			Name:          "Token Monitor",
-			Version:       appVersion,
+			Version:       readAppVersion(),
 			UpdateFeedURL: feedURL,
 			UpdateEnabled: feedURL != "",
 		})
