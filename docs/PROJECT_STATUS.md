@@ -200,3 +200,47 @@ GitCode 不支持删除 release 附件, 所以每次发新版本用新 tag。
 |---|---|
 | `start_windows.py` | 废弃 (PyInstaller 方案, 不再使用) |
 | `token_monitor.spec` | 废弃 (PyInstaller 方案, 不再使用) |
+
+## 已知问题与修复记录 (2026-06-24)
+
+### 问题 1: codex_session 源 model 名称错误 (已修复, 待发布)
+
+**现象**: 用户选择了 Zhipu GLM provider, 但 dashboard 模型分布饼图出现大量 `gpt-5.5` token。
+
+**根因**: cc-switch 的 `codex_session` 数据源在同步 `~/.codex/sessions/` 日志时, 把 session 文件中的 `request_model` 字段 (客户端声明的模型, 如 `gpt-5.5`) 直接当作实际使用的 model, 而没有用 session 文件里 `turn_context` 中的真实 model (如 `glm-5.2`)。
+
+**证据**:
+- session 文件 `~/.codex/sessions/2026/06/24/rollout-...019ef77e...jsonl`:
+  - `session_meta`: `model_provider=custom`, `originator=Codex Desktop`
+  - `turn_context`: `model=glm-5.2`
+- cc-switch DB `proxy_request_logs` 表同一 session (`019ed333`):
+  - `data_source='codex_session'`: 800 条记录, model=`gpt-5.5`, provider_id=`_codex_session`
+  - `data_source='proxy'`: 0 条记录 (说明该 session 的请求未经代理实时记录)
+- 当前活跃 provider: Zhipu GLM (`is_current=1`)
+
+**修复**: `scanner.py` 的 `_load_provider_model_map()` 重写, 返回 `active_model_by_app` (app_type → 当前活跃 provider 的实际 model)。`scan_cc_switch_logs()` 中对 `data_source='codex_session'` 的记录, 用当前活跃 Codex provider 的实际 model 替换 `gpt-5.5` → `glm-5.2`。
+
+### 问题 2: 跨数据源重复计算 (已修复, 待发布)
+
+**现象**: 同一笔请求同时出现在 `proxy` (实时代理记录) 和 `codex_session` (日志同步) 两个数据源中, 导致 token 被计算两次, 每天多计约 5470 万 tokens。
+
+**根因**: 旧去重逻辑要求 `(time_bucket, model, total_tokens)` 完全匹配, 但同一请求在两个源中记录的 model 名称不同 (proxy 记 `glm-5.2`, codex_session 记 `gpt-5.5`), 导致去重失败。
+
+**修复**: `get_historical_usage()` 中 `get_historical_usage()` 增加行级去重, dedup key 从 `(time_bucket, model, total_tokens)` 改为 `(time_bucket, total_tokens)`, 在 model 修正之前先按时间和 token 量去重。
+
+### 问题 3: 图片处理的模型归属 (已分析, 代码层面无需额外修复)
+
+**用户疑问**: GLM-5.2 不支持图片识别, 但 Codex 能读懂截图。图片发给了哪个模型? 为什么没统计?
+
+**分析结论**:
+- Codex Desktop 把用户截图作为 `input_image` 类型内容, 放在 user message 里, 和文字一起发给当前配置的模型 (glm-5.2)
+- 没有单独的 vision 模型通道, 图片 token 和文字 token 合并在同一次请求中
+- session 文件确认: 包含 `input_image` 的 message, 对应的 `turn_context` model 是 `glm-5.2`
+- 图片 token 之所以"没统计到", 是因为 `codex_session` 源把这些请求的 model 错标为 `gpt-5.5` (问题 1), 修复后会被正确归到 `glm-5.2`
+- GLM-5.2 是否真正处理了图片内容 (还是忽略图片只处理文字), 这取决于 GLM-5.2 API 本身的行为, 超出 Token Monitor 的可控范围
+
+### 版本说明
+
+- 以上三个问题的修复已 commit + push 到 GitCode main 分支
+- **版本号未 bump** (用户要求统一修改版本号)
+- 用户需通过自动更新拉取新版本后验证修复效果
