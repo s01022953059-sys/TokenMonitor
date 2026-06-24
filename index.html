@@ -727,10 +727,6 @@
                         <span class="version-label">更新状态</span>
                         <span id="aboutUpdateState" class="version-value update-state">读取中</span>
                     </div>
-                    <div class="version-field" style="grid-column: 1 / -1;">
-                        <span class="version-label">更新源</span>
-                        <span id="aboutUpdateFeed" class="version-value">--</span>
-                    </div>
                 </div>
                 <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px;">
                     <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
@@ -1557,15 +1553,13 @@
                 const info = await response.json();
                 const versionText = `v${info.version || '--'}`;
                 const updateEnabled = Boolean(info.update_enabled);
-                const feedText = info.update_feed_url || '未配置';
 
                 document.getElementById('appVersionBadge').innerText = versionText;
                 document.getElementById('aboutVersionValue').innerText = versionText;
-                document.getElementById('aboutUpdateFeed').innerText = feedText;
 
                 if (!stateEl) return;
                 if (!updateEnabled) {
-                    stateEl.innerText = '未配置更新源';
+                    stateEl.innerText = '未启用';
                     stateEl.classList.remove('update-state');
                     return;
                 }
