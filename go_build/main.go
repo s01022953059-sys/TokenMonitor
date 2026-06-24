@@ -30,7 +30,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.53"
+var appVersion = "1.3.54"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1137,17 +1137,31 @@ func main() {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-
-	// 先检测端口是否可用
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		fmt.Printf("[-] 端口 %d 已被占用, Token Monitor 可能已在运行\n", port)
-		fmt.Printf("[-] 错误: %v\n", err)
+	// 端口自动递增: 默认 15723, 被占就试下一个, 最多试 10 个
+	// 避免端口冲突导致启动失败 (macOS 版固定 15723, Go 版自动避让)
+	var ln net.Listener
+	var err error
+	actualPort := port
+	for i := 0; i < 10; i++ {
+		tryPort := port + i
+		addr := fmt.Sprintf("127.0.0.1:%d", tryPort)
+		ln, err = net.Listen("tcp", addr)
+		if err == nil {
+			actualPort = tryPort
+			break
+		}
+		if i == 0 {
+			fmt.Printf("[*] 端口 %d 被占用, 尝试其他端口...\n", tryPort)
+		}
+	}
+	if ln == nil {
+		fmt.Printf("[-] 端口 %d-%d 全部被占用, 无法启动\n", port, port+9)
 		fmt.Printf("[*] 按回车键退出...\n")
 		fmt.Scanln()
 		return
 	}
+	port = actualPort
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	server := &http.Server{Addr: addr}
 
