@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getlantern/systray"
 
 	_ "modernc.org/sqlite"
 )
@@ -30,7 +29,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.47"
+var appVersion = "1.3.48"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1140,42 +1139,14 @@ func main() {
 	fmt.Printf("[+] Token Monitor 仪表盘已启动: http://%s\n", addr)
 	fmt.Printf("[+] 更新源: %s\n", feedURL)
 
-	// HTTP 服务在 goroutine 里跑, 主 goroutine 给 systray (系统托盘)
-	go func() {
-		server := &http.Server{Addr: addr}
-		if err := server.ListenAndServe(); err != nil {
-			fmt.Printf("[-] 服务器错误: %v\n", err)
-		}
-	}()
-	// 等服务起来
-	time.Sleep(500 * time.Millisecond)
+	// HTTP 服务在后台跑, 主 goroutine 阻塞等待
+	server := &http.Server{Addr: addr}
+	fmt.Printf("[+] Token Monitor 仪表盘已启动: http://%s\n", addr)
+	fmt.Printf("[+] 更新源: %s\n", feedURL)
+	fmt.Printf("[+] 在浏览器中访问: http://127.0.0.1:%d\n", port)
+	fmt.Printf("[+] 按 Ctrl+C 退出\n")
 
-	// 系统托盘 (替代自动打开浏览器, 用户点托盘菜单才打开)
-	dashboardURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	systray.Run(func() {
-		systray.SetIcon(iconData)
-		systray.SetTitle("Token Monitor")
-		systray.SetTooltip("Token Monitor - Token 使用量监控")
-
-		mOpen := systray.AddMenuItem("打开仪表盘", "在浏览器中打开仪表盘")
-		mVersion := systray.AddMenuItem("版本: " + readAppVersion(), "")
-		mVersion.Disable()
-		systray.AddSeparator()
-		mQuit := systray.AddMenuItem("退出", "退出 Token Monitor")
-
-		go func() {
-			for {
-				select {
-				case <-mOpen.ClickedCh:
-					openBrowser(dashboardURL)
-				case <-mQuit.ClickedCh:
-					systray.Quit()
-					return
-				}
-			}
-		}()
-	}, func() {
-		// onExit
-		os.Exit(0)
-	})
+	if err := server.ListenAndServe(); err != nil {
+		fmt.Printf("[-] 服务器错误: %v\n", err)
+	}
 }
