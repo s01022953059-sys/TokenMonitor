@@ -704,6 +704,10 @@
                     <button class="tab-btn" data-dim="model">按模型统计</button>
                 </div>
             </div>
+            <div id="historySummary" style="display: flex; gap: 24px; padding: 0 4px 12px; font-size: 12px; color: var(--text-secondary);">
+                <span>区间总消耗: <strong id="historyTotalTokens" style="color: var(--text-primary); font-size: 14px;">--</strong></span>
+                <span>日均消耗: <strong id="historyAvgTokens" style="color: var(--text-primary);">--</strong></span>
+            </div>
             <div class="modal-chart-wrapper">
                 <canvas id="historyChart"></canvas>
             </div>
@@ -1458,6 +1462,15 @@
                     }
                 });
             }
+
+            // 更新总数摘要
+            const totalSum = dailyTotals.reduce((a, b) => a + b, 0);
+            const activeDays = dailyTotals.filter(v => v > 0).length;
+            const avgDaily = activeDays > 0 ? Math.round(totalSum / activeDays) : 0;
+            const totalEl = document.getElementById('historyTotalTokens');
+            const avgEl = document.getElementById('historyAvgTokens');
+            if (totalEl) totalEl.innerText = formatTokens(totalSum);
+            if (avgEl) avgEl.innerText = formatTokens(avgDaily);
 
             // 更新折线图
             if (!historyChartInstance) {
