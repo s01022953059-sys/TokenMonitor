@@ -450,7 +450,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             if let update = pendingUpdate {
                 performAutoUpdate(update: update)
             } else {
-                showAlert(title: "暂无可用更新", message: "没有缓存的更新信息, 请稍后重试或手动检查更新。")
+                // pendingUpdate 为空: 前端 About 弹窗通过 Python server 的
+                // /api/check-update 发现了新版本并显示按钮, 但 Swift 端的
+                // checkForUpdates 可能还没跑过 (或跑过但没缓存)。
+                // 先主动检查一次, 拿到结果后再执行自动更新。
+                checkForUpdatesAndAutoUpdate()
             }
         case "openUpdatePage":
             if let url = pendingUpdate?.downloadURL {
@@ -461,6 +465,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         default:
             break
         }
+    }
+
+    // 前端点"立即更新"但 pendingUpdate 为空时调用:
+    // 先检查更新, 发现新版本后直接执行自动更新, 不再走 showUpdateAvailable 弹窗。
+    func checkForUpdatesAndAutoUpdate() {
+        guard !updateCheckInProgress else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.checkForUpdatesAndAutoUpdate()
+            }
+            return
+        }
+        guard let feedURL = configuredUpdateFeedURL() else {
+            showAlert(title: "未配置更新源", message: "请先在 Info.plist 配置 TokenMonitorUpdateFeedURL。")
+            return
+        }
+        updateCheckInProgress = true
+        var request = URLRequest(url: feedURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
+        request.setValue("Token Monitor", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            defer { self.updateCheckInProgress = false }
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.showAlert(title: "检查更新失败", message: error.localizedDescription)
+                }
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse,
+                  200..<300 ~= httpResponse.statusCode,
+                  let data = data else {
+                DispatchQueue.main.async {
+                    self.showAlert(title: "检查更新失败", message: "更新源没有返回有效响应。")
+                }
+                return
+            }
+            guard let update = self.parseUpdateInfo(from: data, fallbackURL: feedURL) else {
+                DispatchQueue.main.async {
+                    self.showAlert(title: "检查更新失败", message: "更新源 JSON 格式不符合预期。")
+                }
+                return
+            }
+            let currentVersion = self.currentAppVersion()
+            let isNewer = self.compareVersions(update.version, currentVersion) == .orderedDescending
+            DispatchQueue.main.async {
+                if isNewer {
+                    self.pendingUpdate = update
+                    self.pendingCurrentVersion = currentVersion
+                    self.performAutoUpdate(update: update)
+                } else {
+                    self.showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。")
+                }
+            }
+        }.resume()
     }
 
     // 前端调用: window.webkit.messageHandlers.tokenMonitor.postMessage({...})
