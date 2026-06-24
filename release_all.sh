@@ -4,10 +4,8 @@
 # 用法: bash release_all.sh
 #
 # 流程:
-#   1. 构建 Mac .app + DMG (build_macos.sh + build_dmg.sh)
-#   2. 上传 DMG 到 GitCode Release
-#   3. 如在 Windows 上: 构建 EXE + ZIP, 上传 ZIP
-#   4. 更新 release notes
+#   1. 构建 Mac .app + DMG, 上传到 GitCode Release
+#   2. 交叉编译 Windows EXE + ZIP, 上传到同一 Release
 #
 # GitCode Release 上传附件 (两步):
 #   a) GET /releases/:tag/upload_url?file_name=xxx → 预签名 PUT 地址 + headers
@@ -40,11 +38,11 @@ RELEASE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' \
 
 if [[ "$RELEASE_HTTP" != "200" ]]; then
     echo "[release] Release $TAG 不存在, 正在创建..."
-    CREATE_RESP=$(curl -sS -X POST \
+    curl -sS -X POST \
         -H "Authorization: Bearer $GITCODE_TOKEN" \
         -H "Content-Type: application/json" \
         -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"body\":\"Token Monitor $TAG 发布\"}" \
-        "$API_BASE/releases")
+        "$API_BASE/releases" > /dev/null
     echo "[release] Release 创建完成"
 fi
 
@@ -140,25 +138,16 @@ else
     echo "[release] 非 macOS, 跳过 DMG 构建"
 fi
 
-# ─── 2. Windows ZIP ───
+# ─── 2. Windows ZIP (Go 交叉编译, 任何平台都能跑) ───
 echo ""
 echo "=== [2/2] Windows ZIP ==="
-WIN_PLATFORM=false
-if [[ "$(uname)" == *"MINGW"* ]] || [[ "$(uname)" == *"MSYS"* ]] || [[ "$(uname)" == "CYGWIN_NT"* ]]; then
-    WIN_PLATFORM=true
-fi
+bash build_windows.sh
 
-if $WIN_PLATFORM; then
-    bash build_windows.sh
-    ZIP_PATH="$SOURCE_ROOT/build/TokenMonitor-${APP_VERSION}-win.zip"
-    if [[ -f "$ZIP_PATH" ]]; then
-        upload_asset "$ZIP_PATH" "TokenMonitor-win.zip"
-    else
-        echo "[release] ✘ Windows ZIP 没生成, 跳过" >&2
-    fi
+ZIP_PATH="$SOURCE_ROOT/build/TokenMonitor-${APP_VERSION}-win.zip"
+if [[ -f "$ZIP_PATH" ]]; then
+    upload_asset "$ZIP_PATH" "TokenMonitor-win.zip"
 else
-    echo "[release] 非 Windows, 跳过 EXE 构建"
-    echo "  → 请在 Windows 机器上运行 build_windows.sh 并上传 ZIP"
+    echo "[release] ✘ Windows ZIP 没生成" >&2
 fi
 
 # ─── 验证 ───
@@ -175,7 +164,7 @@ for a in d.get('assets', []):
     typ = a.get('type', '')
     url = a.get('browser_download_url', '')
     print(f'  {name} ({typ})')
-    print(f'    → {url}')
+    print(f'    -> {url}')
 "
 
 echo ""

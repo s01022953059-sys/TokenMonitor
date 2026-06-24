@@ -141,3 +141,45 @@ bash release_all.sh
 
 # 完整发布: Mac 上发 DMG, Windows 上发 ZIP, 都上传到同一个 Release tag
 ```
+
+## Windows 发布 v2: Go 交叉编译 (2026-06-24 更新)
+
+### 方案变更
+- 放弃 PyInstaller (网络环境无法拉 Docker 镜像 / 装 Wine)
+- 改用 **Go 交叉编译**: `GOOS=windows GOARCH=amd64 go build`, 在 Mac 上直接产出 Windows EXE
+- `modernc.org/sqlite` 是纯 Go, 无 CGO 依赖, 交叉编译零障碍
+
+### Go 版完全对齐 Python 版 v1.3.44
+- `go_build/main.go` 完全重写 (1121 行), 移除旧 v1.1 的 Codex 原生日志 / Claude Code JSONL 等多余源
+- 三源扫描: cc-switch / Antigravity / Hermes (与 Python 版完全一致)
+- 跨源去重: `dedupEvents()` 对齐 `_dedup_events()` (时间窗口 2s + 同模型 + 同 token 量)
+- 模型归一化: `normalizeModelName()` 对齐 `normalize_model_name()` (去日期后缀 + qwen3.6-plus 家族折叠)
+- DeepSeek 余额: 语义匹配 (provider_type/name/app_type LIKE '%deepseek%'), 不再硬编码 id
+- `/api/check-update`: 完整实现, 对齐 server.py 的版本比较 + asset URL 选取
+- `/api/app-info`: 动态版本号 (从 version.txt 或 Info.plist 读取)
+- 删除 `estimated_cost_usd` (用户明确不需要)
+- 单实例锁: 跨平台 (Unix flock / Windows 文件检测)
+
+### 构建文件
+| 文件 | 作用 |
+|---|---|
+| `build_windows.sh` | Go 交叉编译 Windows EXE + 打 ZIP (在 Mac 上直接跑) |
+| `release_all.sh` | 一键: Mac DMG + Windows ZIP 同时构建上传到 GitCode Release |
+| `go_build/lock_unix.go` | Unix 单实例锁 (fcntl.flock) |
+| `go_build/lock_windows.go` | Windows 单实例锁 (文件检测) |
+
+### 验证结果
+- Mac 上 Go 版 API 输出与 Python 版对比: by_tool / by_model / recent_events / events_dedup / DeepSeek 余额 全部一致
+- Windows EXE: 16MB (PE32+ x86-64), ZIP 4.6MB
+- v1.3.44 Release 已上传 TokenMonitor-win.zip
+- 下载地址: `https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.44/TokenMonitor-win.zip`
+
+### 统一发布流程
+```bash
+# 一键发布 Mac + Windows:
+bash release_all.sh
+
+# 只发 Windows:
+bash build_windows.sh
+# 然后手动上传 ZIP 到 GitCode Release
+```

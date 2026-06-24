@@ -253,6 +253,9 @@
         }
 
         /* 位于 Donut 心脏的今日总消耗字样 */
+        /* 内圈背景按总量级别变色: 暖→冷 (红→橙→黄→绿→蓝) */
+        /* 设计: 去掉硬 border, 用柔和 inset glow + radial-gradient 边缘柔化,
+           跟外圈 donut 自然过渡, 不画生硬圆框 */
         .donut-center {
             position: relative;
             z-index: 10;
@@ -262,6 +265,32 @@
             justify-content: center;
             align-items: center;
             pointer-events: none;
+            /* 内圈圆形背景, 柔和光晕, 不画 border */
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            /* radial-gradient 边缘过渡区拉长 (60% → 100%), 不有明显边界 */
+            background: radial-gradient(circle, rgba(59,130,246,0.35) 0%, rgba(59,130,246,0.12) 60%, transparent 100%);
+            /* inset box-shadow 做柔和内发光, 代替硬 border */
+            box-shadow: inset 0 0 30px rgba(59,130,246,0.15);
+            transition: background 0.6s ease, box-shadow 0.6s ease;
+        }
+        /* 级别 class 挂在 .donut-center 上, 改背景 + glow 颜色 */
+        .donut-center.low {
+            background: radial-gradient(circle, rgba(59,130,246,0.35) 0%, rgba(59,130,246,0.12) 60%, transparent 100%);
+            box-shadow: inset 0 0 30px rgba(59,130,246,0.15);
+        }
+        .donut-center.medium {
+            background: radial-gradient(circle, rgba(16,185,129,0.35) 0%, rgba(16,185,129,0.12) 60%, transparent 100%);
+            box-shadow: inset 0 0 30px rgba(16,185,129,0.18);
+        }
+        .donut-center.high {
+            background: radial-gradient(circle, rgba(234,179,8,0.4) 0%, rgba(234,179,8,0.14) 60%, transparent 100%);
+            box-shadow: inset 0 0 30px rgba(234,179,8,0.2);
+        }
+        .donut-center.extreme {
+            background: radial-gradient(circle, rgba(239,68,68,0.45) 0%, rgba(239,68,68,0.16) 60%, transparent 100%);
+            box-shadow: inset 0 0 30px rgba(239,68,68,0.22);
         }
 
         .donut-center .total-label {
@@ -456,6 +485,59 @@
             color: var(--text-main);
         }
 
+        /* About 弹窗里的更新操作按钮 */
+        .primary-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--tab-active-border);
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .primary-btn:hover {
+            background: var(--btn-hover-accent);
+            box-shadow: 0 4px 14px var(--btn-hover-shadow);
+        }
+        .secondary-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-subtle);
+            color: var(--text-muted);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .secondary-btn:hover {
+            background: var(--bg-subtle-hover);
+            color: var(--text-main);
+        }
+
+        /* 首页版本徽章上的红点提示有新版本 */
+        .version-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #f97316;
+            margin-left: 5px;
+            vertical-align: middle;
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+            animation: pulse-dot 1.8s infinite ease-in-out;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+        }
+
         /* 胶囊型 Segmented Tab */
         .tab-container {
             background: var(--bg-subtle);
@@ -559,7 +641,7 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
         </button>
-        <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.5; letter-spacing: 0.5px; pointer-events: none;">v--</span>
+        <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.7; letter-spacing: 0.5px; cursor: pointer; user-select: none; transition: opacity 0.2s;" title="点击查看关于">v--</span>
         <header>
             <h1>今日 Token 消耗统计</h1>
             <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span></p>
@@ -574,7 +656,7 @@
                     <div class="chart-wrapper">
                         <canvas id="toolChart"></canvas>
                     </div>
-                    <div class="donut-center">
+                    <div class="donut-center low" id="toolDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="toolTotTokens">0</span>
                     </div>
@@ -591,7 +673,7 @@
                     <div class="chart-wrapper">
                         <canvas id="modelChart"></canvas>
                     </div>
-                    <div class="donut-center">
+                    <div class="donut-center low" id="modelDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="modelTotTokens">0</span>
                     </div>
@@ -649,6 +731,10 @@
                         <span class="version-label">更新源</span>
                         <span id="aboutUpdateFeed" class="version-value">--</span>
                     </div>
+                </div>
+                <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px;">
+                    <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
+                    <button id="aboutDownloadBtn" class="secondary-btn" style="display: none;">下载 zip</button>
                 </div>
                 <p style="margin-bottom: 12px; color: var(--text-primary); font-size: 13px; font-weight: 600;">已支持平台</p>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -936,34 +1022,69 @@
             return num.toString();
         }
 
+        // 总量级别灯映射
+        // 用户要求:
+        //   < 20M  灰 "正常"
+        //   20-100M 黄 "注意" (你要求 2000 万以上亮黄灯, 我合并到 20M-100M 这段)
+        //   100-300M 绿 "高负载" (你要求 1 亿以上亮绿灯)
+        //   > 300M 红 "异常" (你要求 3 亿以上亮其他颜色, 我用红)
+        // 总量级别映射: 给 donut-center 加 level class, 内圈背景按冷→暖变色
+        // 冷→暖: 蓝(low) → 绿(medium) → 黄(high) → 红(extreme)
+        // 阈值:
+        //   < 20M    low     蓝
+        //   20-100M  medium  绿
+        //   100-300M high    黄
+        //   > 300M   extreme 红
+        function updateTotalLevel(elementId, totalTokens) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            let level;
+            if (totalTokens < 20_000_000) {
+                level = 'low';
+            } else if (totalTokens < 100_000_000) {
+                level = 'medium';
+            } else if (totalTokens < 300_000_000) {
+                level = 'high';
+            } else {
+                level = 'extreme';
+            }
+            el.classList.remove('low', 'medium', 'high', 'extreme');
+            el.classList.add(level);
+        }
+
         // 定义工具的指定颜色映射
+        // 用 Tailwind 全套对比性强的颜色, 避免相邻颜色混淆 (例如深紫 + 浅紫)。
         const toolColors = {
-            'codex': '#3b82f6',
-            'codex-native': '#f59e0b',
-            'antigravity': '#a855f7',
-            'hermes': '#10b981',
-            'hermes-native': '#06d6a0',
-            'claudecode': '#ec4899',
-            'cursor': '#6366f1',
-            'cline': '#0ea5e9',
+            'codex': '#3b82f6',           // 蓝
+            'codex-native': '#f59e0b',    // 橙
+            'antigravity': '#a855f7',     // 紫
+            'hermes': '#10b981',          // 绿
+            'hermes-native': '#06d6a0',   // 青绿
+            'claudecode': '#ec4899',      // 粉
+            'cursor': '#6366f1',          // 靛
+            'cline': '#eab308',           // 黄
             'other': '#6b7280'
         };
 
         // 定义模型的指定颜色映射
+        // 高对比度: 每个常用 model 用差别大的颜色, 避免大屏上分不清。
+        // GLM-5.2 / MiniMax-M3 之前没映射走 other 灰色, 现在补上。
         const modelColors = {
-            'deepseek-v4-flash': '#0ea5e9',
-            'gemini 3.5 flash': '#a855f7',
-            'deepseek-v4-pro': '#2563eb',
-            'gpt-5.5': '#10b981',
-            'gpt-5.4': '#f59e0b',
-            'gpt-5.4-mini': '#fb923c',
-            'glm-5.1': '#ef4444',
-            'kimi-for-coding': '#ec4899',
-            'qwen3.6-plus': '#8b5cf6',
-            'qwen3.6-plus-vl': '#c084fc',
-            'qwen3.7-plus': '#6366f1',
-            'qwen3.7-max': '#4f46e5',
-            'deepseek-v4-flash-free': '#14b8a6',
+            'deepseek-v4-flash': '#06b6d4',          // 青
+            'gemini 3.5 flash': '#a855f7',           // 紫
+            'deepseek-v4-pro': '#3b82f6',            // 蓝
+            'gpt-5.5': '#10b981',                    // 绿
+            'gpt-5.4': '#f59e0b',                    // 橙
+            'gpt-5.4-mini': '#fbbf24',               // 黄
+            'glm-5.1': '#ef4444',                    // 红
+            'glm-5.2': '#d946ef',                    // 品红 (跟 glm-5.1 红 区分)
+            'kimi-for-coding': '#ec4899',             // 粉
+            'qwen3.6-plus': '#f97316',                // 橙 (跟 gpt-5.4 区分)
+            'qwen3.6-plus-vl': '#84cc16',             // 草绿
+            'qwen3.7-plus': '#14b8a6',                // 青绿
+            'qwen3.7-max': '#dc2626',                 // 暗红
+            'deepseek-v4-flash-free': '#0ea5e9',      // 蓝青
+            'minimax-m3': '#22d3ee',                  // 亮青 (跟 deepseek-v4-flash 青 区分, 更亮)
             'other': '#6b7280'
         };
 
@@ -975,6 +1096,24 @@
         function getModelColor(modelName) {
             const name = modelName.toLowerCase();
             return modelColors[name] || modelColors['other'];
+        }
+
+        // 按排名固定的色盘: top1/2/3/... 永远是这几个颜色, 不按名字映射。
+        // 左右两个 donut (工具 + 模型) 用同一套, top1 永远颜色 A, top2 永远 B。
+        // 暖→冷顺序 (top1 最暖, 已经在燃烧): 红→橙→黄→绿→青→蓝→紫→粉→灰
+        const RANK_COLORS = [
+            '#ef4444',  // 1. 红 (top1, 最暖, 正在燃烧)
+            '#f97316',  // 2. 橙
+            '#eab308',  // 3. 黄
+            '#10b981',  // 4. 绿
+            '#06b6d4',  // 5. 青
+            '#3b82f6',  // 6. 蓝
+            '#a855f7',  // 7. 紫
+            '#ec4899',  // 8. 粉
+            '#6b7280',  // 9+. 灰 (兜底)
+        ];
+        function getRankColor(idx) {
+            return RANK_COLORS[idx] || RANK_COLORS[RANK_COLORS.length - 1];
         }
 
         function initCharts() {
@@ -1053,6 +1192,15 @@
                 document.getElementById('hdrDate').innerText = data.summary.date;
                 document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
 
+                // 2. 更新总量级别灯
+                // 用原始 total_tokens 数值 (非 formatted) 映射颜色:
+                //   < 20M   灰 "正常"      (日常用量)
+                //   20-100M 黄 "注意"      (重度使用)
+                //   100-300M 绿 "高负载"   (重度, 应观察)
+                //   > 300M  红 "异常"      (异常, 几乎不可能)
+                updateTotalLevel('toolDonutCenter', data.summary.total_tokens);
+                updateTotalLevel('modelDonutCenter', data.summary.total_tokens);
+
 
 
                 // 3. 渲染工具维度分布
@@ -1078,7 +1226,8 @@
 
                 const toolLabels = tools;
                 const toolValues = tools.map(t => toolMajor[t]);
-                const toolColorArr = tools.map(t => getToolColor(t));
+                // 按排名取色: top1 永远蓝, top2 永远绿, ... 不按工具名字映射
+                const toolColorArr = tools.map((t, idx) => getRankColor(idx));
 
                 tools.forEach((tool, idx) => {
                     const toolVal = toolMajor[tool];
@@ -1129,7 +1278,8 @@
 
                 const modelLabels = models;
                 const modelValues = models.map(m => modelMajor[m]);
-                const modelColorArr = models.map(m => getModelColor(m));
+                // 按排名取色: top1 永远蓝, top2 永远绿, ... 跟左边工具用同一套
+                const modelColorArr = models.map((m, idx) => getRankColor(idx));
 
                 models.forEach((model, idx) => {
                     const modelVal = modelMajor[model];
@@ -1362,7 +1512,46 @@
             }
         }
 
+        // 把 `/api/check-update` 的真实结果落到 About 弹窗里, 失败时显示 HTTP 码和原文片段。
+        async function runUpdateCheck() {
+            const stateEl = document.getElementById('aboutUpdateState');
+            if (!stateEl) return;
+            stateEl.title = '';
+            try {
+                const res = await fetch(API_BASE + '/api/check-update', { cache: 'no-store' });
+                if (!res.ok) {
+                    stateEl.innerText = `检查失败 (本地 HTTP ${res.status})`;
+                    stateEl.classList.remove('update-state');
+                    return;
+                }
+                const data = await res.json();
+                if (data && data.ok) {
+                    const latest = data.latest_version || '?';
+                    const current = data.current_version || '?';
+                    if (data.update_available) {
+                        stateEl.innerText = `有新版本 v${latest} (当前 v${current})`;
+                    } else {
+                        stateEl.innerText = `已是最新版本 (v${current})`;
+                    }
+                    stateEl.classList.add('update-state');
+                } else {
+                    const status = data && data.http_status ? ` (HTTP ${data.http_status})` : '';
+                    const reason = (data && data.error) || '更新检查失败';
+                    stateEl.innerText = `检查失败${status}: ${reason}`;
+                    stateEl.classList.remove('update-state');
+                    if (data && data.raw_excerpt) {
+                        stateEl.title = String(data.raw_excerpt).slice(0, 400);
+                    }
+                }
+            } catch (err) {
+                console.error('check-update 调用失败:', err);
+                stateEl.innerText = '检查请求异常: ' + ((err && err.message) || err);
+                stateEl.classList.remove('update-state');
+            }
+        }
+
         async function loadAppInfo() {
+            const stateEl = document.getElementById('aboutUpdateState');
             try {
                 const response = await fetch(API_BASE + '/api/app-info');
                 const info = await response.json();
@@ -1372,13 +1561,23 @@
 
                 document.getElementById('appVersionBadge').innerText = versionText;
                 document.getElementById('aboutVersionValue').innerText = versionText;
-                document.getElementById('aboutUpdateState').innerText = updateEnabled ? '自动更新已启用' : '未启用';
-                document.getElementById('aboutUpdateState').classList.toggle('update-state', updateEnabled);
                 document.getElementById('aboutUpdateFeed').innerText = feedText;
+
+                if (!stateEl) return;
+                if (!updateEnabled) {
+                    stateEl.innerText = '未配置更新源';
+                    stateEl.classList.remove('update-state');
+                    return;
+                }
+                stateEl.innerText = '检查中…';
+                stateEl.classList.add('update-state');
+                await runUpdateCheck();
             } catch (err) {
-                console.error("加载应用版本信息失败:", err);
-                document.getElementById('aboutUpdateState').innerText = '读取失败';
-                document.getElementById('aboutUpdateState').classList.remove('update-state');
+                console.error('加载应用版本信息失败:', err);
+                if (stateEl) {
+                    stateEl.innerText = '读取失败';
+                    stateEl.classList.remove('update-state');
+                }
             }
         }
 
@@ -1480,16 +1679,76 @@
             const aboutModal = document.getElementById('aboutModal');
             const aboutOpenBtn = document.getElementById('aboutOpenBtn');
             const aboutCloseBtn = document.getElementById('aboutCloseBtn');
+            const appVersionBadge = document.getElementById('appVersionBadge');
+            const aboutUpdateBtn = document.getElementById('aboutUpdateBtn');
+            const aboutDownloadBtn = document.getElementById('aboutDownloadBtn');
 
             aboutOpenBtn.addEventListener('click', () => {
                 aboutModal.classList.add('active');
+                // 每次打开 About 都重新跑一次真实检查, 避免显示过期状态
+                loadAppInfo();
             });
+            // 首页左上角的版本徽章也作为一个入口
+            appVersionBadge.addEventListener('click', () => aboutOpenBtn.click());
+            appVersionBadge.addEventListener('mouseenter', () => {
+                appVersionBadge.style.opacity = '1';
+            });
+            appVersionBadge.addEventListener('mouseleave', () => {
+                appVersionBadge.style.opacity = '0.7';
+            });
+
             aboutCloseBtn.addEventListener('click', () => {
                 aboutModal.classList.remove('active');
             });
             aboutModal.addEventListener('click', (e) => {
                 if (e.target === aboutModal) aboutModal.classList.remove('active');
             });
+
+            // 立即更新 → 调 Swift 端的 performAutoUpdate
+            aboutUpdateBtn.addEventListener('click', () => {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
+                    window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'triggerAutoUpdate' });
+                    aboutUpdateBtn.disabled = true;
+                    aboutUpdateBtn.innerText = '已请求, 请稍候...';
+                } else {
+                    // 浏览器直接打开 index.html 的场景 (开发/调试), 降级提示
+                    if (typeof alert === 'function') alert('当前不是 macOS app 环境, 无法触发应用内更新。\n请用 macOS .app 打开此页面。');
+                }
+            });
+            // 下载 zip → 调 Swift 端用默认浏览器打开 release 下载页
+            aboutDownloadBtn.addEventListener('click', () => {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
+                    window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'openUpdatePage' });
+                }
+            });
+
+            // Swift 端检测到新版本时主动 push, 我们更新徽章红点 + 显示按钮
+            window.__tokenMonitorOnUpdateAvailable = function(info) {
+                if (!info || !info.version) return;
+                // 徽章加红点
+                const badge = document.getElementById('appVersionBadge');
+                if (badge && !badge.querySelector('.version-dot')) {
+                    badge.insertAdjacentHTML('beforeend', '<span class="version-dot" title="有新版本可用"></span>');
+                    badge.style.opacity = '1';
+                }
+                // About 弹窗里显示按钮
+                const ub = document.getElementById('aboutUpdateBtn');
+                const db = document.getElementById('aboutDownloadBtn');
+                if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + info.version; }
+                if (db) db.style.display = '';
+            };
+            window.__tokenMonitorOnNoUpdate = function() {
+                const badge = document.getElementById('appVersionBadge');
+                if (badge) {
+                    const dot = badge.querySelector('.version-dot');
+                    if (dot) dot.remove();
+                    badge.style.opacity = '0.7';
+                }
+                const ub = document.getElementById('aboutUpdateBtn');
+                const db = document.getElementById('aboutDownloadBtn');
+                if (ub) { ub.style.display = 'none'; ub.disabled = false; }
+                if (db) db.style.display = 'none';
+            };
         });
     </script>
 </body>
