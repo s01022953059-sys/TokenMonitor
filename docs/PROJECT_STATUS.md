@@ -103,3 +103,41 @@ Token Monitor 是 macOS 本地仪表盘, 跨 Swift (UI 壳) + Python (scanner/se
 | `install.sh` | 一站式安装 (system/user 模式) |
 | `release_dmg.sh` | 一键 build + GitCode API 上传 DMG 到 Release 附件 |
 | `Info.plist` | 版本号 + 端口 + 更新源 URL |
+
+## Windows 发布 (2026-06-24 新增)
+
+### 跨平台改造
+- `server.py` 的单实例锁从 `fcntl` (Unix 专属) 改为跨平台: Unix 用 `fcntl.flock`, Windows 用 `msvcrt.locking`
+- `SINGLETON_LOCK_PATH` 从硬编码 `/tmp/` 改为 `tempfile.gettempdir()`, 兼容 Windows `%TEMP%`
+
+### Windows 构建文件
+| 文件 | 作用 |
+|---|---|
+| `start_windows.py` | Windows 启动器 (替代 start.sh), 单实例检查 + 后台启动 server.py + 自动打开浏览器 |
+| `token_monitor.spec` | PyInstaller 打包配置, 把 scanner.py / server.py / index.html / chart.js 打进单个 EXE |
+| `build_windows.sh` | Windows 上执行: pip install pyinstaller → PyInstaller 打包 → ZIP |
+| `release_all.sh` | 统一发布: Mac DMG + Windows ZIP 同时上传到 GitCode Release |
+
+### Windows 数据源路径
+- cc-switch: `%USERPROFILE%\.cc-switch\cc-switch.db` (Python `os.path.expanduser("~")` 自动适配)
+- Antigravity: macOS 专属路径, Windows 上自动跳过 (文件不存在)
+- Hermes: `~/.hermes/state.db`, Windows 上路径为 `%USERPROFILE%\.hermes\state.db`
+
+### 在 Windows 上构建
+```bash
+# 需要 Python 3.10+ (从 python.org 下载)
+pip install pyinstaller
+bash build_windows.sh
+# 产出: build/TokenMonitor-<version>-win.zip
+```
+
+### 统一发布流程 (Mac + Windows)
+```bash
+# Mac 上跑 (只发 DMG):
+bash release_all.sh
+
+# Windows 上跑 (只发 ZIP):
+bash release_all.sh
+
+# 完整发布: Mac 上发 DMG, Windows 上发 ZIP, 都上传到同一个 Release tag
+```

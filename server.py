@@ -17,7 +17,10 @@ import plistlib
 import socket
 import socketserver
 import sys
-import fcntl
+try:
+    import fcntl  # Unix
+except ImportError:
+    fcntl = None  # Windows
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -72,13 +75,13 @@ UPDATE_FEED_URL = (_args.update_feed_url or "").strip()
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 # ----- 单实例锁 -----
-# 同一个 Lock 文件 + fcntl.flock 是单实例最稳的真源。
+# 同一个 Lock 文件 + 文件锁是单实例最稳的真源。
 # lock fd 必须在进程生命周期内保持打开, 进程退出时由内核自动释放。
-# 多个 server.py 进程之间靠 LOCK_EX | LOCK_NB 互斥; start.sh / Swift 层只
-# 是友好提示, 真正能不能起得来还是看这里能不能拿到这把锁。
+# Unix: fcntl.flock LOCK_EX | LOCK_NB; Windows: msvcrt.locking LK_NBLCK。
+import tempfile
 SINGLETON_LOCK_PATH = os.environ.get(
     "TOKEN_MONITOR_LOCK_FILE",
-    "/tmp/token_monitor_server.lock",
+    os.path.join(tempfile.gettempdir(), "token_monitor_server.lock"),
 )
 _singleton_lock_fd = None
 
@@ -92,7 +95,13 @@ def _acquire_singleton_lock() -> bool:
         print(f"[server] 无法打开单实例锁文件 {SINGLETON_LOCK_PATH}: {exc}", file=sys.stderr)
         return False
     try:
-        fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if fcntl is not None:
+            # Unix: fcntl.flock
+            fcntl.flock(fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            # Windows: msvcrt.locking
+            import msvcrt
+            msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
     except (IOError, OSError):
         fd.close()
         return False
