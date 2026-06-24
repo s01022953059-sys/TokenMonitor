@@ -1,8 +1,7 @@
 #!/bin/bash
 # Token Monitor Windows 构建脚本 (Go 交叉编译)
 #
-# 产出: TokenMonitor.exe (console) + 启动TokenMonitor.bat
-# 用户双击 .bat 启动, 弹出控制台窗口 + 自动打开浏览器
+# 产出: TokenMonitor.exe (console, 双击运行, 自动开浏览器)
 #
 # 用法: bash build_windows.sh
 set -euo pipefail
@@ -16,7 +15,7 @@ ZIP_NAME="TokenMonitor-${APP_VERSION}-win.zip"
 echo "[build_windows] 版本: $APP_VERSION"
 
 # ─── 1. 交叉编译 ───
-echo "[build_windows] [1/3] Go 交叉编译 (windows/amd64, console)"
+echo "[build_windows] [1/3] Go 交叉编译 (windows/amd64)"
 cd go_build
 echo "$APP_VERSION" > version.txt
 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "TokenMonitor.exe" .
@@ -31,17 +30,11 @@ STAGE_DIR="$SOURCE_ROOT/build/windows_stage"
 mkdir -p "$STAGE_DIR"
 cp go_build/TokenMonitor.exe "$STAGE_DIR/TokenMonitor.exe"
 
-cat > "$STAGE_DIR/启动TokenMonitor.bat" << 'BATEOF'
-@echo off
-TokenMonitor.exe
-pause
-BATEOF
-
 cat > "$STAGE_DIR/README.txt" << 'README'
 Token Monitor for Windows
 =========================
 
-双击 "启动TokenMonitor.bat" 启动
+双击 TokenMonitor.exe 启动
   → 弹出控制台窗口, 自动打开浏览器
 
 手动访问: http://127.0.0.1:15723

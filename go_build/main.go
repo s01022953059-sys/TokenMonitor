@@ -29,7 +29,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.51"
+var appVersion = "1.3.52"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1020,7 +1020,8 @@ func acquireSingletonLock() bool {
 func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "windows":
-		exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		// cmd /c start 最可靠, 兼容所有 Windows 版本
+		exec.Command("cmd", "/c", "start", "", url).Start()
 	case "darwin":
 		exec.Command("open", url).Start()
 	default:
