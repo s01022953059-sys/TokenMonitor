@@ -111,41 +111,54 @@ def get_deepseek_balance():
     return {"balance": "0.00", "currency": "CNY", "status": "Unknown"}
 
 def scan_cc_switch_logs(today_start):
-    """只读扫描 cc-switch 数据库中今天的 API 请求记录，提取包含缓存细节的高精度 Token 消耗"""
+    """只读扫描 cc-switch 数据库中今天的 API 请求记录，提取包含缓存细节的高精度 Token 消耗。
+
+    使用 provider_id 和 data_source 修正模型名, 确保统计的是真实使用的模型:
+    - proxy 来源: model 字段已是实际后端模型, 直接用
+    - codex_session 来源: model 是客户端声明名, 用当前激活 provider 的实际模型覆盖
+    """
     logs_data = []
-    
+
     if not os.path.exists(CC_SWITCH_DB_PATH):
         return logs_data
-        
+
     try:
         conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
         cursor = conn.cursor()
-        
-        # 筛选今天生成的成功请求日志 (status_code = 200)
+
         query = """
-            SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens 
-            FROM proxy_request_logs 
+            SELECT created_at, app_type, model, input_tokens, output_tokens,
+                   cache_read_tokens, provider_id, data_source
+            FROM proxy_request_logs
             WHERE created_at >= ? AND status_code = 200
             ORDER BY created_at ASC
         """
         cursor.execute(query, (today_start,))
         rows = cursor.fetchall()
         conn.close()
-        
-        for created_at, app_type, model, input_t, output_t, cache_read_t in rows:
-            # 格式化时间为本地时间
+
+        provider_model_map, active_model_by_app = _load_provider_model_map()
+
+        for created_at, app_type, model, input_t, output_t, cache_read_t, provider_id, data_source in rows:
             local_time = datetime.datetime.fromtimestamp(created_at).strftime("%H:%M:%S")
-            
-            # 区分缓存命中与未命中 Token (对标官网)
             input_cached = cache_read_t
             input_uncached = max(0, input_t - cache_read_t)
             total_t = input_t + output_t
+
+            # 模型修正: codex_session 来源的 model 是声明名, 不可信
+            actual_model = model
+            if provider_id and provider_id in provider_model_map:
+                actual_model = provider_model_map[provider_id]
+            elif data_source == "codex_session" or provider_id == "_codex_session":
+                active_model = active_model_by_app.get(app_type)
+                if active_model:
+                    actual_model = active_model
 
             logs_data.append({
                 "time": local_time,
                 "timestamp": created_at,
                 "tool": app_type.capitalize() if app_type else "Other",
-                "model": normalize_model_name(model),
+                "model": normalize_model_name(actual_model),
                 "input_tokens": input_t,
                 "output_tokens": output_t,
                 "total_tokens": total_t,
@@ -156,7 +169,6 @@ def scan_cc_switch_logs(today_start):
         print(f"[-] 扫描 cc-switch 数据库出错: {e}")
 
     return logs_data
-
 
 def normalize_model_name(raw_model):
     """归一化 model 字符串, 合并 cc-switch 噪声变体。
@@ -190,6 +202,60 @@ def normalize_model_name(raw_model):
         return "qwen3.6-plus"
     # 兜底: 原样返回 (大小写归一化后的)
     return s
+
+def _load_provider_model_map():
+    """从 cc-switch 数据库加载两层模型映射。
+
+    返回 (provider_model_map, active_model_by_app):
+    - provider_model_map: {provider_id: actual_model}
+      从 providers 表的 settings_config.config 解析每个 provider 实际配置的模型。
+    - active_model_by_app: {app_type: actual_model}
+      每个 app_type 当前激活 (is_current=1) 的 provider 实际配置的模型。
+      用于修正 _codex_session 等内部路径的声明模型。
+
+    背景: cc-switch 的 proxy_request_logs 有两种数据来源:
+    1. data_source='proxy': 请求经过 cc-switch 代理转发, model 字段记的是
+       实际转发到后端的模型 (已替换), 可以信任。
+    2. data_source='codex_session': cc-switch 从 ~/.codex/sessions/ 同步的
+       Codex 会话日志, model 字段记的是 Codex 客户端声明的模型名 (如 gpt-5.5),
+       不是实际后端模型。需要用当前激活的 Codex provider 模型来覆盖。
+    """
+    provider_model_map = {}
+    active_model_by_app = {}
+    if not os.path.exists(CC_SWITCH_DB_PATH):
+        return provider_model_map, active_model_by_app
+
+    try:
+        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, app_type, settings_config, is_current FROM providers")
+        rows = cursor.fetchall()
+        conn.close()
+
+        for provider_id, app_type, cfg_raw, is_current in rows:
+            if not cfg_raw:
+                continue
+            try:
+                cfg = json.loads(cfg_raw)
+            except (TypeError, ValueError):
+                continue
+            config_str = cfg.get("config", "")
+            if not isinstance(config_str, str):
+                continue
+            for line in config_str.split("\n"):
+                line = line.strip()
+                if line.startswith("model ="):
+                    m = re.search(r'model\s*=\s*["\']([^"\']+)["\']', line)
+                    if m:
+                        model_name = m.group(1)
+                        provider_model_map[provider_id] = model_name
+                        if is_current:
+                            active_model_by_app[app_type] = model_name
+                    break
+    except Exception as e:
+        print(f"[-] 加载 provider 模型映射出错: {e}")
+
+    return provider_model_map, active_model_by_app
 
 def scan_antigravity_tokens(today_start):
     """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件，精确提取今日消耗"""
@@ -385,28 +451,25 @@ def get_today_usage():
     }
 
 def get_historical_usage(days=30):
-    """获取过去 days 天内每天的 Token 消耗数据，支持工具和模型两个维度细分统计"""
+    """获取过去 days 天内每天的 Token 消耗数据，支持工具和模型两个维度细分统计。
+
+    使用 provider_id -> 实际配置模型的映射, 确保统计的是真实使用的模型,
+    而非客户端声明的模型名。模型列表动态收集, 不再硬编码, 避免新模型被丢进 Other。
+    """
     now = datetime.datetime.now()
     start_date = now - datetime.timedelta(days=days - 1)
     start_date_midnight = datetime.datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
     start_timestamp = int(start_date_midnight.timestamp())
-    
+
     # 准备近 days 天的日期列表
     date_list = []
     for i in range(days):
         d = start_date_midnight + datetime.timedelta(days=i)
         date_list.append(d.strftime("%Y-%m-%d"))
-        
-    # 定义标准工具和主流模型分类
+
+    # 工具归一化映射
     tools = ["Antigravity", "Hermes", "Codex", "Other"]
-    models = ["deepseek-v4-flash", "gemini 3.5 flash", "deepseek-v4-pro", "gpt-5.5", "deepseek-v4-flash-free", "Other"]
-    
-    # 初始化历史数据库结构
-    tool_data = {t: {d: 0 for d in date_list} for t in tools}
-    model_data = {m: {d: 0 for d in date_list} for m in models}
-    daily_totals = {d: 0 for d in date_list}
-    
-    # 工具与模型归一化映射函数
+
     def get_normalized_tool(app_type):
         if not app_type:
             return "Other"
@@ -419,78 +482,102 @@ def get_historical_usage(days=30):
             return "Codex"
         return "Other"
 
-    def get_normalized_model(model_name):
-        """长前缀优先匹配, 避免 'gpt-5.4' 抢 'gpt-5.4-mini'。"""
-        if not model_name:
-            return "Other"
-        m_lower = model_name.lower().strip()
-        # 把 'Other' 排除掉, 其余按 key 长度倒序, 长的先匹配
-        candidates = sorted(
-            (m for m in models if m != "Other"),
-            key=len,
-            reverse=True,
-        )
-        for m in candidates:
-            if m in m_lower:
-                return m
-        return "Other"
-    
-    # 1. 扫描 cc-switch 数据库
+    # 加载 provider_id -> 实际配置模型的映射 + app_type -> 当前激活 provider 模型
+    provider_model_map, active_model_by_app = _load_provider_model_map()
+
+    # 第一阶段: 扫描所有数据源, 收集实际出现的模型名 (经过 provider 修正 + normalize_model_name)
+    all_model_names = set()
+
+    def resolve_model(provider_id, raw_model, data_source=None, app_type=None):
+        """用 provider 实际配置的模型覆盖声明模型, 再做归一化。"""
+        actual_model = raw_model
+        if provider_id and provider_id in provider_model_map:
+            actual_model = provider_model_map[provider_id]
+        elif data_source == "codex_session" or provider_id == "_codex_session":
+            active_model = active_model_by_app.get(app_type)
+            if active_model:
+                actual_model = active_model
+        return normalize_model_name(actual_model)
+
+    # --- 扫描 cc-switch 收集模型名 ---
+    cc_rows = []
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
             conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
             cursor = conn.cursor()
-            query = """
-                SELECT created_at, input_tokens, output_tokens, app_type, model 
-                FROM proxy_request_logs 
+            cursor.execute("""
+                SELECT created_at, input_tokens, output_tokens, app_type, model, provider_id, data_source
+                FROM proxy_request_logs
                 WHERE created_at >= ? AND status_code = 200
-            """
-            cursor.execute(query, (start_timestamp,))
-            rows = cursor.fetchall()
+            """, (start_timestamp,))
+            cc_rows = cursor.fetchall()
             conn.close()
-            
-            for created_at, input_t, output_t, app_type, model in rows:
-                d_str = datetime.datetime.fromtimestamp(created_at).strftime("%Y-%m-%d")
-                if d_str in daily_totals:
-                    tokens = input_t + output_t
-                    daily_totals[d_str] += tokens
-                    
-                    t_norm = get_normalized_tool(app_type)
-                    tool_data[t_norm][d_str] += tokens
-                    
-                    m_norm = get_normalized_model(model)
-                    model_data[m_norm][d_str] += tokens
+            for created_at, input_t, output_t, app_type, model, provider_id, data_source in cc_rows:
+                all_model_names.add(resolve_model(provider_id, model, data_source, app_type))
         except Exception as e:
             print(f"[-] 历史扫描 cc-switch 出错: {e}")
-            
-    # 2. 扫描 Hermes 数据库
+
+    # --- 扫描 Hermes 收集模型名 ---
+    hermes_rows = []
     if os.path.exists(HERMES_DB_PATH):
         try:
             conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
             cursor = conn.cursor()
-            query = """
-                SELECT started_at, input_tokens, output_tokens, cache_read_tokens, model 
-                FROM sessions 
+            cursor.execute("""
+                SELECT started_at, input_tokens, output_tokens, cache_read_tokens, model
+                FROM sessions
                 WHERE started_at >= ?
-            """
-            cursor.execute(query, (start_timestamp,))
-            rows = cursor.fetchall()
+            """, (start_timestamp,))
+            hermes_rows = cursor.fetchall()
             conn.close()
-            
-            for started_at, input_t, output_t, cache_read_t, model in rows:
-                d_str = datetime.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d")
-                if d_str in daily_totals:
-                    tokens = (input_t or 0) + (cache_read_t or 0) + (output_t or 0)
-                    daily_totals[d_str] += tokens
-                    
-                    tool_data["Hermes"][d_str] += tokens
-                    
-                    m_norm = get_normalized_model(model)
-                    model_data[m_norm][d_str] += tokens
+            for started_at, input_t, output_t, cache_read_t, model in hermes_rows:
+                all_model_names.add(normalize_model_name(model))
         except Exception as e:
             print(f"[-] 历史扫描 Hermes 出错: {e}")
-            
-    # 3. 扫描 Antigravity 统计文件
+
+    # Antigravity 固定使用 gemini 3.5 flash
+    all_model_names.add("gemini 3.5 flash")
+
+    # 构建动态模型列表 (排序保证图表稳定, Other 放最后)
+    models = sorted(all_model_names)
+    if "Other" in models:
+        models.remove("Other")
+    if "other" in models:
+        models.remove("other")
+    models.append("Other")
+
+    # 初始化历史数据库结构
+    tool_data = {t: {d: 0 for d in date_list} for t in tools}
+    model_data = {m: {d: 0 for d in date_list} for m in models}
+    daily_totals = {d: 0 for d in date_list}
+
+    # 第二阶段: 填充数据
+    # --- 填充 cc-switch 数据 ---
+    for created_at, input_t, output_t, app_type, model, provider_id, data_source in cc_rows:
+        d_str = datetime.datetime.fromtimestamp(created_at).strftime("%Y-%m-%d")
+        if d_str in daily_totals:
+            tokens = input_t + output_t
+            daily_totals[d_str] += tokens
+            t_norm = get_normalized_tool(app_type)
+            tool_data[t_norm][d_str] += tokens
+            m_norm = resolve_model(provider_id, model, data_source, app_type)
+            if m_norm not in model_data:
+                m_norm = "Other"
+            model_data[m_norm][d_str] += tokens
+
+    # --- 填充 Hermes 数据 ---
+    for started_at, input_t, output_t, cache_read_t, model in hermes_rows:
+        d_str = datetime.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d")
+        if d_str in daily_totals:
+            tokens = (input_t or 0) + (cache_read_t or 0) + (output_t or 0)
+            daily_totals[d_str] += tokens
+            tool_data["Hermes"][d_str] += tokens
+            m_norm = normalize_model_name(model)
+            if m_norm not in model_data:
+                m_norm = "Other"
+            model_data[m_norm][d_str] += tokens
+
+    # --- 填充 Antigravity 数据 ---
     if os.path.exists(ANTIGRAVITY_STATS_PATH):
         try:
             with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
@@ -502,22 +589,21 @@ def get_historical_usage(days=30):
                     input_t = record.get("inputTokens", 0)
                     output_t = record.get("outputTokens", 0)
                     tokens = input_t + output_t
-                    
                     daily_totals[d_str] += tokens
                     tool_data["Antigravity"][d_str] += tokens
                     model_data["gemini 3.5 flash"][d_str] += tokens
         except Exception as e:
             print(f"[-] 历史扫描 冰茶 AI 出错: {e}")
-            
+
     # 转换为按天排序的 values 序列
     res_tool = {}
     for t in tools:
         res_tool[t] = [tool_data[t][d] for d in date_list]
-        
+
     res_model = {}
     for m in models:
         res_model[m] = [model_data[m][d] for d in date_list]
-        
+
     return {
         "labels": date_list,
         "values": [daily_totals[d] for d in date_list],
