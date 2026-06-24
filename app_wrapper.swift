@@ -168,6 +168,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 resourceDir = fallback
             }
         }
+
+        // 端口冲突保护: 如果端口已被占用 (可能是上次更新后残留的 server 进程),
+        // 先 kill 掉占用进程, 再清理 lock 文件, 确保新 server 能正常绑定。
+        let port = apiPort
+        let cleanupProc = Process()
+        cleanupProc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        cleanupProc.arguments = ["-c", "lsof -ti :\(port) 2>/dev/null | xargs kill -9 2>/dev/null; rm -f /tmp/token_monitor_server.lock"]
+        try? cleanupProc.run()
+        cleanupProc.waitUntilExit()
+
         var cmd = "/usr/bin/python3 \"\(resourceDir)/server.py\" --port \(apiPort)"
         if let feedURLString = configuredUpdateFeedURL()?.absoluteString,
            !feedURLString.isEmpty {

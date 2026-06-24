@@ -89,19 +89,43 @@ SCPT_EOF
     echo "[update_helper] ✔ 系统目录替换完成"
 fi
 
-# 重启 app。先 kill 老进程 (bundle id), 再 open 拉新的。
-# 之前直接 open -b, 老进程还活着时 open 看到"已在跑"就不拉新,
-# 导致新 .app 没真启动, 大屏还显示老版本号。
-echo "[update_helper] 重启 app (先 kill 老进程)"
+# 重启 app。彻底清理老进程 (Swift 主进程 + Python server 子进程),
+# 释放端口和 lock 文件, 再 open 拉新的。
+# 之前只 pkill bundle id, Python server 子进程残留, 端口 15723 被占,
+# lock 文件没释放, 导致新 app 启动时 server 绑端口失败, 整个 app 起不来。
+echo "[update_helper] 重启 app (彻底清理老进程)"
+
+# 1. kill Swift 主进程 (按 bundle id 和可执行文件名)
 if [ -n "$RELAUNCH_BUNDLE_ID" ]; then
-    # kill 老进程 (bundle id), 给 1 秒退出
     pkill -f "$RELAUNCH_BUNDLE_ID" 2>/dev/null || true
+fi
+pkill -f "TokenMonitor" 2>/dev/null || true
+
+# 2. kill Python server 子进程 (按 server.py 路径匹配)
+pkill -f "Token Monitor.*server\.py" 2>/dev/null || true
+pkill -f "token_monitor.*server\.py" 2>/dev/null || true
+
+# 3. 等老进程完全退出, 端口释放
+sleep 2
+
+# 4. 清理 lock 文件, 防止新 server 认为已有实例在跑
+rm -f /tmp/token_monitor_server.lock
+
+# 5. 确认端口已释放 (最多等 3 秒)
+for i in 1 2 3; do
+    if ! lsof -i :15723 >/dev/null 2>&1; then
+        break
+    fi
+    echo "[update_helper] 端口 15723 仍被占用, 等待... ($i/3)"
     sleep 1
-    # 再用 open -b 拉 (这时老进程已退, open 会启动新 .app)
+    # 强制 kill 占用端口的进程
+    lsof -ti :15723 2>/dev/null | xargs kill -9 2>/dev/null || true
+done
+
+# 6. 启动新 app
+if [ -n "$RELAUNCH_BUNDLE_ID" ]; then
     open -b "$RELAUNCH_BUNDLE_ID" || open -a "$TARGET_APP" || true
 else
-    pkill -f "Token Monitor" 2>/dev/null || true
-    sleep 1
     open -a "$TARGET_APP" || true
 fi
 
