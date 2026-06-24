@@ -5,13 +5,16 @@
 __pycache__/
 *.py[cod]
 
-# Build and release artifacts
+# Build artifacts
+build/
 *.app/
 *.exe
+*.dmg
 *.zip
-# dmg: 忽略根目录和 build/ 下的, 但保留 dist/ 下的 (发布的 dmg)
-/*.dmg
-build/*.dmg
+
+# Go build temp
+go_build/version.txt
+go_build/token_monitor_mac
 
 # Logs and temporary files
 *.log
