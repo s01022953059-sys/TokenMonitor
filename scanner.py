@@ -352,11 +352,13 @@ def scan_hermes_tokens(today_start):
 def _dedup_events(events):
     """跨数据源去重: 把同一笔请求在多源里都被记录的事件合并为一条。
 
-    判定规则: 时间戳在 DEDUP_WINDOW_SECONDS 窗口内 + 同 model + 同 total_tokens
-    视为同一事件, 只保留 timestamp 最早的一条。cc-switch / Hermes / Antigravity
-    之间偶有重叠 (例如 Hermes 把经过 cc-switch 代理的请求再记一次),
-    用这个简单启发式足以消掉大部分重复, 又不会误伤相邻请求。
-    返回按 timestamp 升序排列的列表。
+    判定规则: 时间戳在 DEDUP_WINDOW_SECONDS 窗口内 + 同 total_tokens
+    视为同一事件, 只保留 timestamp 最早的一条。
+
+    注意: 去重 key 不再包含 model, 因为同一笔请求在不同来源里记的模型名
+    可能不同 (例如 proxy 记 glm-5.2, codex_session 记 glm-5.1)。
+    token 数 (input+output) 完全一致 + 时间相近足以判定为同一事件,
+    不会误伤相邻的独立请求 (两次请求 input 完全相同的概率极低)。
     """
     if not events:
         return []
@@ -366,7 +368,7 @@ def _dedup_events(events):
     deduped = []
     for ev in ordered:
         bucket = ev["timestamp"] // DEDUP_WINDOW_SECONDS
-        key = (bucket, (ev.get("model") or "").lower(), ev.get("total_tokens", 0))
+        key = (bucket, ev.get("total_tokens", 0))
         if key in seen_keys:
             continue
         seen_keys.add(key)
@@ -552,8 +554,24 @@ def get_historical_usage(days=30):
     daily_totals = {d: 0 for d in date_list}
 
     # 第二阶段: 填充数据
+    # --- cc-switch 行级去重: 同一笔请求可能同时出现在 proxy 和 codex_session
+    # 两个来源, 用 (时间桶, total_tokens) 去重, 保留先出现的 (proxy 优先) ---
+    seen_dedup_keys = set()
+    cc_rows_deduped = []
+    for row in sorted(cc_rows, key=lambda r: r[0]):
+        created_at = row[0]
+        input_t = row[1]
+        output_t = row[2]
+        tokens = input_t + output_t
+        bucket = created_at // DEDUP_WINDOW_SECONDS
+        dkey = (bucket, tokens)
+        if dkey in seen_dedup_keys:
+            continue
+        seen_dedup_keys.add(dkey)
+        cc_rows_deduped.append(row)
+
     # --- 填充 cc-switch 数据 ---
-    for created_at, input_t, output_t, app_type, model, provider_id, data_source in cc_rows:
+    for created_at, input_t, output_t, app_type, model, provider_id, data_source in cc_rows_deduped:
         d_str = datetime.datetime.fromtimestamp(created_at).strftime("%Y-%m-%d")
         if d_str in daily_totals:
             tokens = input_t + output_t
