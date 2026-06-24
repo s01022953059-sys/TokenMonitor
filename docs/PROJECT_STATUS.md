@@ -104,82 +104,99 @@ Token Monitor 是 macOS 本地仪表盘, 跨 Swift (UI 壳) + Python (scanner/se
 | `release_dmg.sh` | 一键 build + GitCode API 上传 DMG 到 Release 附件 |
 | `Info.plist` | 版本号 + 端口 + 更新源 URL |
 
-## Windows 发布 (2026-06-24 新增)
+## Windows 发布: Go 交叉编译 (v1.3.45+, 2026-06-24 定稿)
 
-### 跨平台改造
-- `server.py` 的单实例锁从 `fcntl` (Unix 专属) 改为跨平台: Unix 用 `fcntl.flock`, Windows 用 `msvcrt.locking`
-- `SINGLETON_LOCK_PATH` 从硬编码 `/tmp/` 改为 `tempfile.gettempdir()`, 兼容 Windows `%TEMP%`
+### 方案
 
-### Windows 构建文件
-| 文件 | 作用 |
-|---|---|
-| `start_windows.py` | Windows 启动器 (替代 start.sh), 单实例检查 + 后台启动 server.py + 自动打开浏览器 |
-| `token_monitor.spec` | PyInstaller 打包配置, 把 scanner.py / server.py / index.html / chart.js 打进单个 EXE |
-| `build_windows.sh` | Windows 上执行: pip install pyinstaller → PyInstaller 打包 → ZIP |
-| `release_all.sh` | 统一发布: Mac DMG + Windows ZIP 同时上传到 GitCode Release |
+Mac 版用 Python (scanner.py + server.py) + Swift 壳 + HTML 前端。
+Windows 版用 **Go 交叉编译**, 在 Mac 上直接产出 Windows EXE, 不需要 Windows 机器 / Wine / Docker。
+`modernc.org/sqlite` 是纯 Go, 无 CGO 依赖, 交叉编译零障碍。
 
-### Windows 数据源路径
-- cc-switch: `%USERPROFILE%\.cc-switch\cc-switch.db` (Python `os.path.expanduser("~")` 自动适配)
-- Antigravity: macOS 专属路径, Windows 上自动跳过 (文件不存在)
-- Hermes: `~/.hermes/state.db`, Windows 上路径为 `%USERPROFILE%\.hermes\state.db`
+之前尝试过 PyInstaller (Docker 镜像源全挂 + Wine 无法在 ARM Mac 上跑 x86 程序), 放弃。
+Go 版 `go_build/main.go` 完全重写, 功能与 Python 版 v1.3.45 完全对齐。
 
-### 在 Windows 上构建
-```bash
-# 需要 Python 3.10+ (从 python.org 下载)
-pip install pyinstaller
-bash build_windows.sh
-# 产出: build/TokenMonitor-<version>-win.zip
-```
+### Go 版对齐 Python 版的验证清单
 
-### 统一发布流程 (Mac + Windows)
-```bash
-# Mac 上跑 (只发 DMG):
-bash release_all.sh
+| 功能 | Python 版 | Go 版 | 状态 |
+|---|---|---|---|
+| 三源扫描 | cc-switch / Antigravity / Hermes | 同 | 对齐 |
+| 跨源去重 | `_dedup_events()` 2s 窗口 + 同模型 + 同 token 量 | `dedupEvents()` 同逻辑 | 对齐 |
+| 模型归一化 | `normalize_model_name()` 去日期后缀 + qwen3.6-plus 折叠 | `normalizeModelName()` 同逻辑 | 对齐 |
+| DeepSeek 余额 | 语义匹配 provider_type/name/app_type LIKE '%deepseek%' | 同 | 对齐 |
+| `/api/usage` summary | 12 个字段含 events_dedup | 同 12 个字段 | 对齐 |
+| `/api/history` | tools=[Antigravity,Hermes,Codex,Other] + models 6 项 | 同 | 对齐 |
+| `/api/app-info` | 每次请求重读版本号 | 同 (readAppVersion 每次调用) | 对齐 |
+| `/api/check-update` | 用命令行传入的 feed URL, 空值检查, 每次重读版本 | 同 | 对齐 |
+| 版本号来源 | Info.plist (多路径回退) | version.txt → Info.plist → 编译常量 | 对齐 |
+| 单实例锁 | fcntl.flock (Unix) / msvcrt (Windows) | syscall.Flock (Unix) / 文件检测 (Windows) | 对齐 |
+| `estimated_cost_usd` | 已删除 | 不存在 | 对齐 |
 
-# Windows 上跑 (只发 ZIP):
-bash release_all.sh
-
-# 完整发布: Mac 上发 DMG, Windows 上发 ZIP, 都上传到同一个 Release tag
-```
-
-## Windows 发布 v2: Go 交叉编译 (2026-06-24 更新)
-
-### 方案变更
-- 放弃 PyInstaller (网络环境无法拉 Docker 镜像 / 装 Wine)
-- 改用 **Go 交叉编译**: `GOOS=windows GOARCH=amd64 go build`, 在 Mac 上直接产出 Windows EXE
-- `modernc.org/sqlite` 是纯 Go, 无 CGO 依赖, 交叉编译零障碍
-
-### Go 版完全对齐 Python 版 v1.3.44
-- `go_build/main.go` 完全重写 (1121 行), 移除旧 v1.1 的 Codex 原生日志 / Claude Code JSONL 等多余源
-- 三源扫描: cc-switch / Antigravity / Hermes (与 Python 版完全一致)
-- 跨源去重: `dedupEvents()` 对齐 `_dedup_events()` (时间窗口 2s + 同模型 + 同 token 量)
-- 模型归一化: `normalizeModelName()` 对齐 `normalize_model_name()` (去日期后缀 + qwen3.6-plus 家族折叠)
-- DeepSeek 余额: 语义匹配 (provider_type/name/app_type LIKE '%deepseek%'), 不再硬编码 id
-- `/api/check-update`: 完整实现, 对齐 server.py 的版本比较 + asset URL 选取
-- `/api/app-info`: 动态版本号 (从 version.txt 或 Info.plist 读取)
-- 删除 `estimated_cost_usd` (用户明确不需要)
-- 单实例锁: 跨平台 (Unix flock / Windows 文件检测)
+### Go 版修复记录 (v1.3.45)
+1. `checkUpdateRemote` 改用 `feedURL` (命令行参数) 而非硬编码 `updateFeedURL`
+2. 空 feed URL 时返回 "未配置更新源" 错误 (对齐 Python 版)
+3. `/api/app-info` 和 `/api/check-update` 每次请求重读版本号 (对齐 Python 版 `_read_app_version()`)
 
 ### 构建文件
+
 | 文件 | 作用 |
 |---|---|
-| `build_windows.sh` | Go 交叉编译 Windows EXE + 打 ZIP (在 Mac 上直接跑) |
-| `release_all.sh` | 一键: Mac DMG + Windows ZIP 同时构建上传到 GitCode Release |
-| `go_build/lock_unix.go` | Unix 单实例锁 (fcntl.flock) |
+| `build_macos.sh` | 编译 Swift + 拼装 .app + Pillow icns + codesign |
+| `build_dmg.sh` | hdiutil 打 DMG |
+| `build_windows.sh` | Go 交叉编译 `GOOS=windows GOARCH=amd64` + 打 ZIP (Mac 上直接跑) |
+| `release_all.sh` | **一键发布**: 清空 build/ → Mac DMG + Windows ZIP → 上传 GitCode Release → 清空 build/ |
+| `go_build/main.go` | Go 版主程序 (1121 行, 对齐 Python v1.3.45) |
+| `go_build/lock_unix.go` | Unix 单实例锁 (syscall.Flock) |
 | `go_build/lock_windows.go` | Windows 单实例锁 (文件检测) |
+| `go_build/static/` | 嵌入的 index.html + chart.js (与根目录同步) |
 
-### 验证结果
-- Mac 上 Go 版 API 输出与 Python 版对比: by_tool / by_model / recent_events / events_dedup / DeepSeek 余额 全部一致
-- Windows EXE: 16MB (PE32+ x86-64), ZIP 4.6MB
-- v1.3.44 Release 已上传 TokenMonitor-win.zip
-- 下载地址: `https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.44/TokenMonitor-win.zip`
+### 发布流程
 
-### 统一发布流程
 ```bash
-# 一键发布 Mac + Windows:
-bash release_all.sh
+# 1. bump 版本号 (两处)
+#    Info.plist: <string>1.3.45</string>
+#    go_build/main.go: var appVersion = "1.3.45"
 
-# 只发 Windows:
-bash build_windows.sh
-# 然后手动上传 ZIP 到 GitCode Release
+# 2. git 提交 + 打 tag
+git add -A
+git commit -m "bump: v1.3.45"
+git tag v1.3.45
+git push origin main
+git push origin v1.3.45
+
+# 3. 一键发布 (Mac DMG + Windows ZIP 同时构建上传)
+bash release_all.sh
 ```
+
+`release_all.sh` 做的事:
+1. 清空 `build/` 目录 (防止旧产物混入)
+2. `build_macos.sh` 编译 .app → `build_dmg.sh` 打 DMG → 上传 "Token Monitor.dmg"
+3. `build_windows.sh` Go 交叉编译 EXE → 打 ZIP → 上传 "TokenMonitor-win.zip"
+4. 清空 `build/` 目录
+5. 验证 Release 附件列表
+
+### GitCode Release API (上传附件)
+
+GitCode 不支持删除 release 附件, 所以每次发新版本用新 tag。
+上传是两步流程:
+1. `GET /releases/:tag/upload_url?file_name=xxx` → 拿到预签名 PUT 地址 + headers
+2. `PUT` 文件到该地址
+
+凭据从 `git credential fill` (host=gitcode.com) 读取, 不硬编码 token。
+
+### 下载地址 (v1.3.45)
+
+- Mac: `https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.45/Token Monitor.dmg`
+- Windows: `https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.45/TokenMonitor-win.zip`
+
+### Windows 数据源路径
+
+- cc-switch: `%USERPROFILE%\.cc-switch\cc-switch.db` (Go `os.UserHomeDir()` 自动适配)
+- Antigravity: macOS 专属路径, Windows 上自动跳过 (文件不存在)
+- Hermes: `%USERPROFILE%\.hermes\state.db`
+
+### 已废弃的文件
+
+| 文件 | 状态 |
+|---|---|
+| `start_windows.py` | 废弃 (PyInstaller 方案, 不再使用) |
+| `token_monitor.spec` | 废弃 (PyInstaller 方案, 不再使用) |
