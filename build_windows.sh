@@ -10,20 +10,16 @@ set -euo pipefail
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SOURCE_ROOT"
 
-APP_VERSION=$(grep -o 'CFBundleShortVersionString' Info.plist -A1 | grep '<string>' | head -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/' || echo "1.3.44")
+APP_VERSION=$(grep -o 'CFBundleShortVersionString' Info.plist -A1 | grep '<string>' | head -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
 ZIP_NAME="TokenMonitor-${APP_VERSION}-win.zip"
-TAG="v${APP_VERSION}"
 
 echo "[build_windows] 版本: $APP_VERSION"
 
 # ─── 1. 交叉编译 Windows EXE ───
 echo "[build_windows] [1/3] Go 交叉编译 (windows/amd64)"
 cd go_build
-
-# 写入版本文件 (打包后 EXE 会读同目录 version.txt)
 echo "$APP_VERSION" > version.txt
-
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -H windowsgui" -o "TokenMonitor.exe" .
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "TokenMonitor.exe" .
 
 if [[ ! -f "TokenMonitor.exe" ]]; then
     echo "[build_windows] ✘ EXE 没生成" >&2
@@ -40,15 +36,24 @@ STAGE_DIR="$SOURCE_ROOT/build/windows_stage"
 mkdir -p "$STAGE_DIR"
 cp go_build/TokenMonitor.exe "$STAGE_DIR/TokenMonitor.exe"
 
-# 启动说明
+# .bat 启动脚本 (最小化窗口)
+cat > "$STAGE_DIR/启动TokenMonitor.bat" << 'BATEOF'
+@echo off
+start "" /min TokenMonitor.exe
+BATEOF
+
 cat > "$STAGE_DIR/README.txt" << 'README'
 Token Monitor for Windows
 =========================
 
-双击 TokenMonitor.exe 启动, 浏览器会自动打开仪表盘。
-如未自动打开, 手动访问: http://127.0.0.1:15723
+方式一: 双击 "启动TokenMonitor.bat"
+  最小化窗口运行, 自动打开浏览器
 
-停止服务: 在任务管理器中结束 TokenMonitor.exe 进程
+方式二: 双击 TokenMonitor.exe
+  弹出控制台窗口, 自动打开浏览器
+
+手动访问: http://127.0.0.1:15723
+停止服务: 关闭控制台窗口, 或在任务管理器中结束 TokenMonitor.exe
 README
 
 cd "$STAGE_DIR"
