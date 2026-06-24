@@ -1,0 +1,236 @@
+# Token Monitor
+
+本地 Token 使用量监控仪表盘。只读扫描多个 AI 工具的数据源，汇总每日 Token 消耗，提供可视化大屏 + 历史趋势 + 应用内自更新。
+
+支持 **macOS** 和 **Windows** 双平台。
+
+## 功能
+
+### 数据采集
+
+只读扫描三个数据源，不修改任何原始数据：
+
+| 数据源 | 路径 | 说明 |
+|---|---|---|
+| cc-switch | `~/.cc-switch/cc-switch.db` | SQLite，记录所有经过代理的 API 请求 |
+| Antigravity (冰茶 AI) | `~/Library/Application Support/BingchaAI/usage_stats.json` | JSON，每日统计 |
+| Hermes | `~/.hermes/state.db` | SQLite，会话级记录 |
+
+三源数据合并后做**跨源去重**：同一时间窗口（2 秒）内 + 同模型 + 同 Token 量视为同一事件，只计一次。避免同一笔请求被多个数据源重复计入。
+
+**模型名归一化**：自动折叠 cc-switch 写入的噪声变体（如 `qwen3.6-Plus` / `qwen3.6-plus-2026-04-02` 统一为 `qwen3.6-plus`）。
+
+**DeepSeek 余额查询**：从 cc-switch 数据库中按语义匹配（provider_type / name / app_type 含 deepseek）提取 API Key，请求 DeepSeek 官方余额接口，每 60 秒刷新一次。
+
+### 仪表盘
+
+- 双圆环图（donut）：左侧按工具，右侧按模型
+- 按排名固定色盘（top1 红 → top2 橙 → top3 黄 → ...）
+- 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
+- 历史趋势弹窗：7/14/30 天，工具和模型两个维度
+- About 弹窗：版本号 + 更新状态
+- 深色 / 亮色主题切换
+
+### 应用内自更新（仅 macOS）
+
+macOS 版通过 Swift 壳实现完整的应用内自更新：
+- 从 GitCode Release API 检查新版本
+- 下载 DMG → 解压 → 替换 .app → 杀旧进程 → 重启
+- `~/Applications/` 路径静默升级（无密码），`/Applications/` 路径需 sudo 弹窗
+
+### API 接口
+
+本地 HTTP 服务（默认端口 15723）提供 4 个 API：
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/usage` | 今日 Token 汇总（总量/输入/输出/缓存/DeepSeek 余额 + 按工具/模型拆分 + 最近 30 条事件） |
+| `GET /api/history` | 过去 30 天每日趋势（按工具/模型拆分） |
+| `GET /api/app-info` | 应用信息（名称/版本/更新源） |
+| `GET /api/check-update` | 检查更新（请求 GitCode Release API，比较版本号，返回下载地址） |
+
+## 平台实现
+
+### macOS
+
+| 层 | 技术 | 文件 |
+|---|---|---|
+| UI 壳 | Swift (WKWebView + 状态栏 + 自更新) | `app_wrapper.swift` |
+| 后端 | Python (HTTP server + scanner) | `server.py` / `scanner.py` |
+| 前端 | HTML/CSS/JS (Chart.js) | `index.html` / `chart.js` |
+| 启动 | Bash 脚本 (单实例锁 + nohup) | `start.sh` |
+| 安装 | 一站式安装脚本 | `install.sh` |
+
+macOS 版有完整的原生体验：WKWebView 内嵌网页、状态栏菜单、NSAlert 更新提示、自动下载安装更新包。
+
+### Windows
+
+| 层 | 技术 | 文件 |
+|---|---|---|
+| 全部 | Go (HTTP server + scanner + 系统托盘) | `go_build/main.go` |
+| 前端 | 嵌入的 HTML/CSS/JS (与 macOS 同一份) | `go_build/static/` |
+| SQLite | modernc.org/sqlite (纯 Go, 无 CGO) | — |
+| 系统托盘 | getlantern/systray | `go_build/icon.go` |
+
+Windows 版用 Go 交叉编译产出单个 EXE，无需安装 Python 或任何运行时。双击运行后在系统托盘显示图标，右键菜单可"打开仪表盘"或"退出"。
+
+**Go 版与 Python 版功能完全对齐**，包括：三源扫描、跨源去重、模型归一化、DeepSeek 余额语义匹配、check-update 端点、每次请求重读版本号。
+
+## Windows 平台限制
+
+| 限制 | 说明 |
+|---|---|
+| **无原生窗口** | Windows 版通过系统托盘 + 浏览器打开仪表盘，没有 macOS 那样的 WKWebView 内嵌窗口。点托盘"打开仪表盘"会用系统默认浏览器打开 `http://127.0.0.1:15723` |
+| **无应用内自更新** | macOS 版能自动下载 DMG 并替换 .app，Windows 版没有这个能力。Windows 用户需要手动下载新版 ZIP 替换 |
+| **Antigravity 数据源** | Antigravity (冰茶 AI) 的统计数据路径是 macOS 专属的 (`~/Library/Application Support/`)，Windows 上该文件不存在，自动跳过。如果 Antigravity 未来支持 Windows，路径需要另行适配 |
+| **单实例锁机制不同** | macOS 用 `fcntl.flock` 文件锁，Windows 用文件存在检测 + 端口占用检测（Go 版用 `net.Listen` 失败判断端口被占） |
+| **check-update 下载地址** | `/api/check-update` 返回的下载地址优先选 `.dmg` 附件，Windows 用户需要手动从 Release 页面下载 `.zip` |
+| **版本号来源** | macOS 从 `Info.plist` 读取，Windows 从同目录 `version.txt` 读取（打包时写入），回退到编译时常量 |
+| **无 codesign** | Windows EXE 没有代码签名，首次运行可能被 SmartScreen 拦截，需点击"仍要运行" |
+
+## 安装
+
+### macOS
+
+**方式一：DMG 安装**
+
+```bash
+# 下载 DMG
+curl -L -o "Token Monitor.dmg" \
+  "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.47/Token Monitor.dmg"
+
+# 双击挂载, 拖 Token Monitor.app 到 Applications
+open "Token Monitor.dmg"
+```
+
+**方式二：脚本安装**
+
+```bash
+git clone https://gitcode.com/baggiopeng/TokenMonitor.git
+cd TokenMonitor
+bash install.sh          # 装到 /Applications
+bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
+```
+
+### Windows
+
+```bash
+# 下载 ZIP
+curl -L -o TokenMonitor-win.zip \
+  "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.47/TokenMonitor-win.zip"
+
+# 解压后双击 TokenMonitor.exe
+# 系统托盘出现图标, 右键 → "打开仪表盘"
+```
+
+无需安装 Python 或任何运行时，单个 EXE 即可运行。
+
+## 构建
+
+### 前置条件
+
+- macOS 11+ (Apple Silicon 或 Intel)
+- Xcode Command Line Tools (`xcode-select --install`)
+- Python 3.8+ (macOS 版后端)
+- Go 1.21+ (Windows 交叉编译)
+- Pillow (`pip install Pillow`, 生成图标)
+
+### 构建 macOS .app + DMG
+
+```bash
+bash build_macos.sh    # 编译 Swift → 拼装 .app → 生成 icns → codesign
+bash build_dmg.sh      # hdiutil 打 DMG
+```
+
+### 构建 Windows EXE
+
+在 macOS 上直接交叉编译，不需要 Windows 机器：
+
+```bash
+bash build_windows.sh  # GOOS=windows GOARCH=amd64 go build → 打 ZIP
+```
+
+产出：`build/TokenMonitor-<version>-win.zip`
+
+### 一键发布（Mac + Windows）
+
+```bash
+# 1. bump 版本号 (两处)
+#    Info.plist: <string>1.3.47</string>
+#    go_build/main.go: var appVersion = "1.3.47"
+
+# 2. git 提交 + 打 tag
+git add -A
+git commit -m "bump: v1.3.47"
+git tag v1.3.47
+git push origin main
+git push origin v1.3.47
+
+# 3. 一键发布
+bash release_all.sh
+```
+
+`release_all.sh` 做的事：
+1. 清空 `build/` 目录
+2. 构建 Mac .app → DMG → 上传到 GitCode Release
+3. Go 交叉编译 Windows EXE → ZIP → 上传到同一 Release
+4. 清空 `build/` 目录
+5. 验证 Release 附件
+
+## 项目结构
+
+```
+.
+├── app_wrapper.swift          # macOS Swift 壳 (WKWebView + 状态栏 + 自更新)
+├── scanner.py                 # macOS 数据采集 (三源 + 去重 + 归一化)
+├── server.py                  # macOS HTTP 服务 (4 API + 单实例锁)
+├── index.html                 # 前端大屏 (双 donut + 趋势 + About)
+├── chart.js                   # Chart.js v4.5.1
+├── start.sh                   # macOS 启动脚本
+├── install.sh                 # macOS 安装脚本
+├── update_helper.sh           # macOS 自更新 helper
+├── build_macos.sh             # macOS .app 构建
+├── build_dmg.sh               # macOS DMG 打包
+├── build_windows.sh           # Windows EXE 构建 (Go 交叉编译)
+├── release_all.sh             # 统一发布脚本 (Mac + Windows)
+├── Info.plist                 # 版本号 + 端口 + 更新源 URL
+├── go_build/
+│   ├── main.go                # Windows Go 版主程序 (HTTP + scanner + 托盘)
+│   ├── icon.go                # 嵌入图标
+│   ├── icon.ico               # 托盘图标
+│   ├── lock_unix.go           # Unix 单实例锁 (syscall.Flock)
+│   ├── lock_windows.go        # Windows 单实例锁
+│   ├── go.mod                 # Go 模块定义
+│   └── static/                # 嵌入的前端文件 (与根目录同步)
+│       ├── index.html
+│       └── chart.js
+└── docs/
+    └── PROJECT_STATUS.md      # 详细项目状态文档
+```
+
+## 技术说明
+
+### 为什么 Mac 用 Python、Windows 用 Go？
+
+macOS 版最初用 Python 开发，后续迭代了 40+ 个版本，功能稳定。Swift 壳负责 UI 和自更新，Python 负责数据采集和 HTTP 服务，各司其职。
+
+Windows 版需要单文件可执行（不要求用户装 Python），而 PyInstaller 在开发者的 Mac 上无法交叉编译（Docker 镜像源失效 + ARM Mac 无法跑 Wine）。Go 的纯 Go SQLite 驱动 (`modernc.org/sqlite`) 让交叉编译变得简单：`GOOS=windows GOARCH=amd64 go build` 一条命令产出 EXE。
+
+两版的数据采集逻辑完全对齐（三源 + 去重 + 归一化 + DeepSeek 余额），API 返回格式一致，前端同一份 `index.html`。
+
+### GitCode Release 上传
+
+GitCode 的 Release 附件上传是两步流程：
+1. `GET /releases/:tag/upload_url?file_name=xxx` → 获取预签名 PUT 地址
+2. `PUT` 文件到该地址
+
+凭据从 `git credential fill` (host=gitcode.com) 读取，不硬编码 token。
+
+GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 tag。
+
+## 下载
+
+最新版本：[v1.3.47](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.47)
+
+- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.47/Token%20Monitor.dmg)
+- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.47/TokenMonitor-win.zip)
