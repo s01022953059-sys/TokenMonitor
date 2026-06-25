@@ -51,3 +51,46 @@
 | build_dmg.sh | macOS DMG 打包 |
 | build_windows.sh | Windows EXE 构建 (Go 交叉编译) |
 | docs/PROJECT_STATUS.md | 详细项目状态 |
+
+## Release Notes 规范
+
+- 每次发版时, release notes 要简短说明本次改动, 一两句话即可
+- 格式: 中文, 直接写在 git commit message 里 (release_all.sh 会用 tag 对应的 commit message)
+- 示例: `feat: 热力图点击下钻 + 会话详情对话浏览; bump v1.3.65`
+
+## 功能演进历史
+
+### v1.3.66 (2026-06-25)
+- 修复 Python 版 server.py 漏注册 /api/heatmap 路由导致热力图 404
+- 会话详情支持分页: 10/20/50/100 条每页可切换, 上一页/下一页按钮
+- Go 版同步实现分页 (SessionDetailResponse 增加 total/page/page_size/total_pages 字段)
+
+### v1.3.65 (2026-06-25)
+- 热力图单元格可点击, 弹出该时段 API 调用详情列表
+- 会话列表行可点击, 弹出完整对话内容 (用户/助手消息, 按角色着色)
+- 新增 /api/session_detail 和 /api/heatmap_detail 接口, Mac/Win 双端对齐
+
+### v1.3.63-1.3.64 (2026-06-24)
+- 新增活动热力图 (星期 x 小时, 颜色深浅表示活跃度)
+- 新增会话详情列表 (最近 API 调用会话, 含模型/Token/时间戳)
+- 修复按钮重复导致的定位错误和点击失效
+
+### v1.3.62 (2026-06-24)
+- 周统计/月统计增加区间总消耗和日均消耗
+
+### v1.3.60-1.3.61
+- 修复自动更新后应用无法启动
+- 修复关于页点立即更新提示暂无可用更新
+
+## 已知问题 & 待办
+
+- cc-switch session_id (UUID) 与 Codex rollout 文件名 (UUIDv7) 不一致, 当前用 timestamp 近似匹配 (600 秒窗口)
+- GitCode API 返回 asset size 为 0 (已知行为, 实际文件可正常下载)
+- GitCode 不支持删除 release 附件, 如需重新上传必须用新 tag
+- SQLite 缓存优化已评估, 当前数据量下直接查源库足够快 (10-100ms), 暂不需要
+
+## 技术决策记录
+
+- **不用 SQLite 缓存层**: 数据源本身已是 SQLite/JSON, 直接查源库 10-100ms, 加缓存层增加同步复杂度但收益微小 (2026-06-25 评估)
+- **Go 版用 modernc.org/sqlite**: 纯 Go 驱动, 无 CGO, 支持交叉编译
+- **会话详情 max_messages=500**: 防止超大 rollout 文件导致内存爆炸, 分页在前端做
