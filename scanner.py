@@ -842,7 +842,7 @@ def get_heatmap_data(days=30):
     }
 
 
-def get_session_detail(session_id, max_messages=50, timestamp=None):
+def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, page_size=20):
     """根据 session_id 从 Codex rollout JSONL 文件中提取对话内容。
 
     查找路径: ~/.codex/sessions/YYYY/MM/DD/rollout-*<session_id>*.jsonl
@@ -945,7 +945,19 @@ def get_session_detail(session_id, max_messages=50, timestamp=None):
     except Exception as e:
         print(f"[-] session_detail 出错: {e}")
 
-    return {"session_id": session_id, "messages": messages}
+    # 分页
+    total = len(messages)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged = messages[start:end]
+    return {
+        "session_id": session_id,
+        "messages": paged,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+    }
 
 def get_heatmap_detail(weekday, hour, days=30):
     """返回热力图某个格子 (星期=weekday, 小时=hour) 对应的 API 调用列表。

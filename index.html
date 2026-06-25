@@ -727,7 +727,9 @@
             background: var(--bg-subtle);
             border-left: 3px solid var(--text-muted);
         }
-        .chat-msg.assistant {
+        .pager-btn { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+.pager-btn:hover { background: var(--bg-tertiary); }
+.chat-msg.assistant {
             background: rgba(168, 85, 247, 0.06);
             border-left: 3px solid var(--modal-line-color);
         }
@@ -1042,8 +1044,22 @@
                 <h3>对话内容</h3>
                 <button id="chatDetailCloseBtn" class="close-btn">&times;</button>
             </div>
-            <div id="chatDetailContent" style="max-height: 60vh; overflow-y: auto; padding: 4px 8px;">
+            <div id="chatDetailContent" style="max-height: 55vh; overflow-y: auto; padding: 4px 8px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+            <div id="chatDetailPager" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                <div id="chatDetailPageInfo" style="flex: 1;"></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="chatDetailPrevBtn" class="pager-btn" style="display:none;">&#8249; 上一页</button>
+                    <span id="chatDetailPageNum" style="min-width: 50px; text-align: center;"></span>
+                    <button id="chatDetailNextBtn" class="pager-btn" style="display:none;">下一页 &#8250;</button>
+                    <select id="chatDetailPageSize" style="margin-left: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font-size: 11px;">
+                        <option value="10">10条/页</option>
+                        <option value="20" selected>20条/页</option>
+                        <option value="50">50条/页</option>
+                        <option value="100">100条/页</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -2330,17 +2346,28 @@
         });
 
         // ===== 对话内容查看 =====
-        async function loadChatDetail(sessionId, timestamp) {
+        let _chatDetailState = { sessionId: null, timestamp: null, page: 1, pageSize: 20 };
+        async function loadChatDetail(sessionId, timestamp, page) {
             const modal = document.getElementById('chatDetailModal');
             const contentEl = document.getElementById('chatDetailContent');
+            if (page === undefined) page = 1;
+            _chatDetailState.sessionId = sessionId;
+            _chatDetailState.timestamp = timestamp;
+            _chatDetailState.page = page;
+            _chatDetailState.pageSize = parseInt(document.getElementById('chatDetailPageSize').value);
             contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            document.getElementById('chatDetailPager').style.display = 'none';
             modal.classList.add('active');
             try {
-                let url = API_BASE + '/api/session_detail?session_id=' + encodeURIComponent(sessionId);
+                let url = API_BASE + '/api/session_detail?session_id=' + encodeURIComponent(sessionId) +
+                    '&page=' + _chatDetailState.page + '&page_size=' + _chatDetailState.pageSize;
                 if (timestamp) url += '&timestamp=' + timestamp;
                 const res = await fetch(url, { cache: 'no-store' });
                 const data = await res.json();
                 const messages = data.messages || [];
+                const total = data.total || 0;
+                const totalPages = data.total_pages || 1;
+                const curPage = data.page || 1;
                 if (messages.length === 0) {
                     contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">未找到对话内容<br><span style="font-size:10px;">(可能该会话无 session_id 或 rollout 文件已清理)</span></div>';
                     return;
@@ -2355,10 +2382,27 @@
                 });
                 html += '</div>';
                 contentEl.innerHTML = html;
+                // 分页控件
+                const pager = document.getElementById('chatDetailPager');
+                pager.style.display = 'flex';
+                document.getElementById('chatDetailPageInfo').textContent = '共 ' + total + ' 条消息';
+                document.getElementById('chatDetailPageNum').textContent = curPage + ' / ' + totalPages;
+                document.getElementById('chatDetailPrevBtn').style.display = curPage > 1 ? '' : 'none';
+                document.getElementById('chatDetailNextBtn').style.display = curPage < totalPages ? '' : 'none';
+                contentEl.scrollTop = 0;
             } catch (err) {
                 contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
             }
         }
+        document.getElementById('chatDetailPrevBtn').addEventListener('click', () => {
+            if (_chatDetailState.page > 1) loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page - 1);
+        });
+        document.getElementById('chatDetailNextBtn').addEventListener('click', () => {
+            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page + 1);
+        });
+        document.getElementById('chatDetailPageSize').addEventListener('change', () => {
+            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, 1);
+        });
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;

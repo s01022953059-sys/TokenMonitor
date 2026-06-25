@@ -329,6 +329,16 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
+        if self.path.startswith("/api/heatmap?") or self.path == "/api/heatmap":
+            try:
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                days = int(qs.get("days", ["30"])[0])
+                self._write_json(200, get_heatmap_data(days))
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
         if self.path.startswith("/api/heatmap_detail"):
             try:
                 from urllib.parse import urlparse, parse_qs
@@ -348,7 +358,9 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 qs = parse_qs(parsed.query)
                 session_id = qs.get("session_id", [""])[0]
                 timestamp = qs.get("timestamp", [None])[0]
-                self._write_json(200, get_session_detail(session_id, timestamp=timestamp))
+                page = int(qs.get("page", ["1"])[0])
+                page_size = int(qs.get("page_size", ["20"])[0])
+                self._write_json(200, get_session_detail(session_id, timestamp=timestamp, page=page, page_size=page_size))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
