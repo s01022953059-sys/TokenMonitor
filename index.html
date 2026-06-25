@@ -1002,8 +1002,22 @@
                 </div>
                 <span id="sessionCount" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"></span>
             </div>
-            <div id="sessionList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
+            <div id="sessionList" style="max-height: 50vh; overflow-y: auto; font-size: 12px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+            <div id="sessionPager" style="display: none; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                <div id="sessionPageInfo" style="flex: 1;"></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="sessionPrevBtn" class="pager-btn">&#8249; 上一页</button>
+                    <span id="sessionPageNum" style="min-width: 50px; text-align: center;"></span>
+                    <button id="sessionNextBtn" class="pager-btn">下一页 &#8250;</button>
+                    <select id="sessionPageSize" style="margin-left: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font-size: 11px;">
+                        <option value="20">20条/页</option>
+                        <option value="50" selected>50条/页</option>
+                        <option value="100">100条/页</option>
+                        <option value="200">200条/页</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -1015,8 +1029,8 @@
                 <h3>活动热力图</h3>
                 <button id="heatmapCloseBtn" class="close-btn">&times;</button>
             </div>
-            <div style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
-                过去 30 天 · 按小时 x 星期统计 Token 消耗量
+            <div id="heatmapSubtitle" style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
+                加载中...
             </div>
             <div id="heatmapContainer" style="padding: 12px 4px; overflow-x: auto;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
@@ -1031,8 +1045,22 @@
                 <h3 id="heatmapDetailTitle">时段详情</h3>
                 <button id="heatmapDetailCloseBtn" class="close-btn">&times;</button>
             </div>
-            <div id="heatmapDetailList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
+            <div id="heatmapDetailList" style="max-height: 50vh; overflow-y: auto; font-size: 12px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+            <div id="heatmapDetailPager" style="display: none; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                <div id="heatmapDetailPageInfo" style="flex: 1;"></div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <button id="heatmapDetailPrevBtn" class="pager-btn">&#8249; 上一页</button>
+                    <span id="heatmapDetailPageNum" style="min-width: 50px; text-align: center;"></span>
+                    <button id="heatmapDetailNextBtn" class="pager-btn">下一页 &#8250;</button>
+                    <select id="heatmapDetailPageSize" style="margin-left: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font-size: 11px;">
+                        <option value="20">20条/页</option>
+                        <option value="50" selected>50条/页</option>
+                        <option value="100">100条/页</option>
+                        <option value="200">200条/页</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
@@ -2134,54 +2162,79 @@
         // ===== 会话详情 =====
         let currentSessionDays = 1;
 
-        async function loadSessions(days) {
+        let _sessionState = { days: 1, page: 1, pageSize: 50 };
+        function renderSessionList(sessions, listEl) {
+            let html = '<div class="session-header">' +
+                '<span>时间</span><span>工具</span><span>模型</span>' +
+                '<span>总Token</span><span>缓存命中</span><span>延迟</span>' +
+                '</div>';
+            sessions.forEach(s => {
+                const toolColor = getToolColor(s.tool);
+                const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
+                html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
+                    '<span class="sess-time">' + s.time + '</span>' +
+                    '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
+                    '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
+                    '<span class="sess-tokens">' + formatTokens(s.total_tokens) + '</span>' +
+                    '<span class="sess-cached">' + (s.input_cached > 0 ? formatTokens(s.input_cached) : '-') + '</span>' +
+                    '<span class="sess-latency">' + latencyText + '</span>' +
+                    '</div>';
+            });
+            listEl.innerHTML = html;
+            listEl.querySelectorAll('.session-item').forEach(row => {
+                row.addEventListener('click', () => {
+                    const sid = row.dataset.sessionId;
+                    const ts = row.dataset.timestamp;
+                    if (sid) loadChatDetail(sid, ts);
+                });
+            });
+        }
+        function updatePager(pagerId, infoId, numId, prevId, nextId, total, page, pageSize, totalPages) {
+            const pager = document.getElementById(pagerId);
+            if (total === 0) { pager.style.display = 'none'; return; }
+            pager.style.display = 'flex';
+            document.getElementById(infoId).textContent = '共 ' + total + ' 条';
+            document.getElementById(numId).textContent = page + ' / ' + totalPages;
+            document.getElementById(prevId).style.display = page > 1 ? '' : 'none';
+            document.getElementById(nextId).style.display = page < totalPages ? '' : 'none';
+        }
+        async function loadSessions(days, page) {
+            if (page === undefined) page = 1;
             currentSessionDays = days;
+            _sessionState.days = days;
+            _sessionState.page = page;
+            _sessionState.pageSize = parseInt(document.getElementById('sessionPageSize').value);
             const listEl = document.getElementById('sessionList');
             const countEl = document.getElementById('sessionCount');
             listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            document.getElementById('sessionPager').style.display = 'none';
             try {
-                const res = await fetch(API_BASE + '/api/sessions?days=' + days, { cache: 'no-store' });
+                const res = await fetch(API_BASE + '/api/sessions?days=' + days + '&page=' + _sessionState.page + '&page_size=' + _sessionState.pageSize, { cache: 'no-store' });
                 const data = await res.json();
                 const sessions = data.sessions || [];
                 countEl.innerText = '共 ' + data.total + ' 条';
-
                 if (sessions.length === 0) {
                     listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">暂无数据</div>';
                     return;
                 }
-
-                let html = '<div class="session-header">' +
-                    '<span>时间</span><span>工具</span><span>模型</span>' +
-                    '<span>总Token</span><span>缓存命中</span><span>延迟</span>' +
-                    '</div>';
-
-                sessions.forEach(s => {
-                    const toolColor = getToolColor(s.tool);
-                    const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
-                    html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
-                        '<span class="sess-time">' + s.time + '</span>' +
-                        '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
-                        '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
-                        '<span class="sess-tokens">' + formatTokens(s.total_tokens) + '</span>' +
-                        '<span class="sess-cached">' + (s.input_cached > 0 ? formatTokens(s.input_cached) : '-') + '</span>' +
-                        '<span class="sess-latency">' + latencyText + '</span>' +
-                        '</div>';
-                });
-                listEl.innerHTML = html;
-
-                // 行点击 -> 查看对话内容
-                listEl.querySelectorAll('.session-item').forEach(row => {
-                    row.addEventListener('click', () => {
-                        const sid = row.dataset.sessionId;
-                        const ts = row.dataset.timestamp;
-                        if (sid) loadChatDetail(sid, ts);
-                    });
-                });
+                renderSessionList(sessions, listEl);
+                updatePager('sessionPager', 'sessionPageInfo', 'sessionPageNum', 'sessionPrevBtn', 'sessionNextBtn',
+                    data.total, data.page, _sessionState.pageSize, data.total_pages);
+                listEl.scrollTop = 0;
             } catch (err) {
                 listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
                 console.error('loadSessions error:', err);
             }
         }
+        document.getElementById('sessionPrevBtn').addEventListener('click', () => {
+            if (_sessionState.page > 1) loadSessions(_sessionState.days, _sessionState.page - 1);
+        });
+        document.getElementById('sessionNextBtn').addEventListener('click', () => {
+            loadSessions(_sessionState.days, _sessionState.page + 1);
+        });
+        document.getElementById('sessionPageSize').addEventListener('change', () => {
+            loadSessions(_sessionState.days, 1);
+        });
 
         // 会话详情弹窗事件
         document.getElementById('sessionsOpenBtn').addEventListener('click', () => {
@@ -2209,11 +2262,22 @@
             const container = document.getElementById('heatmapContainer');
             container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
             try {
-                const res = await fetch(API_BASE + '/api/heatmap?days=30', { cache: 'no-store' });
+                const days = 30;
+                const res = await fetch(API_BASE + '/api/heatmap?days=' + days, { cache: 'no-store' });
                 const data = await res.json();
                 const weekdays = data.weekdays;
                 const matrix = data.matrix;
                 const maxVal = data.max_value || 1;
+
+                // 显示实际日期范围
+                const today = new Date();
+                const startDate = new Date(today);
+                startDate.setDate(startDate.getDate() - days + 1);
+                const fmt = d => (d.getMonth() + 1) + '月' + d.getDate() + '日';
+                const subtitleEl = document.getElementById('heatmapSubtitle');
+                if (subtitleEl) {
+                    subtitleEl.textContent = fmt(startDate) + ' - ' + fmt(today) + ' · 按小时 x 星期聚合 (颜色深浅 = Token 消耗量)';
+                }
 
                 if (maxVal === 0) {
                     container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">暂无数据</div>';
@@ -2293,49 +2357,45 @@
 
 
         // ===== 热力图下钻 =====
-        async function loadHeatmapDetail(weekday, hour, weekdayName, hourNum) {
+        let _heatmapDetailState = { weekday: 0, hour: 0, page: 1, pageSize: 50 };
+        async function loadHeatmapDetail(weekday, hour, weekdayName, hourNum, page) {
+            if (page === undefined) page = 1;
+            _heatmapDetailState.weekday = weekday;
+            _heatmapDetailState.hour = hour;
+            _heatmapDetailState.page = page;
+            _heatmapDetailState.pageSize = parseInt(document.getElementById('heatmapDetailPageSize').value);
             const modal = document.getElementById('heatmapDetailModal');
             const titleEl = document.getElementById('heatmapDetailTitle');
             const listEl = document.getElementById('heatmapDetailList');
             titleEl.textContent = weekdayName + ' ' + String(hourNum).padStart(2, '0') + ':00 时段调用详情';
             listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            document.getElementById('heatmapDetailPager').style.display = 'none';
             modal.classList.add('active');
             try {
-                const res = await fetch(API_BASE + '/api/heatmap_detail?weekday=' + weekday + '&hour=' + hour + '&days=30', { cache: 'no-store' });
+                const res = await fetch(API_BASE + '/api/heatmap_detail?weekday=' + weekday + '&hour=' + hour + '&days=30&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
                 const data = await res.json();
                 const sessions = data.sessions || [];
-                document.getElementById('sessionCount');
                 if (sessions.length === 0) {
                     listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该时段暂无调用记录</div>';
                     return;
                 }
-                let html = '<div class="session-header">' +
-                    '<span>时间</span><span>工具</span><span>模型</span>' +
-                    '<span>总Token</span><span>缓存命中</span><span>延迟</span></div>';
-                sessions.forEach(s => {
-                    const toolColor = getToolColor(s.tool);
-                    const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
-                    html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
-                        '<span class="sess-time">' + s.time + '</span>' +
-                        '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
-                        '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
-                        '<span class="sess-tokens">' + formatTokens(s.total_tokens) + '</span>' +
-                        '<span class="sess-cached">' + (s.input_cached > 0 ? formatTokens(s.input_cached) : '-') + '</span>' +
-                        '<span class="sess-latency">' + latencyText + '</span>' +
-                        '</div>';
-                });
-                listEl.innerHTML = html;
-                listEl.querySelectorAll('.session-item').forEach(row => {
-                    row.addEventListener('click', () => {
-                        const sid = row.dataset.sessionId;
-                        const ts = row.dataset.timestamp;
-                        if (sid) loadChatDetail(sid, ts);
-                    });
-                });
+                renderSessionList(sessions, listEl);
+                updatePager('heatmapDetailPager', 'heatmapDetailPageInfo', 'heatmapDetailPageNum', 'heatmapDetailPrevBtn', 'heatmapDetailNextBtn',
+                    data.total, data.page, _heatmapDetailState.pageSize, data.total_pages);
+                listEl.scrollTop = 0;
             } catch (err) {
                 listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
             }
         }
+        document.getElementById('heatmapDetailPrevBtn').addEventListener('click', () => {
+            if (_heatmapDetailState.page > 1) loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, _heatmapDetailState.page - 1);
+        });
+        document.getElementById('heatmapDetailNextBtn').addEventListener('click', () => {
+            loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, _heatmapDetailState.page + 1);
+        });
+        document.getElementById('heatmapDetailPageSize').addEventListener('change', () => {
+            loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, 1);
+        });
         document.getElementById('heatmapDetailCloseBtn').addEventListener('click', () => {
             document.getElementById('heatmapDetailModal').classList.remove('active');
         });

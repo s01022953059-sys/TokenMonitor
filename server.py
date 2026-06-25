@@ -322,10 +322,13 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             return
         if self.path.startswith("/api/sessions"):
             try:
-                days = 1
-                if "?days=" in self.path:
-                    days = int(self.path.split("?days=")[1].split("&")[0])
-                self._write_json(200, get_session_list(days))
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                days = int(qs.get("days", ["1"])[0])
+                page = int(qs.get("page", ["1"])[0])
+                page_size = int(qs.get("page_size", ["50"])[0])
+                self._write_json(200, get_session_list(days, page=page, page_size=page_size))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
@@ -347,7 +350,9 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 weekday = int(qs.get("weekday", ["0"])[0])
                 hour = int(qs.get("hour", ["0"])[0])
                 days = int(qs.get("days", ["30"])[0])
-                self._write_json(200, get_heatmap_detail(weekday, hour, days))
+                page = int(qs.get("page", ["1"])[0])
+                page_size = int(qs.get("page_size", ["50"])[0])
+                self._write_json(200, get_heatmap_detail(weekday, hour, days, page=page, page_size=page_size))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.66"
+var appVersion = "1.3.67"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -101,8 +101,11 @@ type SessionEntry struct {
 }
 
 type SessionListResponse struct {
-	Sessions []SessionEntry `json:"sessions"`
-	Total    int            `json:"total"`
+	Sessions   []SessionEntry `json:"sessions"`
+	Total      int            `json:"total"`
+	Page       int            `json:"page"`
+	PageSize   int            `json:"page_size"`
+	TotalPages int            `json:"total_pages"`
 }
 
 type HeatmapResponse struct {
@@ -1084,7 +1087,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload interface{}) {
 }
 
 // ───── API: /api/sessions ─────
-func getSessionList(days int) SessionListResponse {
+func getSessionList(days, page, pageSize int) SessionListResponse {
 	now := time.Now()
 	start := now.AddDate(0, 0, -days)
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
@@ -1362,7 +1365,7 @@ func getHeatmapData(days int) HeatmapResponse {
 }
 
 // ───── API: /api/heatmap_detail ─────
-func getHeatmapDetail(weekday, hour, days int) SessionListResponse {
+func getHeatmapDetail(weekday, hour, days, page, pageSize int) SessionListResponse {
 	now := time.Now()
 	start := now.AddDate(0, 0, -(days - 1))
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
@@ -1500,7 +1503,15 @@ func main() {
 				days = n
 			}
 		}
-		writeJSON(w, 200, getSessionList(days))
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+		if pageSize < 1 {
+			pageSize = 50
+		}
+		writeJSON(w, 200, getSessionList(days, page, pageSize))
 	})
 
 	http.HandleFunc("/api/heatmap", func(w http.ResponseWriter, r *http.Request) {
@@ -1529,7 +1540,15 @@ func main() {
 		if days == 0 {
 			days = 30
 		}
-		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days))
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+		if pageSize < 1 {
+			pageSize = 50
+		}
+		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days, page, pageSize))
 	})
 	// 静态文件 (嵌入的 index.html + chart.js)
 	staticContent, _ := fs.Sub(staticFS, "static")

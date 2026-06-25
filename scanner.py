@@ -633,7 +633,7 @@ if __name__ == "__main__":
     print(json.dumps(get_today_usage(), indent=2))
 
 
-def get_session_list(days=1):
+def get_session_list(days=1, page=1, page_size=50):
     """获取最近 days 天内的会话事件列表 (去重后), 按时间倒序返回。
 
     每条事件包含: timestamp, time, tool, model, input_tokens,
@@ -752,7 +752,18 @@ def get_session_list(days=1):
     # 按时间倒序
     events.sort(key=lambda x: x["timestamp"], reverse=True)
 
-    return {"sessions": events, "total": len(events)}
+    # 分页
+    total = len(events)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged = events[start:end]
+    return {
+        "sessions": paged,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+    }
 
 
 def get_heatmap_data(days=30):
@@ -959,7 +970,7 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
         "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
     }
 
-def get_heatmap_detail(weekday, hour, days=30):
+def get_heatmap_detail(weekday, hour, days=30, page=1, page_size=50):
     """返回热力图某个格子 (星期=weekday, 小时=hour) 对应的 API 调用列表。
 
     weekday: 0=周一 ... 6=周日
@@ -1079,4 +1090,15 @@ def get_heatmap_detail(weekday, hour, days=30):
     # 按时间倒序
     events.sort(key=lambda x: x["timestamp"], reverse=True)
 
-    return {"sessions": events, "total": len(events)}
+    # 分页
+    total = len(events)
+    start = (page - 1) * page_size
+    end = start + page_size
+    paged = events[start:end]
+    return {
+        "sessions": paged,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+    }
