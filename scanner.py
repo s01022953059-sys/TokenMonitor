@@ -767,14 +767,15 @@ def get_session_list(days=1, page=1, page_size=50):
 
 
 def get_heatmap_data(days=30):
-    """生成活动热力图数据: 过去 days 天按 小时x星期 的 token 消耗矩阵。
+    """生成活动热力图数据: 按天排列, 每个格子代表一天的 Token 消耗。
 
     返回:
     {
-        "hours": [0, 1, ..., 23],
-        "weekdays": ["一", "二", ..., "日"],
-        "matrix": [[0]*24 for _ in range(7)],  # [weekday][hour] = total_tokens
-        "max_value": int
+        "days": [{"date": "2026-05-27", "label": "05-27", "weekday": 0,
+                   "tokens": 12345, "month": 5}, ...],
+        "max_value": int,
+        "start_date": "2026-05-27",
+        "end_date": "2026-06-25"
     }
     """
     now = datetime.datetime.now()
@@ -782,38 +783,30 @@ def get_heatmap_data(days=30):
     start_midnight = datetime.datetime(start.year, start.month, start.day, 0, 0, 0)
     start_timestamp = int(start_midnight.timestamp())
 
-    # 7 行 (周一~周日) x 24 列 (0~23 点)
-    matrix = [[0] * 24 for _ in range(7)]
-    date_detail = [[dict() for _ in range(24)] for _ in range(7)]
+    # 按天聚合: date_str -> tokens
+    daily_tokens = {}
 
     # --- cc-switch ---
-    provider_model_map, active_model_by_app = _load_provider_model_map()
     seen_dedup = set()
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
             conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT created_at, input_tokens, output_tokens, app_type, model,
-                       provider_id, data_source
+                SELECT created_at, input_tokens, output_tokens
                 FROM proxy_request_logs
                 WHERE created_at >= ? AND status_code = 200
             """, (start_timestamp,))
-            for created_at, input_t, output_t, app_type, model, provider_id, data_source in cursor.fetchall():
+            for created_at, input_t, output_t in cursor.fetchall():
                 tokens = (input_t or 0) + (output_t or 0)
                 bucket = created_at // DEDUP_WINDOW_SECONDS
                 dkey = (bucket, tokens)
                 if dkey in seen_dedup:
                     continue
                 seen_dedup.add(dkey)
-
                 dt = datetime.datetime.fromtimestamp(created_at)
-                # Python weekday(): 0=Monday, 6=Sunday
-                wd = dt.weekday()
-                hr = dt.hour
-                matrix[wd][hr] += tokens
-                d_str = dt.strftime("%m-%d")
-                date_detail[wd][hr][d_str] = date_detail[wd][hr].get(d_str, 0) + tokens
+                d_str = dt.strftime("%Y-%m-%d")
+                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
             conn.close()
         except Exception as e:
             print(f"[-] heatmap cc-switch 出错: {e}")
@@ -835,35 +828,49 @@ def get_heatmap_data(days=30):
                 if dkey in seen_dedup:
                     continue
                 seen_dedup.add(dkey)
-
                 dt = datetime.datetime.fromtimestamp(started_at)
-                wd = dt.weekday()
-                hr = dt.hour
-                matrix[wd][hr] += tokens
-                d_str = dt.strftime("%m-%d")
-                date_detail[wd][hr][d_str] = date_detail[wd][hr].get(d_str, 0) + tokens
+                d_str = dt.strftime("%Y-%m-%d")
+                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
             conn.close()
         except Exception as e:
             print(f"[-] heatmap Hermes 出错: {e}")
 
-    # --- Antigravity (只有按天总量, 无法分小时, 跳过) ---
+    # --- Antigravity (按天 JSON) ---
+    if os.path.exists(ANTIGRAVITY_STATS_PATH):
+        try:
+            with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
+                stats = json.load(f)
+            records = stats.get("records", {})
+            for i in range(days):
+                d = start_midnight + datetime.timedelta(days=i)
+                d_str = d.strftime("%Y-%m-%d")
+                record = records.get(d_str)
+                if record:
+                    tokens = record.get("inputTokens", 0) + record.get("outputTokens", 0)
+                    daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
+        except Exception as e:
+            print(f"[-] heatmap Antigravity 出错: {e}")
 
-    max_value = max(max(row) for row in matrix) if matrix else 0
+    # 构建按天列表
+    day_list = []
+    for i in range(days):
+        d = start_midnight + datetime.timedelta(days=i)
+        d_str = d.strftime("%Y-%m-%d")
+        day_list.append({
+            "date": d_str,
+            "label": d.strftime("%m-%d"),
+            "weekday": d.weekday(),  # 0=Monday
+            "month": d.month,
+            "tokens": daily_tokens.get(d_str, 0),
+        })
 
-    # 把 date_detail 转为前端可用的格式: 每个格子一个 [{date, tokens}] 列表
-    dates = [[[] for _ in range(24)] for _ in range(7)]
-    for wd in range(7):
-        for hr in range(24):
-            d = date_detail[wd][hr]
-            if d:
-                dates[wd][hr] = [{"date": k, "tokens": v} for k, v in sorted(d.items())]
+    max_value = max((d["tokens"] for d in day_list), default=0)
 
     return {
-        "hours": list(range(24)),
-        "weekdays": ["一", "二", "三", "四", "五", "六", "日"],
-        "matrix": matrix,
+        "days": day_list,
         "max_value": max_value,
-        "dates": dates,
+        "start_date": start_midnight.strftime("%Y-%m-%d"),
+        "end_date": now.strftime("%Y-%m-%d"),
     }
 
 
@@ -984,16 +991,26 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
         "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
     }
 
-def get_heatmap_detail(weekday, hour, days=30, page=1, page_size=50):
-    """返回热力图某个格子 (星期=weekday, 小时=hour) 对应的 API 调用列表。
+def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, date=None):
+    """返回某天 (date) 或某时段 (weekday+hour) 的 API 调用列表。
 
-    weekday: 0=周一 ... 6=周日
-    hour: 0-23
+    如果 date 不为 None, 按 date 过滤; 否则按 weekday+hour 过滤。
     """
     now = datetime.datetime.now()
     start = now - datetime.timedelta(days=days - 1)
     start_midnight = datetime.datetime(start.year, start.month, start.day, 0, 0, 0)
     start_timestamp = int(start_midnight.timestamp())
+
+    # 如果指定了 date, 计算该天的起始和结束时间戳
+    date_start_ts = None
+    date_end_ts = None
+    if date:
+        try:
+            d = datetime.datetime.strptime(date, "%Y-%m-%d")
+            date_start_ts = int(d.timestamp())
+            date_end_ts = int((d + datetime.timedelta(days=1)).timestamp())
+        except ValueError:
+            pass
 
     events = []
 
@@ -1016,8 +1033,12 @@ def get_heatmap_detail(weekday, hour, days=30, page=1, page_size=50):
                     app_type, model, provider_id, data_source, latency_ms, sess_id = row
 
                 dt = datetime.datetime.fromtimestamp(created_at)
-                if dt.weekday() != weekday or dt.hour != hour:
-                    continue
+                if date_start_ts is not None:
+                    if created_at < date_start_ts or created_at >= date_end_ts:
+                        continue
+                elif weekday is not None:
+                    if dt.weekday() != weekday or dt.hour != hour:
+                        continue
 
                 actual_model = model
                 if provider_id and provider_id in provider_model_map:
@@ -1073,8 +1094,12 @@ def get_heatmap_detail(weekday, hour, days=30, page=1, page_size=50):
             """, (start_timestamp,))
             for started_at, model, input_t, output_t, cache_read_t in cursor.fetchall():
                 dt = datetime.datetime.fromtimestamp(started_at)
-                if dt.weekday() != weekday or dt.hour != hour:
-                    continue
+                if date_start_ts is not None:
+                    if started_at < date_start_ts or started_at >= date_end_ts:
+                        continue
+                elif weekday is not None:
+                    if dt.weekday() != weekday or dt.hour != hour:
+                        continue
 
                 input_cached = cache_read_t if cache_read_t else 0
                 input_uncached = input_t if input_t else 0

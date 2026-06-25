@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.68"
+var appVersion = "1.3.69"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -108,17 +108,19 @@ type SessionListResponse struct {
 	TotalPages int            `json:"total_pages"`
 }
 
-type HeatmapDateEntry struct {
-	Date   string `json:"date"`
-	Tokens int64  `json:"tokens"`
+type HeatmapDay struct {
+	Date    string `json:"date"`
+	Label   string `json:"label"`
+	Weekday int    `json:"weekday"`
+	Month   int    `json:"month"`
+	Tokens  int64  `json:"tokens"`
 }
 
 type HeatmapResponse struct {
-	Hours    []int              `json:"hours"`
-	Weekdays []string           `json:"weekdays"`
-	Matrix   [][]int64          `json:"matrix"`
-	MaxValue int64              `json:"max_value"`
-	Dates    [][][]HeatmapDateEntry `json:"dates"`
+	Days      []HeatmapDay `json:"days"`
+	MaxValue  int64        `json:"max_value"`
+	StartDate string       `json:"start_date"`
+	EndDate   string       `json:"end_date"`
 }
 
 // ───── 路径工具 (跨平台) ─────
@@ -1282,18 +1284,8 @@ func getHeatmapData(days int) HeatmapResponse {
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	matrix := make([][]int64, 7)
-	for i := range matrix {
-		matrix[i] = make([]int64, 24)
-	}
-	// dateDetail[wd][hr] = map["MM-DD"] -> tokens
-	dateDetail := make([][]map[string]int64, 7)
-	for i := range dateDetail {
-		dateDetail[i] = make([]map[string]int64, 24)
-		for j := range dateDetail[i] {
-			dateDetail[i][j] = make(map[string]int64)
-		}
-	}
+	// daily tokens map
+	dailyTokens := map[string]int64{}
 	seen := map[string]bool{}
 
 	if dbPath := ccSwitchDBPath(); fileExists(dbPath) {
@@ -1312,15 +1304,8 @@ func getHeatmapData(days int) HeatmapResponse {
 					}
 					seen[key] = true
 					dt := time.Unix(createdAt, 0)
-					wd := int(dt.Weekday())
-					if wd == 0 {
-						wd = 6
-					} else {
-						wd--
-					}
-					matrix[wd][dt.Hour()] += tokens
-					dStr := dt.Format("01-02")
-					dateDetail[wd][dt.Hour()][dStr] += tokens
+					dStr := dt.Format("2006-01-02")
+					dailyTokens[dStr] += tokens
 				}
 				rows.Close()
 			}
@@ -1344,15 +1329,8 @@ func getHeatmapData(days int) HeatmapResponse {
 					}
 					seen[key] = true
 					dt := time.Unix(startedAt, 0)
-					wd := int(dt.Weekday())
-					if wd == 0 {
-						wd = 6
-					} else {
-						wd--
-					}
-					matrix[wd][dt.Hour()] += tokens
-					dStr := dt.Format("01-02")
-					dateDetail[wd][dt.Hour()][dStr] += tokens
+					dStr := dt.Format("2006-01-02")
+					dailyTokens[dStr] += tokens
 				}
 				rows.Close()
 			}
@@ -1361,48 +1339,39 @@ func getHeatmapData(days int) HeatmapResponse {
 	}
 
 	var maxVal int64
-	for _, row := range matrix {
-		for _, v := range row {
-			if v > maxVal {
-				maxVal = v
-			}
+	dayList := make([]HeatmapDay, 0, days)
+	for i := 0; i < days; i++ {
+		d := startMidnight.AddDate(0, 0, i)
+		dStr := d.Format("2006-01-02")
+		tokens := dailyTokens[dStr]
+		if tokens > maxVal {
+			maxVal = tokens
 		}
-	}
-
-	hours := make([]int, 24)
-	for i := 0; i < 24; i++ {
-		hours[i] = i
-	}
-
-	// Build dates field
-	dates := make([][][]HeatmapDateEntry, 7)
-	for wd := 0; wd < 7; wd++ {
-		dates[wd] = make([][]HeatmapDateEntry, 24)
-		for hr := 0; hr < 24; hr++ {
-			dm := dateDetail[wd][hr]
-			if len(dm) > 0 {
-				entries := make([]HeatmapDateEntry, 0, len(dm))
-				for k, v := range dm {
-					entries = append(entries, HeatmapDateEntry{Date: k, Tokens: v})
-				}
-				// sort by date
-				sort.Slice(entries, func(i, j int) bool { return entries[i].Date < entries[j].Date })
-				dates[wd][hr] = entries
-			}
+		wd := int(d.Weekday())
+		if wd == 0 {
+			wd = 6
+		} else {
+			wd--
 		}
+		dayList = append(dayList, HeatmapDay{
+			Date:    dStr,
+			Label:   d.Format("01-02"),
+			Weekday: wd,
+			Month:   int(d.Month()),
+			Tokens:  tokens,
+		})
 	}
 
 	return HeatmapResponse{
-		Hours:    hours,
-		Weekdays: []string{"一", "二", "三", "四", "五", "六", "日"},
-		Matrix:   matrix,
-		MaxValue: maxVal,
-		Dates:    dates,
+		Days:      dayList,
+		MaxValue:  maxVal,
+		StartDate: startMidnight.Format("2006-01-02"),
+		EndDate:   now.Format("2006-01-02"),
 	}
 }
 
 // ───── API: /api/heatmap_detail ─────
-func getHeatmapDetail(weekday, hour, days, page, pageSize int) SessionListResponse {
+func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) SessionListResponse {
 	now := time.Now()
 	start := now.AddDate(0, 0, -(days - 1))
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
@@ -1577,6 +1546,7 @@ func main() {
 		if days == 0 {
 			days = 30
 		}
+		dateStr := r.URL.Query().Get("date")
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
 			page = 1
@@ -1585,7 +1555,7 @@ func main() {
 		if pageSize < 1 {
 			pageSize = 50
 		}
-		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days, page, pageSize))
+		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days, page, pageSize, dateStr))
 	})
 	// 静态文件 (嵌入的 index.html + chart.js)
 	staticContent, _ := fs.Sub(staticFS, "static")

@@ -347,12 +347,15 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 from urllib.parse import urlparse, parse_qs
                 parsed = urlparse(self.path)
                 qs = parse_qs(parsed.query)
-                weekday = int(qs.get("weekday", ["0"])[0])
-                hour = int(qs.get("hour", ["0"])[0])
+                date = qs.get("date", [None])[0]
+                weekday_str = qs.get("weekday", [None])[0]
+                hour_str = qs.get("hour", [None])[0]
                 days = int(qs.get("days", ["30"])[0])
                 page = int(qs.get("page", ["1"])[0])
                 page_size = int(qs.get("page_size", ["50"])[0])
-                self._write_json(200, get_heatmap_detail(weekday, hour, days, page=page, page_size=page_size))
+                weekday = int(weekday_str) if weekday_str is not None else None
+                hour = int(hour_str) if hour_str is not None else None
+                self._write_json(200, get_heatmap_detail(weekday=weekday, hour=hour, days=days, page=page, page_size=page_size, date=date))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

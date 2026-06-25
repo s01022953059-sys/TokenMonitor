@@ -661,52 +661,71 @@
         .session-header span:nth-child(3) { text-align: left; }
 
         /* ===== 热力图 ===== */
-        .heatmap-table {
-            border-collapse: collapse;
+        .heatmap-grid {
+            display: flex;
+            gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
+            overflow-x: auto;
+            padding-bottom: 4px;
         }
-        .heatmap-table td {
-            width: 28px;
-            height: 22px;
-            text-align: center;
-            border: 1px solid var(--border-subtle);
-            transition: transform 0.1s;
+        .heatmap-week {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
-        .heatmap-table td.heatmap-label {
-            width: 24px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 10px;
-        }
-        .heatmap-table td.heatmap-hour-label {
-            width: 28px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 9px;
-        }
-        .heatmap-table td.heatmap-cell {
+        .heatmap-cell-day {
+            width: 13px;
+            height: 13px;
+            border-radius: 2px;
             cursor: pointer;
+            transition: transform 0.1s, outline 0.1s;
         }
-        .heatmap-table td.heatmap-cell:hover {
-            transform: scale(1.3);
+        .heatmap-cell-day:hover {
+            transform: scale(1.4);
             z-index: 10;
             position: relative;
-            border-color: var(--modal-line-color);
+            outline: 1.5px solid var(--modal-line-color);
+        }
+        .heatmap-month-labels {
+            display: flex;
+            gap: 2px;
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+            padding-left: 28px;
+        }
+        .heatmap-weekday-labels {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 9px;
+            color: var(--text-muted);
+            width: 24px;
+            justify-content: flex-start;
+            padding-top: 0;
+        }
+        .heatmap-weekday-labels span {
+            height: 13px;
+            line-height: 13px;
+        }
+        .heatmap-body {
+            display: flex;
+            gap: 3px;
         }
         .heatmap-legend {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
             margin-top: 12px;
             font-size: 10px;
             color: var(--text-muted);
         }
         .heatmap-legend-box {
             display: inline-block;
-            width: 14px;
-            height: 12px;
-            border: 1px solid var(--border-subtle);
+            width: 11px;
+            height: 11px;
+            border-radius: 2px;
         }
         /* ===== 对话详情面板 ===== */
         .chat-detail {
@@ -818,52 +837,71 @@
         .session-header span:nth-child(3) { text-align: left; }
 
         /* ===== 热力图 ===== */
-        .heatmap-table {
-            border-collapse: collapse;
+        .heatmap-grid {
+            display: flex;
+            gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
+            overflow-x: auto;
+            padding-bottom: 4px;
         }
-        .heatmap-table td {
-            width: 28px;
-            height: 22px;
-            text-align: center;
-            border: 1px solid var(--border-subtle);
-            transition: transform 0.1s;
+        .heatmap-week {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
         }
-        .heatmap-table td.heatmap-label {
-            width: 24px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 10px;
-        }
-        .heatmap-table td.heatmap-hour-label {
-            width: 28px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 9px;
-        }
-        .heatmap-table td.heatmap-cell {
+        .heatmap-cell-day {
+            width: 13px;
+            height: 13px;
+            border-radius: 2px;
             cursor: pointer;
+            transition: transform 0.1s, outline 0.1s;
         }
-        .heatmap-table td.heatmap-cell:hover {
-            transform: scale(1.3);
+        .heatmap-cell-day:hover {
+            transform: scale(1.4);
             z-index: 10;
             position: relative;
-            border-color: var(--modal-line-color);
+            outline: 1.5px solid var(--modal-line-color);
+        }
+        .heatmap-month-labels {
+            display: flex;
+            gap: 2px;
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+            padding-left: 28px;
+        }
+        .heatmap-weekday-labels {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 9px;
+            color: var(--text-muted);
+            width: 24px;
+            justify-content: flex-start;
+            padding-top: 0;
+        }
+        .heatmap-weekday-labels span {
+            height: 13px;
+            line-height: 13px;
+        }
+        .heatmap-body {
+            display: flex;
+            gap: 3px;
         }
         .heatmap-legend {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
             margin-top: 12px;
             font-size: 10px;
             color: var(--text-muted);
         }
         .heatmap-legend-box {
             display: inline-block;
-            width: 14px;
-            height: 12px;
-            border: 1px solid var(--border-subtle);
+            width: 11px;
+            height: 11px;
+            border-radius: 2px;
         }
     </style>
 </head>
@@ -2265,18 +2303,12 @@
                 const days = 30;
                 const res = await fetch(API_BASE + '/api/heatmap?days=' + days, { cache: 'no-store' });
                 const data = await res.json();
-                const weekdays = data.weekdays;
-                const matrix = data.matrix;
-                const maxVal = data.max_value || 1;
+                const dayList = data.days || [];
+                const maxVal = data.max_value || 0;
 
-                // 显示实际日期范围
-                const today = new Date();
-                const startDate = new Date(today);
-                startDate.setDate(startDate.getDate() - days + 1);
-                const fmt = d => (d.getMonth() + 1) + '月' + d.getDate() + '日';
                 const subtitleEl = document.getElementById('heatmapSubtitle');
                 if (subtitleEl) {
-                    subtitleEl.textContent = fmt(startDate) + ' - ' + fmt(today) + ' · 按小时 x 星期聚合 (颜色深浅 = Token 消耗量)';
+                    subtitleEl.textContent = data.start_date + ' 至 ' + data.end_date + ' · 每格代表一天, 颜色深浅 = Token 消耗量';
                 }
 
                 if (maxVal === 0) {
@@ -2284,64 +2316,93 @@
                     return;
                 }
 
-                // 颜色映射: 0 -> 透明, 低 -> 淡, 高 -> 浓 (用 accent 色系)
                 const accent = getThemeVar('--modal-line-color') || '#a855f7';
                 function heatColor(val) {
-                    if (val === 0) return 'transparent';
+                    if (val === 0) return 'var(--bg-tertiary, #2a2a2a)';
                     const ratio = Math.log(val + 1) / Math.log(maxVal + 1);
-                    const opacity = 0.12 + ratio * 0.85;
-                    // 把 hex 转 rgba
+                    const opacity = 0.2 + ratio * 0.8;
                     const r = parseInt(accent.slice(1, 3), 16);
                     const g = parseInt(accent.slice(3, 5), 16);
                     const b = parseInt(accent.slice(5, 7), 16);
                     return 'rgba(' + r + ',' + g + ',' + b + ',' + opacity.toFixed(2) + ')';
                 }
 
-                let html = '<table class="heatmap-table"><thead><tr>';
-                html += '<td class="heatmap-label"></td>';
-                for (let h = 0; h < 24; h++) {
-                    html += '<td class="heatmap-hour-label">' + (h % 6 === 0 ? h : '') + '</td>';
-                }
-                html += '</tr></thead><tbody>';
-
-                for (let d = 0; d < 7; d++) {
-                    html += '<tr>';
-                    html += '<td class="heatmap-label">' + weekdays[d] + '</td>';
-                    for (let h = 0; h < 24; h++) {
-                        const val = matrix[d][h];
-                        const color = heatColor(val);
-                        const cellDates = (data.dates && data.dates[d] && data.dates[d][h]) ? data.dates[d][h] : [];
-                        let title = '';
-                        if (val > 0) {
-                            title = weekdays[d] + ' ' + h + ':00  总计' + formatTokens(val);
-                            if (cellDates.length > 0) {
-                                const dateLines = cellDates.slice(0, 8).map(dd => '\n  ' + dd.date + ' ' + formatTokens(dd.tokens));
-                                title += ' (' + cellDates.length + '天)' + dateLines.join('');
-                                if (cellDates.length > 8) title += '\n  ...等' + cellDates.length + '天';
-                            }
-                        }
-                        html += '<td class="heatmap-cell" data-wd="' + d + '" data-hr="' + h + '" style="background:' + color + ';" title="' + title + '"></td>';
+                // 把按天的数据组织成周列 (GitHub 风格)
+                // 第一列从 start_date 的星期开始, 前面补空格对齐
+                const weekdayNames = ['一', '二', '三', '四', '五', '六', '日'];
+                const firstWd = dayList.length > 0 ? dayList[0].weekday : 0;
+                const weeks = [];
+                let currentWeek = [];
+                // 前面补占位
+                for (let i = 0; i < firstWd; i++) currentWeek.push(null);
+                for (let i = 0; i < dayList.length; i++) {
+                    const day = dayList[i];
+                    currentWeek.push(day);
+                    if (currentWeek.length === 7) {
+                        weeks.push(currentWeek);
+                        currentWeek = [];
                     }
-                    html += '</tr>';
                 }
-                html += '</tbody></table>';
+                if (currentWeek.length > 0) weeks.push(currentWeek);
+
+                // 月份标签
+                let monthHtml = '<div class="heatmap-month-labels">';
+                let lastMonth = 0;
+                for (let w = 0; w < weeks.length; w++) {
+                    const week = weeks[w];
+                    let monthInWeek = 0;
+                    for (let d = 0; d < week.length; d++) {
+                        if (week[d] && week[d].month !== lastMonth) {
+                            monthInWeek = week[d].month;
+                            lastMonth = week[d].month;
+                        }
+                    }
+                    monthHtml += '<span style="width:13px; text-align:center;">' + (monthInWeek > 0 ? monthInWeek + '月' : '') + '</span>';
+                }
+                monthHtml += '</div>';
+
+                // 网格
+                let gridHtml = '<div class="heatmap-body">';
+                // 星期标签
+                gridHtml += '<div class="heatmap-weekday-labels">';
+                for (let i = 0; i < 7; i++) {
+                    gridHtml += '<span>' + (i % 2 === 0 ? weekdayNames[i] : '') + '</span>';
+                }
+                gridHtml += '</div>';
+                // 周列
+                gridHtml += '<div style="display:flex; gap:2px;">';
+                for (let w = 0; w < weeks.length; w++) {
+                    const week = weeks[w];
+                    gridHtml += '<div class="heatmap-week">';
+                    for (let d = 0; d < 7; d++) {
+                        if (d < week.length && week[d]) {
+                            const day = week[d];
+                            const color = heatColor(day.tokens);
+                            const title = day.date + ' (' + weekdayNames[day.weekday] + ') ' + (day.tokens > 0 ? formatTokens(day.tokens) : '无消耗');
+                            gridHtml += '<div class="heatmap-cell-day" data-date="' + day.date + '" style="background:' + color + ';" title="' + title + '"></div>';
+                        } else {
+                            gridHtml += '<div class="heatmap-cell-day" style="background:transparent;"></div>';
+                        }
+                    }
+                    gridHtml += '</div>';
+                }
+                gridHtml += '</div></div>';
 
                 // 图例
-                html += '<div class="heatmap-legend"><span>少</span>';
+                let legendHtml = '<div class="heatmap-legend"><span>少</span>';
                 for (let i = 0; i <= 4; i++) {
                     const val = Math.round(maxVal * i / 4);
-                    html += '<span class="heatmap-legend-box" style="background:' + heatColor(val) + ';"></span>';
+                    legendHtml += '<span class="heatmap-legend-box" style="background:' + heatColor(val) + ';"></span>';
                 }
-                html += '<span>多</span></div>';
+                legendHtml += '<span>多</span></div>';
 
-                container.innerHTML = html;
+                container.innerHTML = monthHtml + gridHtml + legendHtml;
 
-                // 格子点击 -> 下钻
-                container.querySelectorAll('.heatmap-cell').forEach(cell => {
+                // 点击格子 -> 下钻该天的调用详情
+                container.querySelectorAll('.heatmap-cell-day[data-date]').forEach(cell => {
                     cell.addEventListener('click', () => {
-                        const wd = parseInt(cell.dataset.wd);
-                        const hr = parseInt(cell.dataset.hr);
-                        loadHeatmapDetail(wd, hr, weekdays[wd], hr);
+                        const date = cell.dataset.date;
+                        loadHeatmapDayDetail(date);
                     });
                 });
             } catch (err) {
@@ -2366,7 +2427,46 @@
 
 
         // ===== 热力图下钻 =====
-        let _heatmapDetailState = { weekday: 0, hour: 0, page: 1, pageSize: 50 };
+        let _heatmapDetailState = { date: '', page: 1, pageSize: 50 };
+        async function loadHeatmapDayDetail(date, page) {
+            if (page === undefined) page = 1;
+            _heatmapDetailState.date = date;
+            _heatmapDetailState.page = page;
+            _heatmapDetailState.pageSize = parseInt(document.getElementById('heatmapDetailPageSize').value);
+            const modal = document.getElementById('heatmapDetailModal');
+            const titleEl = document.getElementById('heatmapDetailTitle');
+            const listEl = document.getElementById('heatmapDetailList');
+            titleEl.textContent = date + ' 调用详情';
+            listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            document.getElementById('heatmapDetailPager').style.display = 'none';
+            modal.classList.add('active');
+            try {
+                const res = await fetch(API_BASE + '/api/heatmap_detail?date=' + date + '&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
+                const data = await res.json();
+                const sessions = data.sessions || [];
+                if (sessions.length === 0) {
+                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该日暂无调用记录</div>';
+                    return;
+                }
+                renderSessionList(sessions, listEl);
+                updatePager('heatmapDetailPager', 'heatmapDetailPageInfo', 'heatmapDetailPageNum', 'heatmapDetailPrevBtn', 'heatmapDetailNextBtn',
+                    data.total, data.page, _heatmapDetailState.pageSize, data.total_pages);
+                listEl.scrollTop = 0;
+            } catch (err) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
+            }
+        }
+        document.getElementById('heatmapDetailPrevBtn').addEventListener('click', () => {
+            if (_heatmapDetailState.page > 1) loadHeatmapDayDetail(_heatmapDetailState.date, _heatmapDetailState.page - 1);
+        });
+        document.getElementById('heatmapDetailNextBtn').addEventListener('click', () => {
+            loadHeatmapDayDetail(_heatmapDetailState.date, _heatmapDetailState.page + 1);
+        });
+        document.getElementById('heatmapDetailPageSize').addEventListener('change', () => {
+            loadHeatmapDayDetail(_heatmapDetailState.date, 1);
+        });
+
+        // 旧接口保留兼容 (weekday+hour 模式已废弃)
         async function loadHeatmapDetail(weekday, hour, weekdayName, hourNum, page) {
             if (page === undefined) page = 1;
             _heatmapDetailState.weekday = weekday;
