@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 
@@ -32,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.70"
+var appVersion = "1.3.71"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1037,6 +1038,19 @@ func readVersionFromPlist(path string) string {
 
 // ───── 单实例锁 (跨平台) ─────
 
+
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal(0) 仅探测进程是否存在, 不发实际信号
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return false
+	}
+	return true
+}
+
 var singletonLockFile *os.File
 
 func acquireSingletonLock() bool {
@@ -1044,6 +1058,17 @@ func acquireSingletonLock() bool {
 	if lockPath == "" {
 		lockPath = filepath.Join(os.TempDir(), "token_monitor_server.lock")
 	}
+
+	// 先检查锁文件里记录的 PID 是否还活着; 如果已死, 删除残留锁文件再重试。
+	if data, err := os.ReadFile(lockPath); err == nil {
+		var stalePid int
+		if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &stalePid); err == nil && stalePid > 0 {
+			if !processAlive(stalePid) {
+				os.Remove(lockPath)
+			}
+		}
+	}
+
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		fmt.Printf("[server] 无法打开单实例锁文件 %s: %v\n", lockPath, err)

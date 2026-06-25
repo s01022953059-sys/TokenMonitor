@@ -8,6 +8,13 @@
 4. **发布流程**: bump 版本 → git commit + tag → `bash release_all.sh`（Mac DMG + Windows ZIP 一键构建上传）
 5. **GitCode token**: `ydMwBZbLaiex8hRqi-2cma3k`
 6. **GitCode 不支持删除 release 附件**, 每次发版用新 tag
+7. **发版前必须验证基本功能** (发版检查清单):
+   - 启动 app, 确认主面板 token 数不为 0 (后端正常)
+   - 确认端口 15723 上 server.py 正常监听
+   - 打开热力图弹窗, 确认有数据渲染
+   - 打开会话详情, 确认有数据且分页正常
+   - 前端 JS 无语法错误 (`node -e` 校验)
+8. **单实例锁健壮性**: server.py / go_build/main.go 的 `acquireSingletonLock` 会检查锁文件中的 PID 是否仍存活, 若已死则自动清理残留锁文件, 防止更新后旧进程残留导致新 server 无法启动
 
 ## 架构
 
@@ -118,3 +125,8 @@
 ### v1.3.70 (2026-06-25)
 - 热力图从 30 天扩展至 90 天，从今天往前数 90 天，无数据天显示空白
 - 格子缩小至 14px 以适配更多列
+
+### v1.3.71 (2026-06-26)
+- 修复: 单实例锁文件残留导致更新后 server.py 无法启动, 主面板显示 0
+- server.py / go_build/main.go: 获取锁前检查旧 PID 是否存活, 若已死自动清理
+- 新增发版前验证检查清单 (写入核心约定第 7 条)

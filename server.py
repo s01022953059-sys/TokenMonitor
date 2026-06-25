@@ -89,6 +89,23 @@ _singleton_lock_fd = None
 def _acquire_singleton_lock() -> bool:
     """非阻塞尝试独占单实例锁。拿到返回 True, 拿不到返回 False。"""
     global _singleton_lock_fd
+
+    # 先检查锁文件里记录的 PID 是否还活着; 如果已死, 删除残留锁文件再重试。
+    try:
+        with open(SINGLETON_LOCK_PATH, "r") as _stale_fd:
+            _stale_pid_str = _stale_fd.read().strip()
+            if _stale_pid_str:
+                _stale_pid = int(_stale_pid_str)
+                try:
+                    os.kill(_stale_pid, 0)
+                except (OSError, ProcessLookupError):
+                    try:
+                        os.unlink(SINGLETON_LOCK_PATH)
+                    except OSError:
+                        pass
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+
     try:
         fd = open(SINGLETON_LOCK_PATH, "w")
     except OSError as exc:
