@@ -26,9 +26,9 @@ from urllib import request as urlrequest
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
-    from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data
+    from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
 except ImportError:
-    from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data
+    from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -329,12 +329,26 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
-        if self.path.startswith("/api/heatmap"):
+        if self.path.startswith("/api/heatmap_detail"):
             try:
-                days = 30
-                if "?days=" in self.path:
-                    days = int(self.path.split("?days=")[1].split("&")[0])
-                self._write_json(200, get_heatmap_data(days))
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                weekday = int(qs.get("weekday", ["0"])[0])
+                hour = int(qs.get("hour", ["0"])[0])
+                days = int(qs.get("days", ["30"])[0])
+                self._write_json(200, get_heatmap_detail(weekday, hour, days))
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+        if self.path.startswith("/api/session_detail"):
+            try:
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                session_id = qs.get("session_id", [""])[0]
+                timestamp = qs.get("timestamp", [None])[0]
+                self._write_json(200, get_session_detail(session_id, timestamp=timestamp))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

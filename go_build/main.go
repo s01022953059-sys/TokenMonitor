@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -31,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.64"
+var appVersion = "1.3.65"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -49,6 +50,7 @@ type LogEntry struct {
 	TotalTokens   int64  `json:"total_tokens"`
 	InputCached   int64  `json:"input_cached"`
 	InputUncached int64  `json:"input_uncached"`
+	SessionID     string `json:"session_id"`
 }
 
 type ToolStats struct {
@@ -95,6 +97,7 @@ type SessionEntry struct {
 	InputCached   int64  `json:"input_cached"`
 	InputUncached int64  `json:"input_uncached"`
 	LatencyMs     int64  `json:"latency_ms"`
+	SessionID     string `json:"session_id"`
 }
 
 type SessionListResponse struct {
@@ -305,7 +308,7 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens
+		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens, session_id
 		FROM proxy_request_logs
 		WHERE created_at >= ? AND status_code = 200
 		ORDER BY created_at ASC
@@ -321,7 +324,8 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 		var createdAt int64
 		var appType, model sql.NullString
 		var inputT, outputT, cacheReadT sql.NullInt64
-		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT)
+		var sessionID sql.NullString
+		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT, &sessionID)
 
 		iT := inputT.Int64
 		oT := outputT.Int64
@@ -354,6 +358,7 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 			TotalTokens:   totalT,
 			InputCached:   cT,
 			InputUncached: uncached,
+			SessionID:     sessionID.String,
 		})
 	}
 	return logs
@@ -1112,9 +1117,123 @@ func getSessionList(days int) SessionListResponse {
 			InputCached:   ev.InputCached,
 			InputUncached: ev.InputUncached,
 			LatencyMs:     0,
+			SessionID:     ev.SessionID,
 		})
 	}
 	return SessionListResponse{Sessions: sessions, Total: len(sessions)}
+}
+
+// ───── API: /api/session_detail ─────
+type SessionMessage struct {
+	Role      string `json:"role"`
+	Text      string `json:"text"`
+	Timestamp string `json:"timestamp"`
+}
+
+type SessionDetailResponse struct {
+	SessionID string           `json:"session_id"`
+	Messages  []SessionMessage `json:"messages"`
+}
+
+func getSessionDetail(sessionID string) SessionDetailResponse {
+	resp := SessionDetailResponse{SessionID: sessionID, Messages: []SessionMessage{}}
+	if sessionID == "" {
+		return resp
+	}
+
+	sessionsDir := filepath.Join(homeDir(), ".codex", "sessions")
+	var rolloutPath string
+	filepath.Walk(sessionsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(info.Name(), ".jsonl") && strings.Contains(info.Name(), sessionID) {
+			rolloutPath = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
+
+	if rolloutPath == "" {
+		return resp
+	}
+
+	file, err := os.Open(rolloutPath)
+	if err != nil {
+		return resp
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	maxMessages := 50
+	for scanner.Scan() {
+		if len(resp.Messages) >= maxMessages {
+			break
+		}
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		var obj map[string]interface{}
+		if err := json.Unmarshal(line, &obj); err != nil {
+			continue
+		}
+
+		objType, _ := obj["type"].(string)
+		if objType != "response_item" {
+			continue
+		}
+
+		payload, ok := obj["payload"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role, _ := payload["role"].(string)
+		if role != "user" && role != "assistant" {
+			continue
+		}
+
+		content, _ := payload["content"]
+		var text string
+		switch c := content.(type) {
+		case []interface{}:
+			var parts []string
+			for _, item := range c {
+				if m, ok := item.(map[string]interface{}); ok {
+					if t, ok := m["text"].(string); ok && t != "" {
+						parts = append(parts, t)
+					}
+				} else if s, ok := item.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+			text = strings.Join(parts, "\n")
+		case string:
+			text = c
+		}
+
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+
+		if len(text) > 5000 {
+			text = text[:5000] + "\n...(内容过长已截断)"
+		}
+
+		timestamp, _ := payload["timestamp"].(string)
+
+		resp.Messages = append(resp.Messages, SessionMessage{
+			Role:      role,
+			Text:      text,
+			Timestamp: timestamp,
+		})
+	}
+
+	return resp
 }
 
 // ───── API: /api/heatmap ─────
@@ -1210,6 +1329,61 @@ func getHeatmapData(days int) HeatmapResponse {
 		Matrix:   matrix,
 		MaxValue: maxVal,
 	}
+}
+
+// ───── API: /api/heatmap_detail ─────
+func getHeatmapDetail(weekday, hour, days int) SessionListResponse {
+	now := time.Now()
+	start := now.AddDate(0, 0, -(days - 1))
+	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	startTimestamp := startMidnight.Unix()
+
+	var ccLogs, hermesLogs []LogEntry
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
+	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	wg.Wait()
+
+	allLogs := append(ccLogs, hermesLogs...)
+	allLogs = dedupEvents(allLogs)
+
+	var filtered []LogEntry
+	for _, ev := range allLogs {
+		t := time.Unix(ev.Timestamp, 0)
+		goWd := int(t.Weekday())
+		var wd int
+		if goWd == 0 {
+			wd = 6
+		} else {
+			wd = goWd - 1
+		}
+		if wd == weekday && t.Hour() == hour {
+			filtered = append(filtered, ev)
+		}
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Timestamp > filtered[j].Timestamp
+	})
+
+	sessions := make([]SessionEntry, 0, len(filtered))
+	for _, ev := range filtered {
+		sessions = append(sessions, SessionEntry{
+			Timestamp:     ev.Timestamp,
+			Time:          time.Unix(ev.Timestamp, 0).Format("01-02 15:04:05"),
+			Tool:          ev.Tool,
+			Model:         ev.Model,
+			InputTokens:   ev.InputTokens,
+			OutputTokens:  ev.OutputTokens,
+			TotalTokens:   ev.TotalTokens,
+			InputCached:   ev.InputCached,
+			InputUncached: ev.InputUncached,
+			LatencyMs:     0,
+			SessionID:     ev.SessionID,
+		})
+	}
+	return SessionListResponse{Sessions: sessions, Total: len(sessions)}
 }
 
 func main() {
@@ -1312,6 +1486,29 @@ func main() {
 			}
 		}
 		writeJSON(w, 200, getHeatmapData(days))
+	})
+	http.HandleFunc("/api/heatmap_detail", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		weekday, _ := strconv.Atoi(r.URL.Query().Get("weekday"))
+		hour, _ := strconv.Atoi(r.URL.Query().Get("hour"))
+		days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+		if days == 0 {
+			days = 30
+		}
+		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days))
+	})
+	http.HandleFunc("/api/session_detail", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		sessionID := r.URL.Query().Get("session_id")
+		writeJSON(w, 200, getSessionDetail(sessionID))
 	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)

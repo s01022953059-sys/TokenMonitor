@@ -622,96 +622,10 @@
         .session-item:hover {
             background: var(--bg-subtle);
         }
-        .session-item .sess-time { color: var(--text-muted); }
-        .session-item .sess-tool {
-            font-size: 10px;
-            padding: 1px 6px;
-            border-radius: 3px;
-            text-align: center;
-            white-space: nowrap;
-        }
-        .session-item .sess-model {
-            color: var(--text-main);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .session-item .sess-tokens { text-align: right; color: var(--text-main); }
-        .session-item .sess-cached { text-align: right; color: var(--text-muted); }
-        .session-item .sess-latency { text-align: right; color: var(--text-muted); }
-        .session-header {
-            display: grid;
-            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
-            gap: 8px;
-            padding: 7px 10px;
-            font-size: 10px;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border-card);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .session-header span { text-align: right; }
-        .session-header span:nth-child(1), .session-header span:nth-child(2) { text-align: left; }
-        .session-header span:nth-child(3) { text-align: left; }
-
-        /* ===== 热力图 ===== */
-        .heatmap-table {
-            border-collapse: collapse;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-        }
-        .heatmap-table td {
-            width: 28px;
-            height: 22px;
-            text-align: center;
-            border: 1px solid var(--border-subtle);
-            transition: transform 0.1s;
-        }
-        .heatmap-table td.heatmap-label {
-            width: 24px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 10px;
-        }
-        .heatmap-table td.heatmap-hour-label {
-            width: 28px;
-            color: var(--text-muted);
-            border: none;
-            font-size: 9px;
-        }
-        .heatmap-table td.heatmap-cell:hover {
-            transform: scale(1.3);
-            z-index: 10;
-            position: relative;
-            border-color: var(--modal-line-color);
-        }
-        .heatmap-legend {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-top: 12px;
-            font-size: 10px;
-            color: var(--text-muted);
-        }
-        .heatmap-legend-box {
-            display: inline-block;
-            width: 14px;
-            height: 12px;
-            border: 1px solid var(--border-subtle);
-        }
-        /* ===== 会话详情列表 ===== */
         .session-item {
-            display: grid;
-            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
-            gap: 8px;
-            align-items: center;
-            padding: 7px 10px;
-            border-bottom: 1px solid var(--border-subtle);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            transition: background 0.15s;
+            cursor: pointer;
         }
-        .session-item:hover {
+        .session-item.active-row {
             background: var(--bg-subtle);
         }
         .session-item .sess-time { color: var(--text-muted); }
@@ -770,6 +684,164 @@
             color: var(--text-muted);
             border: none;
             font-size: 9px;
+        }
+        .heatmap-table td.heatmap-cell {
+            cursor: pointer;
+        }
+        .heatmap-table td.heatmap-cell:hover {
+            transform: scale(1.3);
+            z-index: 10;
+            position: relative;
+            border-color: var(--modal-line-color);
+        }
+        .heatmap-legend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 12px;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .heatmap-legend-box {
+            display: inline-block;
+            width: 14px;
+            height: 12px;
+            border: 1px solid var(--border-subtle);
+        }
+        /* ===== 对话详情面板 ===== */
+        .chat-detail {
+            max-height: 50vh;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .chat-msg {
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .chat-msg.user {
+            background: var(--bg-subtle);
+            border-left: 3px solid var(--text-muted);
+        }
+        .chat-msg.assistant {
+            background: rgba(168, 85, 247, 0.06);
+            border-left: 3px solid var(--modal-line-color);
+        }
+        .chat-msg .chat-role {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .chat-msg .chat-text {
+            color: var(--text-main);
+        }
+        .chat-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.15s;
+        }
+        .chat-back-btn:hover {
+            background: var(--bg-subtle);
+        }
+        .heatmap-detail-title {
+            font-size: 12px;
+            color: var(--text-main);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        /* ===== 会话详情列表 ===== */
+        .session-item {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            transition: background 0.15s;
+        }
+        .session-item:hover {
+            background: var(--bg-subtle);
+        }
+        .session-item {
+            cursor: pointer;
+        }
+        .session-item.active-row {
+            background: var(--bg-subtle);
+        }
+        .session-item .sess-time { color: var(--text-muted); }
+        .session-item .sess-tool {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .session-item .sess-model {
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-item .sess-tokens { text-align: right; color: var(--text-main); }
+        .session-item .sess-cached { text-align: right; color: var(--text-muted); }
+        .session-item .sess-latency { text-align: right; color: var(--text-muted); }
+        .session-header {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            padding: 7px 10px;
+            font-size: 10px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-card);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .session-header span { text-align: right; }
+        .session-header span:nth-child(1), .session-header span:nth-child(2) { text-align: left; }
+        .session-header span:nth-child(3) { text-align: left; }
+
+        /* ===== 热力图 ===== */
+        .heatmap-table {
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+        }
+        .heatmap-table td {
+            width: 28px;
+            height: 22px;
+            text-align: center;
+            border: 1px solid var(--border-subtle);
+            transition: transform 0.1s;
+        }
+        .heatmap-table td.heatmap-label {
+            width: 24px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 10px;
+        }
+        .heatmap-table td.heatmap-hour-label {
+            width: 28px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 9px;
+        }
+        .heatmap-table td.heatmap-cell {
+            cursor: pointer;
         }
         .heatmap-table td.heatmap-cell:hover {
             transform: scale(1.3);
@@ -945,6 +1017,32 @@
                 过去 30 天 · 按小时 x 星期统计 Token 消耗量
             </div>
             <div id="heatmapContainer" style="padding: 12px 4px; overflow-x: auto;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 热力图下钻: 格子点击后的调用列表 -->
+    <div id="heatmapDetailModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 id="heatmapDetailTitle">时段详情</h3>
+                <button id="heatmapDetailCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div id="heatmapDetailList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 对话内容查看 -->
+    <div id="chatDetailModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header">
+                <h3>对话内容</h3>
+                <button id="chatDetailCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div id="chatDetailContent" style="max-height: 60vh; overflow-y: auto; padding: 4px 8px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
             </div>
         </div>
@@ -2044,7 +2142,7 @@
                 sessions.forEach(s => {
                     const toolColor = getToolColor(s.tool);
                     const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
-                    html += '<div class="session-item">' +
+                    html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
                         '<span class="sess-time">' + s.time + '</span>' +
                         '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
                         '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
@@ -2054,6 +2152,15 @@
                         '</div>';
                 });
                 listEl.innerHTML = html;
+
+                // 行点击 -> 查看对话内容
+                listEl.querySelectorAll('.session-item').forEach(row => {
+                    row.addEventListener('click', () => {
+                        const sid = row.dataset.sessionId;
+                        const ts = row.dataset.timestamp;
+                        if (sid) loadChatDetail(sid, ts);
+                    });
+                });
             } catch (err) {
                 listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
                 console.error('loadSessions error:', err);
@@ -2124,7 +2231,7 @@
                         const val = matrix[d][h];
                         const color = heatColor(val);
                         const title = val > 0 ? weekdays[d] + ' ' + h + ':00 \n' + formatTokens(val) : '';
-                        html += '<td class="heatmap-cell" style="background:' + color + ';" title="' + title + '"></td>';
+                        html += '<td class="heatmap-cell" data-wd="' + d + '" data-hr="' + h + '" style="background:' + color + ';" title="' + title + '"></td>';
                     }
                     html += '</tr>';
                 }
@@ -2139,6 +2246,15 @@
                 html += '<span>多</span></div>';
 
                 container.innerHTML = html;
+
+                // 格子点击 -> 下钻
+                container.querySelectorAll('.heatmap-cell').forEach(cell => {
+                    cell.addEventListener('click', () => {
+                        const wd = parseInt(cell.dataset.wd);
+                        const hr = parseInt(cell.dataset.hr);
+                        loadHeatmapDetail(wd, hr, weekdays[wd], hr);
+                    });
+                });
             } catch (err) {
                 container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
                 console.error('loadHeatmap error:', err);
@@ -2156,6 +2272,104 @@
         document.getElementById('heatmapModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('heatmapModal')) {
                 document.getElementById('heatmapModal').classList.remove('active');
+            }
+        });
+
+
+        // ===== 热力图下钻 =====
+        async function loadHeatmapDetail(weekday, hour, weekdayName, hourNum) {
+            const modal = document.getElementById('heatmapDetailModal');
+            const titleEl = document.getElementById('heatmapDetailTitle');
+            const listEl = document.getElementById('heatmapDetailList');
+            titleEl.textContent = weekdayName + ' ' + String(hourNum).padStart(2, '0') + ':00 时段调用详情';
+            listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            modal.classList.add('active');
+            try {
+                const res = await fetch(API_BASE + '/api/heatmap_detail?weekday=' + weekday + '&hour=' + hour + '&days=30', { cache: 'no-store' });
+                const data = await res.json();
+                const sessions = data.sessions || [];
+                document.getElementById('sessionCount');
+                if (sessions.length === 0) {
+                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该时段暂无调用记录</div>';
+                    return;
+                }
+                let html = '<div class="session-header">' +
+                    '<span>时间</span><span>工具</span><span>模型</span>' +
+                    '<span>总Token</span><span>缓存命中</span><span>延迟</span></div>';
+                sessions.forEach(s => {
+                    const toolColor = getToolColor(s.tool);
+                    const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
+                    html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
+                        '<span class="sess-time">' + s.time + '</span>' +
+                        '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
+                        '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
+                        '<span class="sess-tokens">' + formatTokens(s.total_tokens) + '</span>' +
+                        '<span class="sess-cached">' + (s.input_cached > 0 ? formatTokens(s.input_cached) : '-') + '</span>' +
+                        '<span class="sess-latency">' + latencyText + '</span>' +
+                        '</div>';
+                });
+                listEl.innerHTML = html;
+                listEl.querySelectorAll('.session-item').forEach(row => {
+                    row.addEventListener('click', () => {
+                        const sid = row.dataset.sessionId;
+                        const ts = row.dataset.timestamp;
+                        if (sid) loadChatDetail(sid, ts);
+                    });
+                });
+            } catch (err) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
+            }
+        }
+        document.getElementById('heatmapDetailCloseBtn').addEventListener('click', () => {
+            document.getElementById('heatmapDetailModal').classList.remove('active');
+        });
+        document.getElementById('heatmapDetailModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('heatmapDetailModal')) {
+                document.getElementById('heatmapDetailModal').classList.remove('active');
+            }
+        });
+
+        // ===== 对话内容查看 =====
+        async function loadChatDetail(sessionId, timestamp) {
+            const modal = document.getElementById('chatDetailModal');
+            const contentEl = document.getElementById('chatDetailContent');
+            contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            modal.classList.add('active');
+            try {
+                let url = API_BASE + '/api/session_detail?session_id=' + encodeURIComponent(sessionId);
+                if (timestamp) url += '&timestamp=' + timestamp;
+                const res = await fetch(url, { cache: 'no-store' });
+                const data = await res.json();
+                const messages = data.messages || [];
+                if (messages.length === 0) {
+                    contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">未找到对话内容<br><span style="font-size:10px;">(可能该会话无 session_id 或 rollout 文件已清理)</span></div>';
+                    return;
+                }
+                let html = '<div class="chat-detail">';
+                messages.forEach(m => {
+                    const roleLabel = m.role === 'user' ? '用户' : '助手';
+                    html += '<div class="chat-msg ' + m.role + '">' +
+                        '<div class="chat-role">' + roleLabel + (m.timestamp ? ' · ' + m.timestamp : '') + '</div>' +
+                        '<div class="chat-text">' + escapeHtml(m.text) + '</div>' +
+                        '</div>';
+                });
+                html += '</div>';
+                contentEl.innerHTML = html;
+            } catch (err) {
+                contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
+            }
+        }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        document.getElementById('chatDetailCloseBtn').addEventListener('click', () => {
+            document.getElementById('chatDetailModal').classList.remove('active');
+        });
+        document.getElementById('chatDetailModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('chatDetailModal')) {
+                document.getElementById('chatDetailModal').classList.remove('active');
             }
         });
     </script>
