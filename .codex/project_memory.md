@@ -55,8 +55,10 @@
 ## Release Notes 规范
 
 - 每次发版时, release notes 要简短说明本次改动, 一两句话即可
-- 格式: 中文, 直接写在 git commit message 里 (release_all.sh 会用 tag 对应的 commit message)
+- 格式: 中文, 直接写在 git commit message 里 (release_all.sh 会用 tag 对应的 commit message 作为 release body)
 - 示例: `feat: 热力图点击下钻 + 会话详情对话浏览; bump v1.3.65`
+- **GitCode 不支持更新已有 release 的 body** (PATCH/PUT 返回 405), 所以 release notes 只在创建时写入, 发版后无法修改
+- release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
 

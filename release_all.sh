@@ -50,7 +50,7 @@ if [[ "$RELEASE_HTTP" != "200" ]]; then
     curl -sS -X POST \
         -H "Authorization: Bearer $GITCODE_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"body\":\"Token Monitor $TAG - Mac + Windows 统一发布\"}" \
+        -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"body\":\"$(git log -1 --format=%s $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")\"}" \
         "$API_BASE/releases" > /dev/null
     echo "[release] Release 创建完成"
 fi
