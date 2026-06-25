@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.67"
+var appVersion = "1.3.68"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -108,11 +108,17 @@ type SessionListResponse struct {
 	TotalPages int            `json:"total_pages"`
 }
 
+type HeatmapDateEntry struct {
+	Date   string `json:"date"`
+	Tokens int64  `json:"tokens"`
+}
+
 type HeatmapResponse struct {
-	Hours    []int    `json:"hours"`
-	Weekdays []string `json:"weekdays"`
-	Matrix   [][]int64 `json:"matrix"`
-	MaxValue int64    `json:"max_value"`
+	Hours    []int              `json:"hours"`
+	Weekdays []string           `json:"weekdays"`
+	Matrix   [][]int64          `json:"matrix"`
+	MaxValue int64              `json:"max_value"`
+	Dates    [][][]HeatmapDateEntry `json:"dates"`
 }
 
 // ───── 路径工具 (跨平台) ─────
@@ -1280,6 +1286,14 @@ func getHeatmapData(days int) HeatmapResponse {
 	for i := range matrix {
 		matrix[i] = make([]int64, 24)
 	}
+	// dateDetail[wd][hr] = map["MM-DD"] -> tokens
+	dateDetail := make([][]map[string]int64, 7)
+	for i := range dateDetail {
+		dateDetail[i] = make([]map[string]int64, 24)
+		for j := range dateDetail[i] {
+			dateDetail[i][j] = make(map[string]int64)
+		}
+	}
 	seen := map[string]bool{}
 
 	if dbPath := ccSwitchDBPath(); fileExists(dbPath) {
@@ -1305,6 +1319,8 @@ func getHeatmapData(days int) HeatmapResponse {
 						wd--
 					}
 					matrix[wd][dt.Hour()] += tokens
+					dStr := dt.Format("01-02")
+					dateDetail[wd][dt.Hour()][dStr] += tokens
 				}
 				rows.Close()
 			}
@@ -1335,6 +1351,8 @@ func getHeatmapData(days int) HeatmapResponse {
 						wd--
 					}
 					matrix[wd][dt.Hour()] += tokens
+					dStr := dt.Format("01-02")
+					dateDetail[wd][dt.Hour()][dStr] += tokens
 				}
 				rows.Close()
 			}
@@ -1356,11 +1374,30 @@ func getHeatmapData(days int) HeatmapResponse {
 		hours[i] = i
 	}
 
+	// Build dates field
+	dates := make([][][]HeatmapDateEntry, 7)
+	for wd := 0; wd < 7; wd++ {
+		dates[wd] = make([][]HeatmapDateEntry, 24)
+		for hr := 0; hr < 24; hr++ {
+			dm := dateDetail[wd][hr]
+			if len(dm) > 0 {
+				entries := make([]HeatmapDateEntry, 0, len(dm))
+				for k, v := range dm {
+					entries = append(entries, HeatmapDateEntry{Date: k, Tokens: v})
+				}
+				// sort by date
+				sort.Slice(entries, func(i, j int) bool { return entries[i].Date < entries[j].Date })
+				dates[wd][hr] = entries
+			}
+		}
+	}
+
 	return HeatmapResponse{
 		Hours:    hours,
 		Weekdays: []string{"一", "二", "三", "四", "五", "六", "日"},
 		Matrix:   matrix,
 		MaxValue: maxVal,
+		Dates:    dates,
 	}
 }
 

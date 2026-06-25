@@ -784,6 +784,7 @@ def get_heatmap_data(days=30):
 
     # 7 行 (周一~周日) x 24 列 (0~23 点)
     matrix = [[0] * 24 for _ in range(7)]
+    date_detail = [[dict() for _ in range(24)] for _ in range(7)]
 
     # --- cc-switch ---
     provider_model_map, active_model_by_app = _load_provider_model_map()
@@ -811,6 +812,8 @@ def get_heatmap_data(days=30):
                 wd = dt.weekday()
                 hr = dt.hour
                 matrix[wd][hr] += tokens
+                d_str = dt.strftime("%m-%d")
+                date_detail[wd][hr][d_str] = date_detail[wd][hr].get(d_str, 0) + tokens
             conn.close()
         except Exception as e:
             print(f"[-] heatmap cc-switch 出错: {e}")
@@ -837,6 +840,8 @@ def get_heatmap_data(days=30):
                 wd = dt.weekday()
                 hr = dt.hour
                 matrix[wd][hr] += tokens
+                d_str = dt.strftime("%m-%d")
+                date_detail[wd][hr][d_str] = date_detail[wd][hr].get(d_str, 0) + tokens
             conn.close()
         except Exception as e:
             print(f"[-] heatmap Hermes 出错: {e}")
@@ -845,11 +850,20 @@ def get_heatmap_data(days=30):
 
     max_value = max(max(row) for row in matrix) if matrix else 0
 
+    # 把 date_detail 转为前端可用的格式: 每个格子一个 [{date, tokens}] 列表
+    dates = [[[] for _ in range(24)] for _ in range(7)]
+    for wd in range(7):
+        for hr in range(24):
+            d = date_detail[wd][hr]
+            if d:
+                dates[wd][hr] = [{"date": k, "tokens": v} for k, v in sorted(d.items())]
+
     return {
         "hours": list(range(24)),
         "weekdays": ["一", "二", "三", "四", "五", "六", "日"],
         "matrix": matrix,
         "max_value": max_value,
+        "dates": dates,
     }
 
 

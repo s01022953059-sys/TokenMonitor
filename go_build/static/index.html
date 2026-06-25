@@ -2310,7 +2310,16 @@
                     for (let h = 0; h < 24; h++) {
                         const val = matrix[d][h];
                         const color = heatColor(val);
-                        const title = val > 0 ? weekdays[d] + ' ' + h + ':00 \n' + formatTokens(val) : '';
+                        const cellDates = (data.dates && data.dates[d] && data.dates[d][h]) ? data.dates[d][h] : [];
+                        let title = '';
+                        if (val > 0) {
+                            title = weekdays[d] + ' ' + h + ':00  总计' + formatTokens(val);
+                            if (cellDates.length > 0) {
+                                const dateLines = cellDates.slice(0, 8).map(dd => '\n  ' + dd.date + ' ' + formatTokens(dd.tokens));
+                                title += ' (' + cellDates.length + '天)' + dateLines.join('');
+                                if (cellDates.length > 8) title += '\n  ...等' + cellDates.length + '天';
+                            }
+                        }
                         html += '<td class="heatmap-cell" data-wd="' + d + '" data-hr="' + h + '" style="background:' + color + ';" title="' + title + '"></td>';
                     }
                     html += '</tr>';
