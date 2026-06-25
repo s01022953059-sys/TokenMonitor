@@ -26,9 +26,9 @@ from urllib import request as urlrequest
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
-    from scanner import get_today_usage, get_historical_usage
+    from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data
 except ImportError:
-    from .scanner import get_today_usage, get_historical_usage
+    from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -319,6 +319,24 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             return
         if self.path == "/api/check-update":
             self._write_json(200, _check_update_remote())
+            return
+        if self.path.startswith("/api/sessions"):
+            try:
+                days = 1
+                if "?days=" in self.path:
+                    days = int(self.path.split("?days=")[1].split("&")[0])
+                self._write_json(200, get_session_list(days))
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+        if self.path.startswith("/api/heatmap"):
+            try:
+                days = 30
+                if "?days=" in self.path:
+                    days = int(self.path.split("?days=")[1].split("&")[0])
+                self._write_json(200, get_heatmap_data(days))
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
             return
 
         if self.path in ("", "/"):

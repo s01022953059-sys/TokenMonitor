@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.62"
+var appVersion = "1.3.63"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -83,6 +84,31 @@ type AppInfoResponse struct {
 	UpdateEnabled bool   `json:"update_enabled"`
 }
 
+type SessionEntry struct {
+	Timestamp     int64  `json:"timestamp"`
+	Time          string `json:"time"`
+	Tool          string `json:"tool"`
+	Model         string `json:"model"`
+	InputTokens   int64  `json:"input_tokens"`
+	OutputTokens  int64  `json:"output_tokens"`
+	TotalTokens   int64  `json:"total_tokens"`
+	InputCached   int64  `json:"input_cached"`
+	InputUncached int64  `json:"input_uncached"`
+	LatencyMs     int64  `json:"latency_ms"`
+}
+
+type SessionListResponse struct {
+	Sessions []SessionEntry `json:"sessions"`
+	Total    int            `json:"total"`
+}
+
+type HeatmapResponse struct {
+	Hours    []int    `json:"hours"`
+	Weekdays []string `json:"weekdays"`
+	Matrix   [][]int64 `json:"matrix"`
+	MaxValue int64    `json:"max_value"`
+}
+
 // ───── 路径工具 (跨平台) ─────
 
 func homeDir() string {
@@ -95,6 +121,11 @@ func homeDir() string {
 
 func ccSwitchDBPath() string {
 	return filepath.Join(homeDir(), ".cc-switch", "cc-switch.db")
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func hermesDBPath() string {
@@ -1047,6 +1078,140 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload interface{}) {
 	w.Write(body)
 }
 
+// ───── API: /api/sessions ─────
+func getSessionList(days int) SessionListResponse {
+	now := time.Now()
+	start := now.AddDate(0, 0, -days)
+	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	startTimestamp := startMidnight.Unix()
+
+	var ccLogs, hermesLogs []LogEntry
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
+	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	wg.Wait()
+
+	allLogs := append(ccLogs, hermesLogs...)
+	allLogs = dedupEvents(allLogs)
+
+	sort.Slice(allLogs, func(i, j int) bool {
+		return allLogs[i].Timestamp > allLogs[j].Timestamp
+	})
+
+	sessions := make([]SessionEntry, 0, len(allLogs))
+	for _, ev := range allLogs {
+		sessions = append(sessions, SessionEntry{
+			Timestamp:     ev.Timestamp,
+			Time:          ev.Time,
+			Tool:          ev.Tool,
+			Model:         ev.Model,
+			InputTokens:   ev.InputTokens,
+			OutputTokens:  ev.OutputTokens,
+			TotalTokens:   ev.TotalTokens,
+			InputCached:   ev.InputCached,
+			InputUncached: ev.InputUncached,
+			LatencyMs:     0,
+		})
+	}
+	return SessionListResponse{Sessions: sessions, Total: len(sessions)}
+}
+
+// ───── API: /api/heatmap ─────
+func getHeatmapData(days int) HeatmapResponse {
+	now := time.Now()
+	start := now.AddDate(0, 0, -(days - 1))
+	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	startTimestamp := startMidnight.Unix()
+
+	matrix := make([][]int64, 7)
+	for i := range matrix {
+		matrix[i] = make([]int64, 24)
+	}
+	seen := map[string]bool{}
+
+	if dbPath := ccSwitchDBPath(); fileExists(dbPath) {
+		db, err := sql.Open("sqlite", dbPath)
+		if err == nil {
+			rows, err := db.Query(`SELECT created_at, input_tokens, output_tokens FROM proxy_request_logs WHERE created_at >= ? AND status_code = 200`, startTimestamp)
+			if err == nil {
+				for rows.Next() {
+					var createdAt, inputT, outputT int64
+					rows.Scan(&createdAt, &inputT, &outputT)
+					tokens := inputT + outputT
+					bucket := createdAt / dedupWindowSeconds
+					key := fmt.Sprintf("%d-%d", bucket, tokens)
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+					dt := time.Unix(createdAt, 0)
+					wd := int(dt.Weekday())
+					if wd == 0 {
+						wd = 6
+					} else {
+						wd--
+					}
+					matrix[wd][dt.Hour()] += tokens
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+
+	if dbPath := hermesDBPath(); fileExists(dbPath) {
+		db, err := sql.Open("sqlite", dbPath)
+		if err == nil {
+			rows, err := db.Query(`SELECT started_at, input_tokens, output_tokens, cache_read_tokens FROM sessions WHERE started_at >= ?`, startTimestamp)
+			if err == nil {
+				for rows.Next() {
+					var startedAt, inputT, outputT, cacheReadT int64
+					rows.Scan(&startedAt, &inputT, &outputT, &cacheReadT)
+					tokens := inputT + outputT + cacheReadT
+					bucket := startedAt / dedupWindowSeconds
+					key := fmt.Sprintf("%d-%d", bucket, tokens)
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+					dt := time.Unix(startedAt, 0)
+					wd := int(dt.Weekday())
+					if wd == 0 {
+						wd = 6
+					} else {
+						wd--
+					}
+					matrix[wd][dt.Hour()] += tokens
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+
+	var maxVal int64
+	for _, row := range matrix {
+		for _, v := range row {
+			if v > maxVal {
+				maxVal = v
+			}
+		}
+	}
+
+	hours := make([]int, 24)
+	for i := 0; i < 24; i++ {
+		hours[i] = i
+	}
+
+	return HeatmapResponse{
+		Hours:    hours,
+		Weekdays: []string{"一", "二", "三", "四", "五", "六", "日"},
+		Matrix:   matrix,
+		MaxValue: maxVal,
+	}
+}
+
 func main() {
 	// 读取版本号
 	appVersion = readAppVersion()
@@ -1117,6 +1282,36 @@ func main() {
 		}
 		result := checkUpdateRemote()
 		writeJSON(w, 200, result)
+	})
+
+	http.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		days := 1
+		if d := r.URL.Query().Get("days"); d != "" {
+			if n, err := strconv.Atoi(d); err == nil && n > 0 {
+				days = n
+			}
+		}
+		writeJSON(w, 200, getSessionList(days))
+	})
+
+	http.HandleFunc("/api/heatmap", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		days := 30
+		if d := r.URL.Query().Get("days"); d != "" {
+			if n, err := strconv.Atoi(d); err == nil && n > 0 {
+				days = n
+			}
+		}
+		writeJSON(w, 200, getHeatmapData(days))
 	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)

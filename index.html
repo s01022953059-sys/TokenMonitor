@@ -605,6 +605,190 @@
             color: var(--neon-green);
         }
 
+        /* ===== 会话详情列表 ===== */
+        .session-item {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            transition: background 0.15s;
+        }
+        .session-item:hover {
+            background: var(--bg-subtle);
+        }
+        .session-item .sess-time { color: var(--text-muted); }
+        .session-item .sess-tool {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .session-item .sess-model {
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-item .sess-tokens { text-align: right; color: var(--text-main); }
+        .session-item .sess-cached { text-align: right; color: var(--text-muted); }
+        .session-item .sess-latency { text-align: right; color: var(--text-muted); }
+        .session-header {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            padding: 7px 10px;
+            font-size: 10px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-card);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .session-header span { text-align: right; }
+        .session-header span:nth-child(1), .session-header span:nth-child(2) { text-align: left; }
+        .session-header span:nth-child(3) { text-align: left; }
+
+        /* ===== 热力图 ===== */
+        .heatmap-table {
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+        }
+        .heatmap-table td {
+            width: 28px;
+            height: 22px;
+            text-align: center;
+            border: 1px solid var(--border-subtle);
+            transition: transform 0.1s;
+        }
+        .heatmap-table td.heatmap-label {
+            width: 24px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 10px;
+        }
+        .heatmap-table td.heatmap-hour-label {
+            width: 28px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 9px;
+        }
+        .heatmap-table td.heatmap-cell:hover {
+            transform: scale(1.3);
+            z-index: 10;
+            position: relative;
+            border-color: var(--modal-line-color);
+        }
+        .heatmap-legend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 12px;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .heatmap-legend-box {
+            display: inline-block;
+            width: 14px;
+            height: 12px;
+            border: 1px solid var(--border-subtle);
+        }
+        /* ===== 会话详情列表 ===== */
+        .session-item {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            align-items: center;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            transition: background 0.15s;
+        }
+        .session-item:hover {
+            background: var(--bg-subtle);
+        }
+        .session-item .sess-time { color: var(--text-muted); }
+        .session-item .sess-tool {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .session-item .sess-model {
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-item .sess-tokens { text-align: right; color: var(--text-main); }
+        .session-item .sess-cached { text-align: right; color: var(--text-muted); }
+        .session-item .sess-latency { text-align: right; color: var(--text-muted); }
+        .session-header {
+            display: grid;
+            grid-template-columns: 70px 60px 1fr 70px 70px 60px;
+            gap: 8px;
+            padding: 7px 10px;
+            font-size: 10px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-card);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .session-header span { text-align: right; }
+        .session-header span:nth-child(1), .session-header span:nth-child(2) { text-align: left; }
+        .session-header span:nth-child(3) { text-align: left; }
+
+        /* ===== 热力图 ===== */
+        .heatmap-table {
+            border-collapse: collapse;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+        }
+        .heatmap-table td {
+            width: 28px;
+            height: 22px;
+            text-align: center;
+            border: 1px solid var(--border-subtle);
+            transition: transform 0.1s;
+        }
+        .heatmap-table td.heatmap-label {
+            width: 24px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 10px;
+        }
+        .heatmap-table td.heatmap-hour-label {
+            width: 28px;
+            color: var(--text-muted);
+            border: none;
+            font-size: 9px;
+        }
+        .heatmap-table td.heatmap-cell:hover {
+            transform: scale(1.3);
+            z-index: 10;
+            position: relative;
+            border-color: var(--modal-line-color);
+        }
+        .heatmap-legend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 12px;
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+        .heatmap-legend-box {
+            display: inline-block;
+            width: 14px;
+            height: 12px;
+            border: 1px solid var(--border-subtle);
+        }
     </style>
 </head>
 <body>
@@ -632,6 +816,32 @@
                 <line x1="18" y1="20" x2="18" y2="10"></line>
                 <line x1="12" y1="20" x2="12" y2="4"></line>
                 <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+        </button>
+        <button id="sessionsOpenBtn" class="header-action-btn" title="会话详情">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+        </button>
+        <button id="heatmapOpenBtn" class="header-action-btn" title="活动热力图">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+        </button>
+        <button id="sessionsOpenBtn" class="header-action-btn" title="会话详情">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+        </button>
+        <button id="heatmapOpenBtn" class="header-action-btn" title="活动热力图">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
         </button>
         <button id="aboutOpenBtn" class="header-action-btn about-btn" title="关于 Token Monitor">
@@ -710,6 +920,80 @@
             </div>
             <div class="modal-chart-wrapper">
                 <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 会话详情弹窗 -->
+    <div id="sessionsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>会话详情</h3>
+                <button id="sessionsCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; width: 100%;">
+                <div class="tab-container" id="sessionTabContainer">
+                    <button class="tab-btn active" data-days="1">今天</button>
+                    <button class="tab-btn" data-days="3">近 3 天</button>
+                    <button class="tab-btn" data-days="7">近 7 天</button>
+                </div>
+                <span id="sessionCount" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"></span>
+            </div>
+            <div id="sessionList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 活动热力图弹窗 -->
+    <div id="heatmapModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 860px;">
+            <div class="modal-header">
+                <h3>活动热力图</h3>
+                <button id="heatmapCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
+                过去 30 天 · 按小时 x 星期统计 Token 消耗量
+            </div>
+            <div id="heatmapContainer" style="padding: 12px 4px; overflow-x: auto;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 会话详情弹窗 -->
+    <div id="sessionsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>会话详情</h3>
+                <button id="sessionsCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; width: 100%;">
+                <div class="tab-container" id="sessionTabContainer">
+                    <button class="tab-btn active" data-days="1">今天</button>
+                    <button class="tab-btn" data-days="3">近 3 天</button>
+                    <button class="tab-btn" data-days="7">近 7 天</button>
+                </div>
+                <span id="sessionCount" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"></span>
+            </div>
+            <div id="sessionList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 活动热力图弹窗 -->
+    <div id="heatmapModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 860px;">
+            <div class="modal-header">
+                <h3>活动热力图</h3>
+                <button id="heatmapCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
+                过去 30 天 · 按小时 x 星期统计 Token 消耗量
+            </div>
+            <div id="heatmapContainer" style="padding: 12px 4px; overflow-x: auto;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
             </div>
         </div>
     </div>
@@ -1779,6 +2063,148 @@
                 if (ub) { ub.style.display = 'none'; ub.disabled = false; }
                 if (db) db.style.display = 'none';
             };
+        });
+
+        // ===== 会话详情 =====
+        let currentSessionDays = 1;
+
+        async function loadSessions(days) {
+            currentSessionDays = days;
+            const listEl = document.getElementById('sessionList');
+            const countEl = document.getElementById('sessionCount');
+            listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            try {
+                const res = await fetch(API_BASE + '/api/sessions?days=' + days, { cache: 'no-store' });
+                const data = await res.json();
+                const sessions = data.sessions || [];
+                countEl.innerText = '共 ' + data.total + ' 条';
+
+                if (sessions.length === 0) {
+                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">暂无数据</div>';
+                    return;
+                }
+
+                let html = '<div class="session-header">' +
+                    '<span>时间</span><span>工具</span><span>模型</span>' +
+                    '<span>总Token</span><span>缓存命中</span><span>延迟</span>' +
+                    '</div>';
+
+                sessions.forEach(s => {
+                    const toolColor = getToolColor(s.tool);
+                    const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
+                    html += '<div class="session-item">' +
+                        '<span class="sess-time">' + s.time + '</span>' +
+                        '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
+                        '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
+                        '<span class="sess-tokens">' + formatTokens(s.total_tokens) + '</span>' +
+                        '<span class="sess-cached">' + (s.input_cached > 0 ? formatTokens(s.input_cached) : '-') + '</span>' +
+                        '<span class="sess-latency">' + latencyText + '</span>' +
+                        '</div>';
+                });
+                listEl.innerHTML = html;
+            } catch (err) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
+                console.error('loadSessions error:', err);
+            }
+        }
+
+        // 会话详情弹窗事件
+        document.getElementById('sessionsOpenBtn').addEventListener('click', () => {
+            document.getElementById('sessionsModal').classList.add('active');
+            loadSessions(currentSessionDays);
+        });
+        document.getElementById('sessionsCloseBtn').addEventListener('click', () => {
+            document.getElementById('sessionsModal').classList.remove('active');
+        });
+        document.getElementById('sessionsModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('sessionsModal')) {
+                document.getElementById('sessionsModal').classList.remove('active');
+            }
+        });
+        document.getElementById('sessionTabContainer').addEventListener('click', (e) => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            document.querySelectorAll('#sessionTabContainer .tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadSessions(parseInt(btn.dataset.days));
+        });
+
+        // ===== 活动热力图 =====
+        async function loadHeatmap() {
+            const container = document.getElementById('heatmapContainer');
+            container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+            try {
+                const res = await fetch(API_BASE + '/api/heatmap?days=30', { cache: 'no-store' });
+                const data = await res.json();
+                const weekdays = data.weekdays;
+                const matrix = data.matrix;
+                const maxVal = data.max_value || 1;
+
+                if (maxVal === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">暂无数据</div>';
+                    return;
+                }
+
+                // 颜色映射: 0 -> 透明, 低 -> 淡, 高 -> 浓 (用 accent 色系)
+                const accent = getThemeVar('--modal-line-color') || '#a855f7';
+                function heatColor(val) {
+                    if (val === 0) return 'transparent';
+                    const ratio = Math.log(val + 1) / Math.log(maxVal + 1);
+                    const opacity = 0.12 + ratio * 0.85;
+                    // 把 hex 转 rgba
+                    const r = parseInt(accent.slice(1, 3), 16);
+                    const g = parseInt(accent.slice(3, 5), 16);
+                    const b = parseInt(accent.slice(5, 7), 16);
+                    return 'rgba(' + r + ',' + g + ',' + b + ',' + opacity.toFixed(2) + ')';
+                }
+
+                let html = '<table class="heatmap-table"><thead><tr>';
+                html += '<td class="heatmap-label"></td>';
+                for (let h = 0; h < 24; h++) {
+                    html += '<td class="heatmap-hour-label">' + (h % 6 === 0 ? h : '') + '</td>';
+                }
+                html += '</tr></thead><tbody>';
+
+                for (let d = 0; d < 7; d++) {
+                    html += '<tr>';
+                    html += '<td class="heatmap-label">' + weekdays[d] + '</td>';
+                    for (let h = 0; h < 24; h++) {
+                        const val = matrix[d][h];
+                        const color = heatColor(val);
+                        const title = val > 0 ? weekdays[d] + ' ' + h + ':00 \n' + formatTokens(val) : '';
+                        html += '<td class="heatmap-cell" style="background:' + color + ';" title="' + title + '"></td>';
+                    }
+                    html += '</tr>';
+                }
+                html += '</tbody></table>';
+
+                // 图例
+                html += '<div class="heatmap-legend"><span>少</span>';
+                for (let i = 0; i <= 4; i++) {
+                    const val = Math.round(maxVal * i / 4);
+                    html += '<span class="heatmap-legend-box" style="background:' + heatColor(val) + ';"></span>';
+                }
+                html += '<span>多</span></div>';
+
+                container.innerHTML = html;
+            } catch (err) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
+                console.error('loadHeatmap error:', err);
+            }
+        }
+
+        // 热力图弹窗事件
+        document.getElementById('heatmapOpenBtn').addEventListener('click', () => {
+            document.getElementById('heatmapModal').classList.add('active');
+            loadHeatmap();
+        });
+        document.getElementById('heatmapCloseBtn').addEventListener('click', () => {
+            document.getElementById('heatmapModal').classList.remove('active');
+        });
+        document.getElementById('heatmapModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('heatmapModal')) {
+                document.getElementById('heatmapModal').classList.remove('active');
+            }
         });
     </script>
 </body>

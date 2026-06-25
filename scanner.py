@@ -631,3 +631,210 @@ def get_historical_usage(days=30):
 
 if __name__ == "__main__":
     print(json.dumps(get_today_usage(), indent=2))
+
+
+def get_session_list(days=1):
+    """获取最近 days 天内的会话事件列表 (去重后), 按时间倒序返回。
+
+    每条事件包含: timestamp, time, tool, model, input_tokens,
+    output_tokens, total_tokens, input_cached, input_uncached,
+    latency_ms (仅 cc-switch 有)。
+
+    用于前端"会话详情"面板, 展示每一条 API 请求的 token 消耗。
+    """
+    now = datetime.datetime.now()
+    start = now - datetime.timedelta(days=days)
+    start_midnight = datetime.datetime(start.year, start.month, start.day, 0, 0, 0)
+    start_timestamp = int(start_midnight.timestamp())
+
+    events = []
+
+    # --- cc-switch ---
+    provider_model_map, active_model_by_app = _load_provider_model_map()
+    if os.path.exists(CC_SWITCH_DB_PATH):
+        try:
+            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
+                       cache_creation_tokens, app_type, model, provider_id,
+                       data_source, latency_ms, session_id
+                FROM proxy_request_logs
+                WHERE created_at >= ? AND status_code = 200
+                ORDER BY created_at ASC
+            """, (start_timestamp,))
+            for row in cursor.fetchall():
+                created_at, input_t, output_t, cache_read, cache_creation, \
+                    app_type, model, provider_id, data_source, latency_ms, sess_id = row
+
+                # 解析实际模型 (同 get_today_usage 逻辑)
+                actual_model = model
+                if provider_id and provider_id in provider_model_map:
+                    actual_model = provider_model_map[provider_id]
+                elif data_source == "codex_session" or provider_id == "_codex_session":
+                    active_model = active_model_by_app.get(app_type)
+                    if active_model:
+                        actual_model = active_model
+                actual_model = normalize_model_name(actual_model)
+
+                # 工具归一化
+                t_lower = (app_type or "").lower()
+                if "antigravity" in t_lower:
+                    tool = "Antigravity"
+                elif "hermes" in t_lower:
+                    tool = "Hermes"
+                elif "codex" in t_lower or "code" in t_lower:
+                    tool = "Codex"
+                else:
+                    tool = "Other"
+
+                i_cached = (cache_read or 0) + (cache_creation or 0)
+                i_uncached = max(0, (input_t or 0) - i_cached)
+                total_input = input_t or 0
+                total_t = total_input + (output_t or 0)
+
+                events.append({
+                    "timestamp": created_at,
+                    "time": datetime.datetime.fromtimestamp(created_at).strftime("%H:%M:%S"),
+                    "tool": tool,
+                    "model": actual_model,
+                    "input_tokens": total_input,
+                    "output_tokens": output_t or 0,
+                    "total_tokens": total_t,
+                    "input_cached": i_cached,
+                    "input_uncached": i_uncached,
+                    "latency_ms": latency_ms or 0,
+                })
+            conn.close()
+        except Exception as e:
+            print(f"[-] session list cc-switch 出错: {e}")
+
+    # --- Hermes ---
+    if os.path.exists(HERMES_DB_PATH):
+        try:
+            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT started_at, model, input_tokens, output_tokens, cache_read_tokens
+                FROM sessions
+                WHERE started_at >= ?
+                ORDER BY started_at ASC
+            """, (start_timestamp,))
+            for started_at, model, input_t, output_t, cache_read_t in cursor.fetchall():
+                input_cached = cache_read_t if cache_read_t else 0
+                input_uncached = input_t if input_t else 0
+                total_input = input_uncached + input_cached
+                output_tokens = output_t if output_t else 0
+                total_t = total_input + output_tokens
+                events.append({
+                    "timestamp": started_at,
+                    "time": datetime.datetime.fromtimestamp(started_at).strftime("%H:%M:%S"),
+                    "tool": "Hermes",
+                    "model": normalize_model_name(model) if model else "Unknown",
+                    "input_tokens": total_input,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_t,
+                    "input_cached": input_cached,
+                    "input_uncached": input_uncached,
+                    "latency_ms": 0,
+                })
+            conn.close()
+        except Exception as e:
+            print(f"[-] session list Hermes 出错: {e}")
+
+    # --- Antigravity (按天粒度, 无逐条事件, 跳过) ---
+
+    # 去重 (同 _dedup_events 逻辑)
+    events = _dedup_events(events)
+
+    # 按时间倒序
+    events.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    return {"sessions": events, "total": len(events)}
+
+
+def get_heatmap_data(days=30):
+    """生成活动热力图数据: 过去 days 天按 小时x星期 的 token 消耗矩阵。
+
+    返回:
+    {
+        "hours": [0, 1, ..., 23],
+        "weekdays": ["一", "二", ..., "日"],
+        "matrix": [[0]*24 for _ in range(7)],  # [weekday][hour] = total_tokens
+        "max_value": int
+    }
+    """
+    now = datetime.datetime.now()
+    start = now - datetime.timedelta(days=days - 1)
+    start_midnight = datetime.datetime(start.year, start.month, start.day, 0, 0, 0)
+    start_timestamp = int(start_midnight.timestamp())
+
+    # 7 行 (周一~周日) x 24 列 (0~23 点)
+    matrix = [[0] * 24 for _ in range(7)]
+
+    # --- cc-switch ---
+    provider_model_map, active_model_by_app = _load_provider_model_map()
+    seen_dedup = set()
+    if os.path.exists(CC_SWITCH_DB_PATH):
+        try:
+            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT created_at, input_tokens, output_tokens, app_type, model,
+                       provider_id, data_source
+                FROM proxy_request_logs
+                WHERE created_at >= ? AND status_code = 200
+            """, (start_timestamp,))
+            for created_at, input_t, output_t, app_type, model, provider_id, data_source in cursor.fetchall():
+                tokens = (input_t or 0) + (output_t or 0)
+                bucket = created_at // DEDUP_WINDOW_SECONDS
+                dkey = (bucket, tokens)
+                if dkey in seen_dedup:
+                    continue
+                seen_dedup.add(dkey)
+
+                dt = datetime.datetime.fromtimestamp(created_at)
+                # Python weekday(): 0=Monday, 6=Sunday
+                wd = dt.weekday()
+                hr = dt.hour
+                matrix[wd][hr] += tokens
+            conn.close()
+        except Exception as e:
+            print(f"[-] heatmap cc-switch 出错: {e}")
+
+    # --- Hermes ---
+    if os.path.exists(HERMES_DB_PATH):
+        try:
+            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT started_at, input_tokens, output_tokens, cache_read_tokens
+                FROM sessions
+                WHERE started_at >= ?
+            """, (start_timestamp,))
+            for started_at, input_t, output_t, cache_read_t in cursor.fetchall():
+                tokens = (input_t or 0) + (cache_read_t or 0) + (output_t or 0)
+                bucket = started_at // DEDUP_WINDOW_SECONDS
+                dkey = (bucket, tokens)
+                if dkey in seen_dedup:
+                    continue
+                seen_dedup.add(dkey)
+
+                dt = datetime.datetime.fromtimestamp(started_at)
+                wd = dt.weekday()
+                hr = dt.hour
+                matrix[wd][hr] += tokens
+            conn.close()
+        except Exception as e:
+            print(f"[-] heatmap Hermes 出错: {e}")
+
+    # --- Antigravity (只有按天总量, 无法分小时, 跳过) ---
+
+    max_value = max(max(row) for row in matrix) if matrix else 0
+
+    return {
+        "hours": list(range(24)),
+        "weekdays": ["一", "二", "三", "四", "五", "六", "日"],
+        "matrix": matrix,
+        "max_value": max_value,
+    }
