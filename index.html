@@ -675,8 +675,8 @@
             gap: 3px;
         }
         .heatmap-cell-day {
-            width: 22px;
-            height: 22px;
+            width: 14px;
+            height: 14px;
             border-radius: 3px;
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
@@ -693,7 +693,7 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 2px;
-            padding-left: 28px;
+            padding-left: 22px;
         }
         .heatmap-weekday-labels {
             display: flex;
@@ -706,8 +706,8 @@
             padding-top: 0;
         }
         .heatmap-weekday-labels span {
-            height: 22px;
-            line-height: 22px;
+            height: 14px;
+            line-height: 14px;
         }
         .heatmap-body {
             display: flex;
@@ -851,8 +851,8 @@
             gap: 3px;
         }
         .heatmap-cell-day {
-            width: 22px;
-            height: 22px;
+            width: 14px;
+            height: 14px;
             border-radius: 3px;
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
@@ -869,7 +869,7 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 2px;
-            padding-left: 28px;
+            padding-left: 22px;
         }
         .heatmap-weekday-labels {
             display: flex;
@@ -882,8 +882,8 @@
             padding-top: 0;
         }
         .heatmap-weekday-labels span {
-            height: 22px;
-            line-height: 22px;
+            height: 14px;
+            line-height: 14px;
         }
         .heatmap-body {
             display: flex;
@@ -2300,7 +2300,7 @@
             const container = document.getElementById('heatmapContainer');
             container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
             try {
-                const days = 30;
+                const days = 90;
                 const res = await fetch(API_BASE + '/api/heatmap?days=' + days, { cache: 'no-store' });
                 const data = await res.json();
                 const dayList = data.days || [];
@@ -2357,7 +2357,7 @@
                             lastMonth = week[d].month;
                         }
                     }
-                    monthHtml += '<span style="width:22px; text-align:center;">' + (monthInWeek > 0 ? monthInWeek + '月' : '') + '</span>';
+                    monthHtml += '<span style="width:14px; text-align:center;">' + (monthInWeek > 0 ? monthInWeek + '月' : '') + '</span>';
                 }
                 monthHtml += '</div>';
 
