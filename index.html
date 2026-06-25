@@ -407,7 +407,9 @@
             height: 20px;
         }
         .history-btn { right: 25px; }
-        .theme-btn { right: 75px; }
+        .sessions-btn { right: 75px; }
+        .heatmap-btn { right: 125px; }
+        .theme-btn { right: 175px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -818,25 +820,12 @@
                 <line x1="6" y1="20" x2="6" y2="14"></line>
             </svg>
         </button>
-        <button id="sessionsOpenBtn" class="header-action-btn" title="会话详情">
+        <button id="sessionsOpenBtn" class="header-action-btn sessions-btn" title="会话详情">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
         </button>
-        <button id="heatmapOpenBtn" class="header-action-btn" title="活动热力图">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-        </button>
-        <button id="sessionsOpenBtn" class="header-action-btn" title="会话详情">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-        </button>
-        <button id="heatmapOpenBtn" class="header-action-btn" title="活动热力图">
+        <button id="heatmapOpenBtn" class="header-action-btn heatmap-btn" title="活动热力图">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="7" height="7"></rect>
                 <rect x="14" y="3" width="7" height="7"></rect>
@@ -920,43 +909,6 @@
             </div>
             <div class="modal-chart-wrapper">
                 <canvas id="historyChart"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- 会话详情弹窗 -->
-    <div id="sessionsModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3>会话详情</h3>
-                <button id="sessionsCloseBtn" class="close-btn">&times;</button>
-            </div>
-            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; width: 100%;">
-                <div class="tab-container" id="sessionTabContainer">
-                    <button class="tab-btn active" data-days="1">今天</button>
-                    <button class="tab-btn" data-days="3">近 3 天</button>
-                    <button class="tab-btn" data-days="7">近 7 天</button>
-                </div>
-                <span id="sessionCount" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"></span>
-            </div>
-            <div id="sessionList" style="max-height: 55vh; overflow-y: auto; font-size: 12px;">
-                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 活动热力图弹窗 -->
-    <div id="heatmapModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 860px;">
-            <div class="modal-header">
-                <h3>活动热力图</h3>
-                <button id="heatmapCloseBtn" class="close-btn">&times;</button>
-            </div>
-            <div style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
-                过去 30 天 · 按小时 x 星期统计 Token 消耗量
-            </div>
-            <div id="heatmapContainer" style="padding: 12px 4px; overflow-x: auto;">
-                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
             </div>
         </div>
     </div>
