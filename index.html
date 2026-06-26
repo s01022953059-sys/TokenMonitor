@@ -1230,10 +1230,18 @@
 
     <!-- 活动热力图弹窗 -->
     <div id="heatmapModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 880px; width: 88vw;">
+        <div class="modal-content" style="max-width: 1080px; width: 94vw;">
             <div class="modal-header">
                 <h3>活动热力图</h3>
                 <button id="heatmapCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; width: 100%;">
+                <div class="tab-container" id="heatmapTabContainer">
+                    <button class="tab-btn" data-days="30">近 30 天</button>
+                    <button class="tab-btn" data-days="90">近 90 天</button>
+                    <button class="tab-btn" data-days="180">近半年</button>
+                    <button class="tab-btn active" data-days="365">近一年</button>
+                </div>
             </div>
             <div id="heatmapSubtitle" style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
                 加载中...
@@ -2495,11 +2503,13 @@
         });
 
         // ===== 活动热力图 =====
-        async function loadHeatmap() {
+        let _heatmapDays = 365;
+        async function loadHeatmap(days) {
+            if (days === undefined) days = _heatmapDays;
+            _heatmapDays = days;
             const container = document.getElementById('heatmapContainer');
             container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
             try {
-                const days = 90;
                 const res = await fetch(API_BASE + '/api/heatmap?days=' + days, { cache: 'no-store' });
                 const data = await res.json();
                 const dayList = data.days || [];
@@ -2666,6 +2676,14 @@
             if (e.target === document.getElementById('heatmapModal')) {
                 document.getElementById('heatmapModal').classList.remove('active');
             }
+        });
+        // 热力图天数 Tab 切换
+        document.getElementById('heatmapTabContainer').addEventListener('click', (e) => {
+            const btn = e.target.closest('.tab-btn');
+            if (!btn) return;
+            document.querySelectorAll('#heatmapTabContainer .tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadHeatmap(parseInt(btn.dataset.days));
         });
 
 

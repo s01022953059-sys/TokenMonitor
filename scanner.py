@@ -141,9 +141,18 @@ def scan_cc_switch_logs(today_start):
 
         for created_at, app_type, model, input_t, output_t, cache_read_t, provider_id, data_source in rows:
             local_time = datetime.datetime.fromtimestamp(created_at).strftime("%H:%M:%S")
-            input_cached = cache_read_t
-            input_uncached = max(0, input_t - cache_read_t)
-            total_t = input_t + output_t
+            # 修复: 不同协议对 cache 字段语义不同
+            # - Anthropic 协议: input_t = uncached + cache_creation, cache_read 不在 input_t 里
+            # - OpenAI 兼容协议: input_t 已含 cache 命中部分, cache_read 是额外报告(双计)
+            # 当 cache_read > input_t 时上游是 OpenAI 协议, 把整段 input 视为 cached
+            cache_hits = cache_read_t or 0
+            if cache_hits > (input_t or 0):
+                input_cached = input_t or 0
+                input_uncached = 0
+            else:
+                input_cached = cache_hits
+                input_uncached = max(0, (input_t or 0) - cache_hits)
+            total_t = (input_t or 0) + (output_t or 0)
 
             # 模型修正: codex_session 来源的 model 是声明名, 不可信
             actual_model = model
@@ -688,8 +697,15 @@ def get_session_list(days=1, page=1, page_size=50):
                 else:
                     tool = "Other"
 
-                i_cached = (cache_read or 0) + (cache_creation or 0)
-                i_uncached = max(0, (input_t or 0) - i_cached)
+                i_cached_raw = (cache_read or 0) + (cache_creation or 0)
+                # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
+                # 保证 i_cached <= input_t (input_t 在 OpenAI 协议下已经含 cache 部分)
+                if i_cached_raw > (input_t or 0):
+                    i_cached = input_t or 0
+                    i_uncached = 0
+                else:
+                    i_cached = i_cached_raw
+                    i_uncached = max(0, (input_t or 0) - i_cached)
                 total_input = input_t or 0
                 total_t = total_input + (output_t or 0)
 
@@ -1059,8 +1075,15 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                 else:
                     tool = "Other"
 
-                i_cached = (cache_read or 0) + (cache_creation or 0)
-                i_uncached = max(0, (input_t or 0) - i_cached)
+                i_cached_raw = (cache_read or 0) + (cache_creation or 0)
+                # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
+                # 保证 i_cached <= input_t (input_t 在 OpenAI 协议下已经含 cache 部分)
+                if i_cached_raw > (input_t or 0):
+                    i_cached = input_t or 0
+                    i_uncached = 0
+                else:
+                    i_cached = i_cached_raw
+                    i_uncached = max(0, (input_t or 0) - i_cached)
                 total_input = input_t or 0
                 total_t = total_input + (output_t or 0)
 
