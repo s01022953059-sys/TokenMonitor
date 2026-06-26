@@ -52,8 +52,6 @@
             --heatmap-2: #006d32;
             --heatmap-3: #26a641;
             --heatmap-4: #39d353;
-            /* 格子上叠的数字颜色 (暗底配浅色字) */
-            --heatmap-cell-text: rgba(255, 255, 255, 0.85);
         }
 
         /* ===== 亮色主题 ===== */
@@ -99,8 +97,6 @@
             --heatmap-2: #40c463;
             --heatmap-3: #30a14e;
             --heatmap-4: #216e39;
-            /* 格子上叠的数字颜色 (亮底配深字, 最低档 L0 是灰底用深字, L1-L4 绿底用白字) */
-            --heatmap-cell-text: rgba(255, 255, 255, 0.9);
         }
 
         * {
@@ -713,6 +709,10 @@
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
         }
+        /* 每日详情弹窗: 4 张卡片, 比主热力图多一张 */
+        #heatmapDetailSummary.heatmap-stats {
+            grid-template-columns: repeat(4, 1fr);
+        }
         .heatmap-stat {
             padding: 10px 12px;
             background: var(--bg-subtle);
@@ -760,18 +760,6 @@
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
             position: relative;
-        }
-        .heatmap-cell-day[data-tokens]:not([data-tokens="0"])::after {
-            content: attr(data-tokens-label);
-            position: absolute;
-            right: 1px;
-            bottom: 0;
-            font-size: 7px;
-            line-height: 1;
-            color: var(--heatmap-cell-text, rgba(0, 0, 0, 0.55));
-            pointer-events: none;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
         }
         .heatmap-cell-day:hover {
             transform: scale(1.4);
@@ -952,6 +940,10 @@
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
         }
+        /* 每日详情弹窗: 4 张卡片, 比主热力图多一张 */
+        #heatmapDetailSummary.heatmap-stats {
+            grid-template-columns: repeat(4, 1fr);
+        }
         .heatmap-stat {
             padding: 10px 12px;
             background: var(--bg-subtle);
@@ -999,18 +991,6 @@
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
             position: relative;
-        }
-        .heatmap-cell-day[data-tokens]:not([data-tokens="0"])::after {
-            content: attr(data-tokens-label);
-            position: absolute;
-            right: 1px;
-            bottom: 0;
-            font-size: 7px;
-            line-height: 1;
-            color: var(--heatmap-cell-text, rgba(0, 0, 0, 0.55));
-            pointer-events: none;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
         }
         .heatmap-cell-day:hover {
             transform: scale(1.4);
@@ -1259,6 +1239,7 @@
                 <h3 id="heatmapDetailTitle">时段详情</h3>
                 <button id="heatmapDetailCloseBtn" class="close-btn">&times;</button>
             </div>
+            <div id="heatmapDetailSummary" class="heatmap-stats" style="padding: 0 16px 12px;"></div>
             <div id="heatmapDetailList" style="max-height: 50vh; overflow-y: auto; font-size: 12px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
             </div>
@@ -2517,7 +2498,7 @@
 
                 const subtitleEl = document.getElementById('heatmapSubtitle');
                 if (subtitleEl) {
-                    subtitleEl.textContent = data.start_date + ' 至 ' + data.end_date + ' · 每格代表一天, 颜色深浅 = Token 消耗量, 数字为当日总量';
+                    subtitleEl.textContent = data.start_date + ' 至 ' + data.end_date + ' · 每格代表一天, 颜色深浅 = Token 消耗量';
                 }
 
                 if (maxVal === 0) {
@@ -2535,12 +2516,6 @@
                 }
                 function heatColor(val) {
                     return 'var(--heatmap-' + heatLevel(val) + ')';
-                }
-                // 把数字压成 1~2 字符短标签: 1.2M, 234K, 5.6K
-                function shortTokenLabel(val) {
-                    if (val >= 1_000_000) return (val / 1_000_000).toFixed(val >= 10_000_000 ? 0 : 1) + 'M';
-                    if (val >= 1_000) return (val / 1_000).toFixed(val >= 10_000 ? 0 : 1) + 'K';
-                    return String(val);
                 }
 
                 // 把按天的数据组织成周列 (GitHub 风格)
@@ -2616,11 +2591,9 @@
                             const day = week[d];
                             const level = heatLevel(day.tokens);
                             const color = 'var(--heatmap-' + level + ')';
-                            // L0 用深色字, L1-L4 用浅色字 (CSS 已经按 data-tokens 判定是否画字)
                             const title = day.date + ' (' + weekdayNames[day.weekday] + ') ' + (day.tokens > 0 ? formatTokens(day.tokens) : '无消耗');
                             gridHtml += '<div class="heatmap-cell-day" data-date="' + day.date +
                                 '" data-tokens="' + day.tokens +
-                                '" data-tokens-label="' + shortTokenLabel(day.tokens) +
                                 '" data-level="' + level + '"' +
                                 ' style="background:' + color + ';" title="' + title + '"></div>';
                         } else {
@@ -2646,10 +2619,6 @@
                         '<span style="font-size: 10px; color: var(--text-muted);">悬停查看日期/总量 · 点击格子下钻当日明细</span>' +
                     '</div>' +
                 '</div>';
-
-                // 亮色主题下, L0 浅灰底 (#ebedf0) 本身 data-tokens="0" 不画字,
-                // 所以无需单独覆盖字色; CSS 的 [data-tokens]:not([data-tokens="0"])
-                // 已经把 0 排除在 ::after 之外。
 
                 // 点击格子 -> 下钻该天的调用详情
                 container.querySelectorAll('.heatmap-cell-day[data-date]').forEach(cell => {
@@ -2689,6 +2658,40 @@
 
         // ===== 热力图下钻 =====
         let _heatmapDetailState = { date: '', page: 1, pageSize: 50 };
+        function renderHeatmapDetailSummary(summary) {
+            const el = document.getElementById('heatmapDetailSummary');
+            if (!summary || !summary.call_count) {
+                el.innerHTML = '';
+                el.style.display = 'none';
+                return;
+            }
+            const cachedText = summary.total_cached > 0
+                ? '缓存命中 ' + formatTokens(summary.total_cached) : '无缓存命中';
+            const peakText = summary.peak_time
+                ? (summary.peak_time.split(' ')[1] || summary.peak_time) : '-';
+            el.style.display = 'grid';
+            el.innerHTML = '' +
+                '<div class="heatmap-stat">' +
+                    '<span class="heatmap-stat-label">当日总消耗</span>' +
+                    '<span class="heatmap-stat-value">' + formatTokens(summary.total_tokens) + '</span>' +
+                    '<span class="heatmap-stat-sub">' + cachedText + '</span>' +
+                '</div>' +
+                '<div class="heatmap-stat">' +
+                    '<span class="heatmap-stat-label">调用次数</span>' +
+                    '<span class="heatmap-stat-value">' + summary.call_count + '</span>' +
+                    '<span class="heatmap-stat-sub">当日 API 请求数</span>' +
+                '</div>' +
+                '<div class="heatmap-stat">' +
+                    '<span class="heatmap-stat-label">平均延迟</span>' +
+                    '<span class="heatmap-stat-value">' + (summary.avg_latency_ms / 1000).toFixed(1) + 's</span>' +
+                    '<span class="heatmap-stat-sub">最长 ' + (summary.max_latency_ms / 1000).toFixed(1) + 's</span>' +
+                '</div>' +
+                '<div class="heatmap-stat">' +
+                    '<span class="heatmap-stat-label">最高单条</span>' +
+                    '<span class="heatmap-stat-value">' + formatTokens(summary.peak_tokens) + '</span>' +
+                    '<span class="heatmap-stat-sub">' + peakText + '</span>' +
+                '</div>';
+        }
         async function loadHeatmapDayDetail(date, page) {
             if (page === undefined) page = 1;
             _heatmapDetailState.date = date;
@@ -2700,6 +2703,8 @@
             titleEl.textContent = date + ' 调用详情';
             listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
             document.getElementById('heatmapDetailPager').style.display = 'none';
+            document.getElementById('heatmapDetailSummary').innerHTML = '';
+            document.getElementById('heatmapDetailSummary').style.display = 'none';
             modal.classList.add('active');
             try {
                 const res = await fetch(API_BASE + '/api/heatmap_detail?date=' + date + '&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
@@ -2707,8 +2712,10 @@
                 const sessions = data.sessions || [];
                 if (sessions.length === 0) {
                     listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该日暂无调用记录</div>';
+                    renderHeatmapDetailSummary(data.summary);
                     return;
                 }
+                renderHeatmapDetailSummary(data.summary);
                 renderSessionList(sessions, listEl);
                 updatePager('heatmapDetailPager', 'heatmapDetailPageInfo', 'heatmapDetailPageNum', 'heatmapDetailPrevBtn', 'heatmapDetailNextBtn',
                     data.total, data.page, _heatmapDetailState.pageSize, data.total_pages);

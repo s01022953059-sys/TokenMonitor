@@ -1152,6 +1152,24 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
     # 按时间倒序
     events.sort(key=lambda x: x["timestamp"], reverse=True)
 
+    # 当天统计: 总 token / 调用次数 / 平均延迟 / 最高单条 / 缓存命中合计
+    total_tokens = sum(e.get("total_tokens", 0) for e in events)
+    total_cached = sum(e.get("input_cached", 0) for e in events)
+    call_count = len(events)
+    latencies = [e.get("latency_ms", 0) for e in events if e.get("latency_ms", 0) > 0]
+    avg_latency = int(sum(latencies) / len(latencies)) if latencies else 0
+    max_latency = max(latencies) if latencies else 0
+    peak_call = max(events, key=lambda e: e.get("total_tokens", 0), default=None)
+    summary = {
+        "total_tokens": total_tokens,
+        "total_cached": total_cached,
+        "call_count": call_count,
+        "avg_latency_ms": avg_latency,
+        "max_latency_ms": max_latency,
+        "peak_tokens": peak_call.get("total_tokens", 0) if peak_call else 0,
+        "peak_time": peak_call.get("time", "") if peak_call else "",
+    }
+
     # 分页
     total = len(events)
     start = (page - 1) * page_size
@@ -1163,4 +1181,5 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+        "summary": summary,
     }
