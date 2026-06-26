@@ -166,7 +166,8 @@ def scan_cc_switch_logs(today_start):
             logs_data.append({
                 "time": local_time,
                 "timestamp": created_at,
-                "tool": app_type.capitalize() if app_type else "Other",
+                # 跟详情/会话列表的 tool 归一化保持一致, 避免首页和列表显示不同名
+                "tool": _normalize_app_type(app_type),
                 "model": normalize_model_name(actual_model),
                 "input_tokens": input_t,
                 "output_tokens": output_t,
@@ -211,6 +212,26 @@ def normalize_model_name(raw_model):
         return "qwen3.6-plus"
     # 兜底: 原样返回 (大小写归一化后的)
     return s
+
+
+def _normalize_app_type(app_type):
+    """统一 app_type -> 显示名, 三条 cc-switch 路径共用, 避免首页和列表显示不一致。
+
+    已知映射: claude-desktop -> Claude-Desktop, codex -> Codex, hermes -> Hermes,
+    antigravity -> Antigravity, 其他/空 -> Other
+    """
+    if not app_type:
+        return "Other"
+    t_lower = app_type.lower()
+    if "antigravity" in t_lower:
+        return "Antigravity"
+    if "hermes" in t_lower:
+        return "Hermes"
+    if "claude-desktop" in t_lower or t_lower == "claude":
+        return "Claude-Desktop"
+    if "codex" in t_lower:
+        return "Codex"
+    return "Other"
 
 def _load_provider_model_map():
     """从 cc-switch 数据库加载两层模型映射。
@@ -482,16 +503,7 @@ def get_historical_usage(days=30):
     tools = ["Antigravity", "Hermes", "Codex", "Other"]
 
     def get_normalized_tool(app_type):
-        if not app_type:
-            return "Other"
-        t_lower = app_type.lower()
-        if "antigravity" in t_lower:
-            return "Antigravity"
-        if "hermes" in t_lower:
-            return "Hermes"
-        if "codex" in t_lower or "code" in t_lower:
-            return "Codex"
-        return "Other"
+        return _normalize_app_type(app_type)
 
     # 加载 provider_id -> 实际配置模型的映射 + app_type -> 当前激活 provider 模型
     provider_model_map, active_model_by_app = _load_provider_model_map()
@@ -686,16 +698,8 @@ def get_session_list(days=1, page=1, page_size=50):
                         actual_model = active_model
                 actual_model = normalize_model_name(actual_model)
 
-                # 工具归一化
-                t_lower = (app_type or "").lower()
-                if "antigravity" in t_lower:
-                    tool = "Antigravity"
-                elif "hermes" in t_lower:
-                    tool = "Hermes"
-                elif "codex" in t_lower or "code" in t_lower:
-                    tool = "Codex"
-                else:
-                    tool = "Other"
+                # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)
+                tool = _normalize_app_type(app_type)
 
                 i_cached_raw = (cache_read or 0) + (cache_creation or 0)
                 # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
@@ -1065,15 +1069,8 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                         actual_model = active_model
                 actual_model = normalize_model_name(actual_model)
 
-                t_lower = (app_type or "").lower()
-                if "antigravity" in t_lower:
-                    tool = "Antigravity"
-                elif "hermes" in t_lower:
-                    tool = "Hermes"
-                elif "codex" in t_lower or "code" in t_lower:
-                    tool = "Codex"
-                else:
-                    tool = "Other"
+                # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)
+                tool = _normalize_app_type(app_type)
 
                 i_cached_raw = (cache_read or 0) + (cache_creation or 0)
                 # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
