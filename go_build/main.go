@@ -607,8 +607,6 @@ func getNormalizedTool(appType string) string {
 	if strings.Contains(lower, "codex") {
 		return "Codex"
 	}
-		return "Codex"
-	}
 	return "Other"
 }
 
