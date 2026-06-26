@@ -33,9 +33,12 @@
 
 ### 活动热力图
 
-- 按星期 × 小时展示 API 调用频率，颜色深浅表示活跃程度
-- **点击任意单元格**查看该时段的详细调用列表（模型、Token 数、时间）
-- 显示最近 90 天，横轴标月份，每格代表一天
+- 按天展示每日 Token 消耗量，颜色深浅 = 消耗量（GitHub 5 档绿色色阶）
+- **每格右下角**叠加当天 token 短标签（如 `1.2M` / `234K`），不用悬停也能直观看出数量级
+- 顶部 3 个统计卡片：总消耗 / 活跃天数（X/Y + 覆盖率）/ 最高单日（值 + 日期）
+- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）
+- Tab 切换时间窗口：30 / 90 / 180 / 365 天（默认 365 天，跨年看全年趋势）
+- 横轴标月份，每格代表一天
 
 ### 会话详情浏览
 
@@ -249,7 +252,32 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.3.51](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.51)
+最新版本：[v1.3.73](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.73)
 
-- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.51/Token%20Monitor.dmg)
-- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.51/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.73/Token%20Monitor.dmg)
+- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.73/TokenMonitor-win.zip)
+
+## 最近更新
+
+### v1.3.73 (2026-06-26)
+
+**修复**
+- 修复 cc-switch 路径下 `input_cached` 远大于 `total_tokens` 的数据 bug
+  - 根因：OpenAI 兼容协议（如 minimax-m3）的 `input_tokens` 字段已含 cache 命中部分，而 `cache_read_input_tokens` 是额外报告，scanner 简单相加导致双计
+  - 修复：当 `cache_read + cache_creation > input_t` 时 cap 到 `input_t`，按 OpenAI 协议正确归类
+  - 影响：会话列表的"缓存命中"列从此显示真实数值
+
+**新功能**
+- 热力图默认 90 天 → 365 天，新增 30/90/180/365 Tab 切换
+- 热力图顶部 3 个统计卡片：总消耗 / 活跃天数（X/Y + 覆盖率）/ 最高单日（值 + 日期）
+- 热力图每格右下角叠加 token 短标签（如 `1.2M` / `234K`），不用悬停也能看数量级
+- 关于页"重新检查"按钮：弹窗内一键重新检查更新，不必关闭重开
+- 主题切换、亮/暗两套 GitHub 风格 5 档色阶（L0-L4）
+
+**基础设施**
+- `release_all.sh` 自动 `git tag + push` + 显式传 `target_commitish`，修复 v1.3.72 release 指向旧 commit 的事故
+
+### v1.3.71 (2026-06-26)
+
+- 修复单实例锁残留导致更新后 server 无法启动
+- 新增发版前验证清单
