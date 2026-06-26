@@ -371,7 +371,7 @@ def scan_hermes_tokens(today_start):
                 "time": local_time,
                 "timestamp": int(started_at),
                 "tool": "Hermes",
-                "model": model if model else "Unknown",
+                "model": normalize_model_name(model) if model else "Unknown",
                 "input_tokens": total_input,
                 "output_tokens": output_tokens,
                 "total_tokens": total_t,

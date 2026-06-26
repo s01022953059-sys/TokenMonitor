@@ -463,7 +463,7 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 
 		m := "Unknown"
 		if model.Valid && model.String != "" {
-			m = model.String
+			m = normalizeModelName(model.String)
 		}
 
 		logs = append(logs, LogEntry{
