@@ -252,12 +252,19 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.3.74](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.74)
+最新版本：[v1.3.75](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.75)
 
-- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.74/Token%20Monitor.dmg)
-- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.74/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.75/Token%20Monitor.dmg)
+- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.75/TokenMonitor-win.zip)
 
 ## 最近更新
+
+### v1.3.75 (2026-06-26)
+
+**修复**
+- 修每日详情/会话列表的"工具"和"模型"列文字重叠
+  - 根因："Claude-Desktop" 文字宽度 ~95px 超过原"工具"列宽 60px，溢出到"模型"列造成视觉重叠
+  - 修复：工具列 60px → 100px，模型列 `1fr` → `minmax(0, 1fr)` 防止长 model 名撑爆
 
 ### v1.3.74 (2026-06-26)
 
