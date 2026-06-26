@@ -1512,6 +1512,7 @@ func main() {
 
 	// 解析命令行参数 (feedURL 是包级变量, checkUpdateRemote 会用到)
 	port := defaultPort
+	noBrowser := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
@@ -1521,6 +1522,9 @@ func main() {
 		if args[i] == "--update-feed-url" && i+1 < len(args) {
 			feedURL = args[i+1]
 			i++
+		}
+		if args[i] == "--no-browser" {
+			noBrowser = true
 		}
 	}
 
@@ -1684,11 +1688,15 @@ func main() {
 
 	server := &http.Server{Addr: addr}
 
-	// 启动后自动打开浏览器
-	go func() {
-		time.Sleep(1 * time.Second)
-		openBrowser(fmt.Sprintf("http://127.0.0.1:%d", port))
-	}()
+	// 启动后自动打开浏览器 (--no-browser 跳过, 由 launcher 等外部程序自己开窗)
+	if !noBrowser {
+		go func() {
+			time.Sleep(1 * time.Second)
+			openBrowser(fmt.Sprintf("http://127.0.0.1:%d", port))
+		}()
+	} else {
+		fmt.Println("[*] --no-browser 模式, 不自动打开系统浏览器 (由调用方负责 UI)")
+	}
 
 	fmt.Printf("[+] Token Monitor 仪表盘已启动: http://%s\n", addr)
 	fmt.Printf("[+] 更新源: %s\n", feedURL)
