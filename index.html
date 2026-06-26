@@ -419,9 +419,8 @@
             height: 20px;
         }
         .history-btn { right: 25px; }
-        .sessions-btn { right: 75px; }
-        .heatmap-btn { right: 125px; }
-        .theme-btn { right: 175px; }
+        .heatmap-btn { right: 75px; }
+        .theme-btn { right: 125px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -1080,11 +1079,6 @@
                 <line x1="6" y1="20" x2="6" y2="14"></line>
             </svg>
         </button>
-        <button id="sessionsOpenBtn" class="header-action-btn sessions-btn" title="会话详情">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-        </button>
         <button id="heatmapOpenBtn" class="header-action-btn heatmap-btn" title="活动热力图">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="7" height="7"></rect>
@@ -1169,41 +1163,6 @@
             </div>
             <div class="modal-chart-wrapper">
                 <canvas id="historyChart"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- 会话详情弹窗 -->
-    <div id="sessionsModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3>会话详情</h3>
-                <button id="sessionsCloseBtn" class="close-btn">&times;</button>
-            </div>
-            <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; width: 100%;">
-                <div class="tab-container" id="sessionTabContainer">
-                    <button class="tab-btn active" data-days="1">今天</button>
-                    <button class="tab-btn" data-days="3">近 3 天</button>
-                    <button class="tab-btn" data-days="7">近 7 天</button>
-                </div>
-                <span id="sessionCount" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;"></span>
-            </div>
-            <div id="sessionList" style="max-height: 50vh; overflow-y: auto; font-size: 12px;">
-                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
-            </div>
-            <div id="sessionPager" style="display: none; align-items: center; justify-content: space-between; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
-                <div id="sessionPageInfo" style="flex: 1;"></div>
-                <div style="display: flex; align-items: center; gap: 6px;">
-                    <button id="sessionPrevBtn" class="pager-btn">&#8249; 上一页</button>
-                    <span id="sessionPageNum" style="min-width: 50px; text-align: center;"></span>
-                    <button id="sessionNextBtn" class="pager-btn">下一页 &#8250;</button>
-                    <select id="sessionPageSize" style="margin-left: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 2px 4px; font-size: 11px;">
-                        <option value="20">20条/页</option>
-                        <option value="50" selected>50条/页</option>
-                        <option value="100">100条/页</option>
-                        <option value="200">200条/页</option>
-                    </select>
-                </div>
             </div>
         </div>
     </div>
@@ -2385,10 +2344,7 @@
             };
         });
 
-        // ===== 会话详情 =====
-        let currentSessionDays = 1;
-
-        let _sessionState = { days: 1, page: 1, pageSize: 50 };
+        // ===== 活动热力图 =====
         function renderSessionList(sessions, listEl) {
             let html = '<div class="session-header">' +
                 '<span>时间</span><span>工具</span><span>模型</span>' +
@@ -2424,65 +2380,6 @@
             document.getElementById(prevId).style.display = page > 1 ? '' : 'none';
             document.getElementById(nextId).style.display = page < totalPages ? '' : 'none';
         }
-        async function loadSessions(days, page) {
-            if (page === undefined) page = 1;
-            currentSessionDays = days;
-            _sessionState.days = days;
-            _sessionState.page = page;
-            _sessionState.pageSize = parseInt(document.getElementById('sessionPageSize').value);
-            const listEl = document.getElementById('sessionList');
-            const countEl = document.getElementById('sessionCount');
-            listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
-            document.getElementById('sessionPager').style.display = 'none';
-            try {
-                const res = await fetch(API_BASE + '/api/sessions?days=' + days + '&page=' + _sessionState.page + '&page_size=' + _sessionState.pageSize, { cache: 'no-store' });
-                const data = await res.json();
-                const sessions = data.sessions || [];
-                countEl.innerText = '共 ' + data.total + ' 条';
-                if (sessions.length === 0) {
-                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">暂无数据</div>';
-                    return;
-                }
-                renderSessionList(sessions, listEl);
-                updatePager('sessionPager', 'sessionPageInfo', 'sessionPageNum', 'sessionPrevBtn', 'sessionNextBtn',
-                    data.total, data.page, _sessionState.pageSize, data.total_pages);
-                listEl.scrollTop = 0;
-            } catch (err) {
-                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
-                console.error('loadSessions error:', err);
-            }
-        }
-        document.getElementById('sessionPrevBtn').addEventListener('click', () => {
-            if (_sessionState.page > 1) loadSessions(_sessionState.days, _sessionState.page - 1);
-        });
-        document.getElementById('sessionNextBtn').addEventListener('click', () => {
-            loadSessions(_sessionState.days, _sessionState.page + 1);
-        });
-        document.getElementById('sessionPageSize').addEventListener('change', () => {
-            loadSessions(_sessionState.days, 1);
-        });
-
-        // 会话详情弹窗事件
-        document.getElementById('sessionsOpenBtn').addEventListener('click', () => {
-            document.getElementById('sessionsModal').classList.add('active');
-            loadSessions(currentSessionDays);
-        });
-        document.getElementById('sessionsCloseBtn').addEventListener('click', () => {
-            document.getElementById('sessionsModal').classList.remove('active');
-        });
-        document.getElementById('sessionsModal').addEventListener('click', (e) => {
-            if (e.target === document.getElementById('sessionsModal')) {
-                document.getElementById('sessionsModal').classList.remove('active');
-            }
-        });
-        document.getElementById('sessionTabContainer').addEventListener('click', (e) => {
-            const btn = e.target.closest('.tab-btn');
-            if (!btn) return;
-            document.querySelectorAll('#sessionTabContainer .tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            loadSessions(parseInt(btn.dataset.days));
-        });
-
         // ===== 活动热力图 =====
         let _heatmapDays = 365;
         async function loadHeatmap(days) {
@@ -2806,7 +2703,14 @@
                 const totalPages = data.total_pages || 1;
                 const curPage = data.page || 1;
                 if (messages.length === 0) {
-                    contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">未找到对话内容<br><span style="font-size:10px;">(可能该会话无 session_id 或 rollout 文件已清理)</span></div>';
+                    contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">' +
+                        '<div style="margin-bottom: 8px;">未找到对话内容</div>' +
+                        '<div style="font-size:10px; line-height: 1.6; max-width: 360px; margin: 0 auto;">' +
+                        'cc-switch 代理只记录请求元数据(模型/Token/时间)<br>' +
+                        '不保存请求/响应原文, 无法回放对话。<br>' +
+                        '如需查看完整对话, 请到对应客户端本地日志查看<br>' +
+                        '(Codex: <code style="font-size:10px;">~/.codex/sessions/</code>, Hermes: <code style="font-size:10px;">~/.hermes/state.db</code>)' +
+                        '</div></div>';
                     return;
                 }
                 let html = '<div class="chat-detail">';
