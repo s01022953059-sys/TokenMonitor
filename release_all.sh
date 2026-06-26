@@ -75,12 +75,33 @@ if [[ "$RELEASE_HTTP" != "200" ]]; then
     echo "[release] Release $TAG 不存在, 正在创建 (target_commitish=refs/tags/$TAG)..."
     # 取最新 commit 的 subject 作为 body (避免 fallback 占位文案)
     BODY="$(git log -1 --format=%s $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")"
-    curl -sS -X POST \
-        -H "Authorization: Bearer $GITCODE_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"target_commitish\":\"refs/tags/$TAG\",\"body\":\"$BODY\"}" \
-        "$API_BASE/releases" > /dev/null
-    echo "[release] Release 创建完成"
+    # 写响应到临时文件, 读 HTTP 状态码; 失败时 cat 响应体便于排查, exit 1 阻断后续
+    # 重试 3 次: GitCode 的 tag 跟 release API 有最终一致性, 偶尔 POST 时 tag 还没同步,
+    # 等几秒重试就好
+    CREATE_RESP=$(mktemp)
+    CREATE_HTTP=""
+    for attempt in 1 2 3; do
+        CREATE_HTTP=$(curl -sS -o "$CREATE_RESP" -w '%{http_code}' \
+            -H "Authorization: Bearer $GITCODE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"target_commitish\":\"refs/tags/$TAG\",\"body\":\"$BODY\"}" \
+            "$API_BASE/releases")
+        if [[ "$CREATE_HTTP" == "201" || "$CREATE_HTTP" == "200" ]]; then
+            break
+        fi
+        echo "[release]   POST 第 $attempt 次失败 (HTTP $CREATE_HTTP), 3 秒后重试..."
+        sleep 3
+    done
+    if [[ "$CREATE_HTTP" != "201" && "$CREATE_HTTP" != "200" ]]; then
+        echo "[release]   ✘ Release 创建失败 (HTTP $CREATE_HTTP, 已重试 3 次)" >&2
+        echo "[release]   响应体:" >&2
+        cat "$CREATE_RESP" >&2
+        echo "" >&2
+        rm -f "$CREATE_RESP"
+        exit 1
+    fi
+    rm -f "$CREATE_RESP"
+    echo "[release] Release 创建完成 (HTTP $CREATE_HTTP)"
 fi
 
 # ─── 上传函数 ───
