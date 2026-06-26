@@ -252,12 +252,20 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.3.73](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.73)
+最新版本：[v1.3.74](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.3.74)
 
-- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.73/Token%20Monitor.dmg)
-- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.73/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.74/Token%20Monitor.dmg)
+- Windows: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.3.74/TokenMonitor-win.zip)
 
 ## 最近更新
+
+### v1.3.74 (2026-06-26)
+
+**修复**
+- 还原 `claude-desktop` / `claude` 等被错归为 "Other" 的工具
+  - 根因：scanner.py 三处 cc-switch 工具归一化逻辑只匹配 `antigravity / hermes / codex / code`，`claude-desktop` 不含 "code" 连续子串，走 else 分支变成 "Other"
+  - 修复：新增 `_normalize_app_type()` 统一函数，三处路径共用，并改为 `Claude-Desktop` 统一命名
+  - 影响：每日详情弹窗和首页大屏按工具维度能正确看到 "Claude-Desktop" 分类
 
 ### v1.3.73 (2026-06-26)
 
