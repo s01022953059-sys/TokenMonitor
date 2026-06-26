@@ -19,3 +19,4 @@ go_build/token_monitor_mac
 # Logs and temporary files
 *.log
 *.tmp
+.gstack/
