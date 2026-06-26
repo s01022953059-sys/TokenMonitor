@@ -1304,8 +1304,9 @@
                 </table>
                 <p style="margin-top: 14px; margin-bottom: 8px; color: var(--text-primary); font-size: 13px; font-weight: 600;">说明</p>
                 <ul style="padding-left: 16px; margin: 0; font-size: 11px; line-height: 1.8;">
-                    <li><b>代理</b>：经 CC-Switch 代理的请求 (Claude / OpenCode 等)</li>
-                    <li><b>直连</b>：应用原生日志, 不经过 CC-Switch (Codex / Hermes / AntiGravity)</li>
+                    <li><b>代理 (scanner 主读 cc-switch.db)</b>：Claude, OpenCode — 这些工具通过 CC-Switch 代理发请求, scanner 从 cc-switch.db 抓 token 数</li>
+                    <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>), Hermes (<code>~/.hermes/state.db</code>), AntiGravity (<code>usage_stats.json</code>) — 工具自己有本地日志文件, scanner 不经 cc-switch</li>
+                    <li>部分工具 (Codex / Hermes) 走直连+代理两路, scanner 跨源去重合并</li>
                     <li>占比 &lt; 1% 自动归入 Other · 余额每 60s 异步刷新</li>
                     <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端, 本地不落盘, 暂无法支持</li>
                 </ul>
