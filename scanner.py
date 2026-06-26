@@ -217,8 +217,9 @@ def normalize_model_name(raw_model):
 def _normalize_app_type(app_type):
     """统一 app_type -> 显示名, 三条 cc-switch 路径共用, 避免首页和列表显示不一致。
 
-    已知映射: claude-desktop -> Claude-Desktop, codex -> Codex, hermes -> Hermes,
-    antigravity -> Antigravity, 其他/空 -> Other
+    已知映射: claude-desktop / claude -> Claude (统一为客户端名, 不区分 desktop/cli),
+    codex -> Codex, hermes -> Hermes, antigravity -> Antigravity,
+    opencode -> OpenCode, 其他/空 -> Other
     """
     if not app_type:
         return "Other"
@@ -227,8 +228,11 @@ def _normalize_app_type(app_type):
         return "Antigravity"
     if "hermes" in t_lower:
         return "Hermes"
-    if "claude-desktop" in t_lower or t_lower == "claude":
-        return "Claude-Desktop"
+    if "claude" in t_lower:
+        # 不区分 desktop / cli / code, 统一为 Claude
+        return "Claude"
+    if "opencode" in t_lower:
+        return "OpenCode"
     if "codex" in t_lower:
         return "Codex"
     return "Other"

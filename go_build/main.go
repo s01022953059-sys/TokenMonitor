@@ -597,10 +597,16 @@ func getNormalizedTool(appType string) string {
 	if strings.Contains(lower, "hermes") {
 		return "Hermes"
 	}
-	if strings.Contains(lower, "claude-desktop") || lower == "claude" {
-		return "Claude-Desktop"
+	if strings.Contains(lower, "claude") {
+		// 不区分 desktop / cli / code, 统一为 Claude
+		return "Claude"
+	}
+	if strings.Contains(lower, "opencode") {
+		return "OpenCode"
 	}
 	if strings.Contains(lower, "codex") {
+		return "Codex"
+	}
 		return "Codex"
 	}
 	return "Other"
