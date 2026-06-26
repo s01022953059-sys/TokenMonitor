@@ -1277,43 +1277,37 @@
                         <tr style="text-align: left; border-bottom: 1px solid var(--border-color);">
                             <th style="padding: 6px 8px; color: var(--text-primary);">平台</th>
                             <th style="padding: 6px 8px; color: var(--text-primary);">数据来源</th>
-                            <th style="padding: 6px 8px; color: var(--text-primary);">类型</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:4px;"></span>CC-Switch</td>
-                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.cc-switch/cc-switch.db</code></td>
-                            <td style="padding: 6px 8px; opacity:0.7;">代理</td>
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:4px;"></span>Codex</td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.codex/logs_2.sqlite</code></td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-color);">
                             <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a855f7;margin-right:4px;"></span>AntiGravity</td>
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">usage_stats.json</code></td>
-                            <td style="padding: 6px 8px; opacity:0.7;">直连</td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:4px;"></span>Hermes-Native</td>
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:4px;"></span>Hermes</td>
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.hermes/state.db</code></td>
-                            <td style="padding: 6px 8px; opacity:0.7;">直连</td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>Codex-Native</td>
-                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.codex/logs_2.sqlite</code></td>
-                            <td style="padding: 6px 8px; opacity:0.7;">直连</td>
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ec4899;margin-right:4px;"></span>Claude</td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.cc-switch/cc-switch.db</code></td>
                         </tr>
                         <tr>
-                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ec4899;margin-right:4px;"></span>ClaudeCode</td>
-                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.claude/projects/*.jsonl</code></td>
-                            <td style="padding: 6px 8px; opacity:0.7;">直连</td>
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f97316;margin-right:4px;"></span>OpenCode</td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.cc-switch/cc-switch.db</code></td>
                         </tr>
                     </tbody>
                 </table>
                 <p style="margin-top: 14px; margin-bottom: 8px; color: var(--text-primary); font-size: 13px; font-weight: 600;">说明</p>
                 <ul style="padding-left: 16px; margin: 0; font-size: 11px; line-height: 1.8;">
-                    <li><b>代理</b>：经 CC-Switch 代理的请求，自动识别 Codex/Cursor/Cline/Hermes 等</li>
-                    <li><b>直连</b>：应用原生日志，不经过 CC-Switch</li>
+                    <li><b>代理</b>：经 CC-Switch 代理的请求 (Claude / OpenCode 等)</li>
+                    <li><b>直连</b>：应用原生日志, 不经过 CC-Switch (Codex / Hermes / AntiGravity)</li>
                     <li>占比 &lt; 1% 自动归入 Other · 余额每 60s 异步刷新</li>
-                    <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端，本地不落盘，暂无法支持</li>
+                    <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端, 本地不落盘, 暂无法支持</li>
                 </ul>
             </div>
         </div>
