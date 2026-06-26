@@ -102,11 +102,12 @@ type SessionEntry struct {
 }
 
 type SessionListResponse struct {
-	Sessions   []SessionEntry `json:"sessions"`
-	Total      int            `json:"total"`
-	Page       int            `json:"page"`
-	PageSize   int            `json:"page_size"`
-	TotalPages int            `json:"total_pages"`
+	Sessions   []SessionEntry      `json:"sessions"`
+	Total      int                 `json:"total"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	TotalPages int                 `json:"total_pages"`
+	Summary    map[string]interface{} `json:"summary,omitempty"`
 }
 
 type HeatmapDay struct {
@@ -320,7 +321,7 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens, session_id
+		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, session_id
 		FROM proxy_request_logs
 		WHERE created_at >= ? AND status_code = 200
 		ORDER BY created_at ASC
@@ -335,25 +336,27 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	for rows.Next() {
 		var createdAt int64
 		var appType, model sql.NullString
-		var inputT, outputT, cacheReadT sql.NullInt64
+		var inputT, outputT, cacheReadT, cacheCreationT sql.NullInt64
 		var sessionID sql.NullString
-		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT, &sessionID)
+		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT, &cacheCreationT, &sessionID)
 
 		iT := inputT.Int64
 		oT := outputT.Int64
-		cT := cacheReadT.Int64
-		uncached := iT - cT
-		if uncached < 0 {
+		// 跟 Python _normalize_app_type 保持一致: cache = cache_read + cache_creation,
+		// 但 OpenAI 兼容协议的 input_t 已含 cache 部分, 这里 cap 防双计
+		cRaw := cacheReadT.Int64 + cacheCreationT.Int64
+		var cT, uncached int64
+		if cRaw > iT {
+			cT = iT
 			uncached = 0
+		} else {
+			cT = cRaw
+			uncached = iT - cT
 		}
 		totalT := iT + oT
 
-		// Python: app_type.capitalize() — 首字母大写其余小写
-		tool := "Other"
-		if appType.Valid && appType.String != "" {
-			s := strings.ToLower(appType.String)
-			tool = strings.ToUpper(s[:1]) + s[1:]
-		}
+		// 工具归一化 (跟 Python _normalize_app_type 保持一致, 避免首页/详情名字不一致)
+		tool := normalizeAppTypeForCCSwitch(appType.String)
 
 		m := "Other"
 		if model.Valid && model.String != "" {
@@ -594,10 +597,23 @@ func getNormalizedTool(appType string) string {
 	if strings.Contains(lower, "hermes") {
 		return "Hermes"
 	}
-	if strings.Contains(lower, "codex") || strings.Contains(lower, "code") {
+	if strings.Contains(lower, "claude-desktop") || lower == "claude" {
+		return "Claude-Desktop"
+	}
+	if strings.Contains(lower, "codex") {
 		return "Codex"
 	}
 	return "Other"
+}
+
+// cc-switch 数据源的归一化: 历史代码用 app_type.capitalize() 给 "claude-desktop"
+// → "Claude-desktop", 跟详情/会话列表里 "Other" 不一致。统一改成跟 Python
+// _normalize_app_type 同名 (Claude-Desktop), 保证首页/详情字段一致。
+func normalizeAppTypeForCCSwitch(appType string) string {
+	if appType == "" {
+		return "Other"
+	}
+	return getNormalizedTool(appType)
 }
 
 func getNormalizedModel(modelName string, models []string) string {
@@ -1413,17 +1429,32 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 	allLogs = dedupEvents(allLogs)
 
 	var filtered []LogEntry
-	for _, ev := range allLogs {
-		t := time.Unix(ev.Timestamp, 0)
-		goWd := int(t.Weekday())
-		var wd int
-		if goWd == 0 {
-			wd = 6
-		} else {
-			wd = goWd - 1
+	if dateStr != "" {
+		// 按 date 过滤 (yyyy-MM-dd), 用于"点击热力图格子下钻当日详情"
+		d, err := time.Parse("2006-01-02", dateStr)
+		if err == nil {
+			dayStart := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.Local).Unix()
+			dayEnd := dayStart + 86400
+			for _, ev := range allLogs {
+				if ev.Timestamp >= dayStart && ev.Timestamp < dayEnd {
+					filtered = append(filtered, ev)
+				}
+			}
 		}
-		if wd == weekday && t.Hour() == hour {
-			filtered = append(filtered, ev)
+	} else {
+		// 按 weekday + hour 过滤 (历史接口, 暂时保留)
+		for _, ev := range allLogs {
+			t := time.Unix(ev.Timestamp, 0)
+			goWd := int(t.Weekday())
+			var wd int
+			if goWd == 0 {
+				wd = 6
+			} else {
+				wd = goWd - 1
+			}
+			if wd == weekday && t.Hour() == hour {
+				filtered = append(filtered, ev)
+			}
 		}
 	}
 
@@ -1447,7 +1478,32 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 			SessionID:     ev.SessionID,
 		})
 	}
-	return SessionListResponse{Sessions: sessions, Total: len(sessions)}
+
+	// 当天统计 (与 Python scanner.get_heatmap_detail 保持一致)
+	summary := map[string]interface{}{}
+	if len(filtered) > 0 {
+		var totalTokens, totalCached int64
+		peakIdx := 0
+		for i, s := range sessions {
+			totalTokens += s.TotalTokens
+			totalCached += s.InputCached
+			if s.TotalTokens > sessions[peakIdx].TotalTokens {
+				peakIdx = i
+			}
+		}
+		summary["total_tokens"] = totalTokens
+		summary["total_cached"] = totalCached
+		summary["call_count"] = len(sessions)
+		summary["peak_tokens"] = sessions[peakIdx].TotalTokens
+		summary["peak_time"] = sessions[peakIdx].Time
+		// avg/max latency: Go 当前 cc-switch 不存 latency, 给 0 占位
+		summary["avg_latency_ms"] = 0
+		summary["max_latency_ms"] = 0
+	}
+
+	return SessionListResponse{
+		Sessions: sessions, Total: len(sessions), Summary: summary,
+	}
 }
 
 func main() {

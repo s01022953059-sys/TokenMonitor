@@ -18,6 +18,11 @@ echo "[build_windows] 版本: $APP_VERSION"
 echo "[build_windows] [1/3] Go 交叉编译 (windows/amd64)"
 cd go_build
 echo "$APP_VERSION" > version.txt
+# 同步主目录 index.html / chart.js 到 go_build/static (//go:embed 在 build 时
+# 把 go_build/static/* 嵌进 EXE, 必须 build 前保持同步, 否则 win 端看不到
+# 最近的 UI 改动)。先拷再 build 一次, 避免重复编译。
+cp ../index.html static/index.html
+[ -f ../chart.js ] && cp ../chart.js static/chart.js
 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "TokenMonitor.exe" .
 
 EXE_SIZE=$(du -h "TokenMonitor.exe" | cut -f1)
