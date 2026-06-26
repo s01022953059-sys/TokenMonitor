@@ -40,17 +40,45 @@ if [[ -z "$GITCODE_TOKEN" ]]; then
     exit 1
 fi
 
+# ─── 确保 git tag $TAG 已存在且已 push ───
+# v1.3.72 事故: 没打 tag 就创建 release, GitCode 拿当时的 HEAD (v1.3.71 commit),
+# 导致 DMG/源码 zip 都是 v1.3.71 旧代码, 客户端"升级"装上的还是旧版。
+# 修复: 在创建 release 前先 git tag + push, 并在 payload 显式传 target_commitish。
+COMMIT_SHA=$(git rev-parse HEAD)
+if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+    echo "[release] 本地没有 $TAG tag, 正在创建并 push..."
+    if ! git tag "$TAG"; then
+        echo "[release] ✘ git tag $TAG 失败" >&2
+        exit 1
+    fi
+    if ! git push origin "$TAG" 2>&1 | tail -5; then
+        echo "[release] ✘ git push origin $TAG 失败 (tag 已本地创建, 需手动 push)" >&2
+        exit 1
+    fi
+    COMMIT_SHA=$(git rev-parse "refs/tags/$TAG")
+    echo "[release] tag $TAG 已 push, 指向 $COMMIT_SHA"
+else
+    COMMIT_SHA=$(git rev-parse "refs/tags/$TAG")
+    # tag 存在但 HEAD 跟它不一致, 警告 (不阻断, 让发版继续)
+    HEAD_SHA=$(git rev-parse HEAD)
+    if [[ "$COMMIT_SHA" != "$HEAD_SHA" ]]; then
+        echo "[release] ⚠ HEAD ($HEAD_SHA) 与 tag $TAG ($COMMIT_SHA) 不一致, release 将用 tag 指向的 commit"
+    fi
+fi
+
 # 检查 Release 是否存在, 不存在则创建
 RELEASE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' \
     -H "Authorization: Bearer $GITCODE_TOKEN" \
     "$API_BASE/releases/tags/$TAG")
 
 if [[ "$RELEASE_HTTP" != "200" ]]; then
-    echo "[release] Release $TAG 不存在, 正在创建..."
+    echo "[release] Release $TAG 不存在, 正在创建 (target_commitish=refs/tags/$TAG)..."
+    # 取最新 commit 的 subject 作为 body (避免 fallback 占位文案)
+    BODY="$(git log -1 --format=%s $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")"
     curl -sS -X POST \
         -H "Authorization: Bearer $GITCODE_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"body\":\"$(git log -1 --format=%s $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")\"}" \
+        -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"target_commitish\":\"refs/tags/$TAG\",\"body\":\"$BODY\"}" \
         "$API_BASE/releases" > /dev/null
     echo "[release] Release 创建完成"
 fi
