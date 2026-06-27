@@ -123,6 +123,17 @@ if [[ -d "$SOURCE_ROOT/build_assets" ]]; then
     fi
 fi
 
+# 3.7 强制 macOS 重新注册 app 图标缓存
+# 同事反馈: 拖完 .app 后 dock 图标显示占位符 (说明系统缓存的旧 icon 没刷)
+# 解决方案: 重新 touch Info.plist 触发 LaunchServices 重读, 然后 lsregister 强制重索引
+# 不会失败 (即使 lsregister 不存在也继续), 只是让 Finder / Dock / Launchpad 立刻认到新 icon
+touch "$APP_BUNDLE" "$APP_BUNDLE/Contents" "$APP_BUNDLE/Contents/Info.plist"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+    "$LSREGISTER" -f -R -trusted "$APP_BUNDLE" 2>/dev/null && \
+        echo "[build_macos] [✔] lsregister 重索引 app icon 缓存" || true
+fi
+
 # 4. 修正可执行权限
 chmod +x "$APP_BUNDLE/Contents/MacOS/TokenMonitor"
 chmod +x "$APP_BUNDLE/Contents/Resources/start.sh"

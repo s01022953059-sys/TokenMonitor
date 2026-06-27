@@ -142,6 +142,13 @@ fi
 echo ""
 echo "[install] [5/5] 启动新版本"
 echo "[install] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# 强制 LaunchServices 重新注册 app (解决同事反馈"dock 图标显示占位符"
+# 而不是 T+火焰 icns"的问题 — 旧 app 卸载后系统 icon 缓存可能没更新)
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+    "$LSREGISTER" -f -R -trusted "$INSTALL_PATH" 2>/dev/null && \
+        echo "[install] [✔] 刷新 LaunchServices 图标缓存" || true
+fi
 open "$INSTALL_PATH"
 echo "[install] [✔] 已发送 open 命令"
 
