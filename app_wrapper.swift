@@ -56,17 +56,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "TokenMonitorStatusItem"
         if let button = statusItem.button {
-            // 优先用 StatusBarIcon.png (build_macos.sh 从 icon.png 生成的 template image,
-            // 系统按主题深/浅自动着色); 找不到时退回 emoji 文字
-            if let icon = NSImage(named: "StatusBarIcon") {
-                icon.size = NSSize(width: 18, height: 18)
-                icon.isTemplate = true  // 让 macOS 按主题自动着色
-                button.image = icon
-                button.imagePosition = .imageOnly
-                button.title = ""
-            } else {
-                button.title = "🔥"
-            }
+            // 菜单栏图标: 用 emoji 文字 (system 自动按主题染色),
+            // 不用 StatusBarIcon.png — 之前是黑色背景+橙色火, 配 isTemplate
+            // 会让系统把整张图当 alpha mask 渲染, 出现"完整大图标缩成 18x18" 的怪异效果
+            button.title = "🔥"
+            button.imagePosition = .imageOnly
+            button.image = nil
 
             // 创建状态栏下拉菜单
             let menu = NSMenu()
