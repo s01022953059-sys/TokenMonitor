@@ -93,13 +93,31 @@ fi
 # 释放端口和 lock 文件, 再 open 拉新的。
 # 之前只 pkill bundle id, Python server 子进程残留, 端口 15723 被占,
 # lock 文件没释放, 导致新 app 启动时 server 绑端口失败, 整个 app 起不来。
-echo "[update_helper] 重启 app (彻底清理老进程)"
+# v1.3.84 修复: 还跑 lsregister 重置 NSStatusItem 缓存 — 旧 app 进程如果还活着,
+# status item 的 image/title 是 cache 在老 Swift binary 里的, 不会自动刷。
+# 必须让老进程彻底死 + lsregister 重注册, 新 app 启动才会走 `button.title = "🔥"`。
+echo "[update_helper] 重启 app (彻底清理老进程 + 重置 NSStatusItem 缓存)"
 
-# 1. kill Swift 主进程 (按 bundle id 和可执行文件名)
-if [ -n "$RELAUNCH_BUNDLE_ID" ]; then
-    pkill -f "$RELAUNCH_BUNDLE_ID" 2>/dev/null || true
+# 1. kill Swift 主进程: 用 lsof 查 .app 二进制路径, 直接 kill by pid
+#    pkill -f "TokenMonitor" 太宽 (会误杀 Token Monitor.app 内任何 exec),
+#    pkill -f "com.baggio.tokenmonitor" 在 mac 上 bundle id 不在命令行里
+#    → 必须按可执行文件路径精确杀
+TOKEN_MONITOR_BIN="$TARGET_APP/Contents/MacOS/TokenMonitor"
+PIDS=$(lsof -t "$TOKEN_MONITOR_BIN" 2>/dev/null | tr '\n' ' ')
+if [ -n "$PIDS" ]; then
+    echo "[update_helper] kill 老 Swift 主进程: $PIDS"
+    kill $PIDS 2>/dev/null || true
+    sleep 1
+    # 没死透的强杀
+    PIDS=$(lsof -t "$TOKEN_MONITOR_BIN" 2>/dev/null | tr '\n' ' ')
+    if [ -n "$PIDS" ]; then
+        echo "[update_helper] 老进程不响应, 强杀: $PIDS"
+        kill -9 $PIDS 2>/dev/null || true
+    fi
 fi
-pkill -f "TokenMonitor" 2>/dev/null || true
+# 兜底: pkill (可能漏的, 比如 lsregister launchd 启动的 ghost app)
+pkill -f "TokenMonitor.app/Contents/MacOS/TokenMonitor" 2>/dev/null || true
+pkill -x TokenMonitor 2>/dev/null || true
 
 # 2. kill Python server 子进程 (按 server.py 路径匹配)
 pkill -f "Token Monitor.*server\.py" 2>/dev/null || true
@@ -121,6 +139,18 @@ for i in 1 2 3; do
     # 强制 kill 占用端口的进程
     lsof -ti :15723 2>/dev/null | xargs kill -9 2>/dev/null || true
 done
+
+# 5b. 重置 macOS NSStatusItem / LaunchServices 缓存
+# 老 app 进程的 status item (icon/title) 已经被 system 加到全局状态栏,
+# 只重启 Swift binary 不够, 老 item 可能残留 0.x 秒
+# 强制 lsregister 重索引 (跟 install.sh / build_macos.sh 同步), 触发系统重读 .app
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -f -R -trusted "$TARGET_APP" 2>/dev/null && \
+        echo "[update_helper] ✔ lsregister 重索引 (清 NSStatusItem 缓存)" || true
+fi
+# touch Info.plist 触发 LaunchServices 重新读 icon 缓存
+touch "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true
 
 # 6. 启动新 app
 if [ -n "$RELAUNCH_BUNDLE_ID" ]; then

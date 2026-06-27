@@ -53,6 +53,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         startLocalServer()
         
         // 初始化右上角系统状态栏项
+        // v1.3.85: 启动时先清掉同名 status item 缓存 — 旧 Swift binary 注册的
+        // item (例如 v1.3.82 的 NSImage + isTemplate) 可能在系统里残留,
+        // 新进程再注册会显示错乱。autosaveName 用同一个, 所以 NSStatusBar
+        // 知道 "TokenMonitorStatusItem" 关联旧 icon, 用 removeStatusItem 强制清
+        for old in NSStatusBar.system.items where old.autosaveName == "TokenMonitorStatusItem" {
+            NSStatusBar.system.removeStatusItem(old)
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "TokenMonitorStatusItem"
         if let button = statusItem.button {
