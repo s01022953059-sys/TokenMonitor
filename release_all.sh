@@ -78,13 +78,16 @@ if [[ "$RELEASE_HTTP" != "200" ]]; then
     # 写响应到临时文件, 读 HTTP 状态码; 失败时 cat 响应体便于排查, exit 1 阻断后续
     # 重试 3 次: GitCode 的 tag 跟 release API 有最终一致性, 偶尔 POST 时 tag 还没同步,
     # 等几秒重试就好
+    # 把 JSON payload 写到临时文件, 用 curl --data-binary @file 避免 bash 双引号解析问题
     CREATE_RESP=$(mktemp)
+    CREATE_PAYLOAD=$(mktemp)
+    python3 -c "import json; json.dump({'tag_name': '$TAG', 'name': 'Token Monitor $TAG', 'target_commitish': 'refs/tags/$TAG', 'body': '''$BODY'''}, open('$CREATE_PAYLOAD', 'w'))"
     CREATE_HTTP=""
     for attempt in 1 2 3; do
         CREATE_HTTP=$(curl -sS -o "$CREATE_RESP" -w '%{http_code}' \
             -H "Authorization: Bearer $GITCODE_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"$TAG\",\"name\":\"Token Monitor $TAG\",\"target_commitish\":\"refs/tags/$TAG\",\"body\":\"$BODY\"}" \
+            --data-binary "@$CREATE_PAYLOAD" \
             "$API_BASE/releases")
         if [[ "$CREATE_HTTP" == "201" || "$CREATE_HTTP" == "200" ]]; then
             break
@@ -97,10 +100,10 @@ if [[ "$RELEASE_HTTP" != "200" ]]; then
         echo "[release]   响应体:" >&2
         cat "$CREATE_RESP" >&2
         echo "" >&2
-        rm -f "$CREATE_RESP"
+        rm -f "$CREATE_RESP" "$CREATE_PAYLOAD"
         exit 1
     fi
-    rm -f "$CREATE_RESP"
+    rm -f "$CREATE_RESP" "$CREATE_PAYLOAD"
     echo "[release] Release 创建完成 (HTTP $CREATE_HTTP)"
 fi
 

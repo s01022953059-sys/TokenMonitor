@@ -56,8 +56,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.autosaveName = "TokenMonitorStatusItem"
         if let button = statusItem.button {
-            button.title = "🔥--"
-            
+            // 优先用 StatusBarIcon.png (build_macos.sh 从 icon.png 生成的 template image,
+            // 系统按主题深/浅自动着色); 找不到时退回 emoji 文字
+            if let icon = NSImage(named: "StatusBarIcon") {
+                icon.size = NSSize(width: 18, height: 18)
+                icon.isTemplate = true  // 让 macOS 按主题自动着色
+                button.image = icon
+                button.imagePosition = .imageOnly
+                button.title = ""
+            } else {
+                button.title = "🔥"
+            }
+
             // 创建状态栏下拉菜单
             let menu = NSMenu()
             menu.addItem(NSMenuItem(title: "显示大屏", action: #selector(showMainWindow), keyEquivalent: "s"))
@@ -274,10 +284,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         return "\(num)"
     }
 
-    // 拦截关闭窗口事件：将窗口隐藏而不是销毁
+    // 拦截关闭窗口事件: 把窗口隐藏 (进程保持运行, dock + 状态栏图标继续在)
+    // 用户可以点 dock 图标或状态栏菜单重新唤回主窗口
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        window.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        sender.orderOut(nil)
         return false
     }
 
@@ -1083,7 +1093,7 @@ let alert = NSAlert()
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)  // 常规 dock app, 关闭主窗口后 dock 图标 + 菜单栏图标都保留
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

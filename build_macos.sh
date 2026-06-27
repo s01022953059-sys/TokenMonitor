@@ -111,6 +111,18 @@ else
     echo "[build_macos] [!] icon.png 缺失, 跳过图标生成" >&2
 fi
 
+# 3.6 生成菜单栏状态栏图标 (template image, 系统按主题自动着色)
+# Swift 端用 NSImage(named:"StatusBarIcon") 加载, 必须是 alpha-only 灰度图
+# 提前用 build_assets/ 里预生成的文件 (开发期间手动 python3 build_assets/make_statusbar_icon.py 即可)
+if [[ -d "$SOURCE_ROOT/build_assets" ]]; then
+    mkdir -p "$APP_BUNDLE/Contents/Resources"
+    cp "$SOURCE_ROOT/build_assets/icon_18.png" "$APP_BUNDLE/Contents/Resources/StatusBarIcon.png" 2>/dev/null
+    cp "$SOURCE_ROOT/build_assets/icon_18@2x.png" "$APP_BUNDLE/Contents/Resources/StatusBarIcon@2x.png" 2>/dev/null
+    if [[ -f "$APP_BUNDLE/Contents/Resources/StatusBarIcon.png" ]]; then
+        echo "[build_macos] [✔] 拷贝菜单栏图标 (StatusBarIcon)"
+    fi
+fi
+
 # 4. 修正可执行权限
 chmod +x "$APP_BUNDLE/Contents/MacOS/TokenMonitor"
 chmod +x "$APP_BUNDLE/Contents/Resources/start.sh"
