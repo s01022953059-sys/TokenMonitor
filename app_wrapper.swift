@@ -53,16 +53,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         startLocalServer()
         
         // 初始化右上角系统状态栏项
-        // v1.3.85 修复: autosaveName 改用版本号后缀, 让 macOS 永远不把
-        // 旧 .app 进程的 NSStatusItem 跟新进程关联 — 同 name 的 item 会被
-        // macOS 自动续用, 旧 .app (例如 v1.3.82 用了 NSImage + isTemplate)
-        // 的 statusItem 配置就一直留着, 升级后图标刷新不了
-        // 加版本后缀 → 旧 key "TokenMonitorStatusItem" 在新进程里没匹配,
-        // 系统创建全新 item, 老 item 跟着老进程死掉自动消失
-        let bundle = Bundle.main
-        let appVersion = (bundle.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0"
+        // v1.3.87: 改用**固定** autosaveName "TokenMonitorStatusItem", 让用户拖到右边的位置
+        // 被 NSStatusBar 记住, 升级后位置不丢. 之前加版本号后缀 (v1.3.85/86) 导致
+        // 每次升级位置重置到左端, 体验差.
+        // 老 NSStatusItem 残留问题 (v1.3.82 老 icon) 通过 NSStatusBar 的
+        // "同名 item 自动覆盖" 行为解决 — 同 autosaveName 的 item, 新 process
+        // 启动时 macOS 会用新 button.title/image 覆盖老 config
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.autosaveName = "TokenMonitorStatusItem-\(appVersion)"
+        statusItem.autosaveName = "TokenMonitorStatusItem"
         if let button = statusItem.button {
             // 菜单栏图标: 用 emoji 文字 (system 自动按主题染色),
             // 不用 StatusBarIcon.png — 之前是黑色背景+橙色火, 配 isTemplate
