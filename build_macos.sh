@@ -54,10 +54,21 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # 1. 编译 Swift 入口为可执行
 echo "[build_macos] [*] 编译 app_wrapper.swift ..."
+# swiftc 即使有 error 也 exit 0 (编译器 driver 不传播编译结果),
+# 必须用 `|| exit 1` 主动检测 (v1.3.85 发了 NSStatusBar.system.items 错误代码,
+# swiftc 报 error 但没拦住, 发了个编不过的 .app 出去)
 swiftc \
     -O \
     -o "$APP_BUNDLE/Contents/MacOS/TokenMonitor" \
-    "$SOURCE_ROOT/app_wrapper.swift"
+    "$SOURCE_ROOT/app_wrapper.swift" || {
+        echo "[build_macos] ✘ Swift 编译失败, build 中止 (避免发布编不过的 .app)" >&2
+        exit 1
+    }
+# 检查可执行文件是否真的生成了
+if [[ ! -f "$APP_BUNDLE/Contents/MacOS/TokenMonitor" ]]; then
+    echo "[build_macos] ✘ Swift 编译产物不存在, build 中止" >&2
+    exit 1
+fi
 
 # 2. 拷贝 Info.plist
 cp "$SOURCE_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
