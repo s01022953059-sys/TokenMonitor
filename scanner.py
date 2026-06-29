@@ -291,8 +291,39 @@ def _load_provider_model_map():
 
     return provider_model_map, active_model_by_app
 
+def _get_ccswitch_today_models():
+    """从 cc-switch.db 拿今天出现过的 model 集合, 用于 Antigravity 去重判断。
+    返回 set() 表示 cc-switch 不可用 / 没数据。
+    """
+    if not os.path.exists(CC_SWITCH_DB_PATH):
+        return set()
+    try:
+        today_start = get_today_midnight_timestamp()
+        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT model FROM proxy_request_logs
+            WHERE created_at >= ? AND status_code = 200
+        """, (today_start,))
+        models = {row[0].lower() for row in cursor.fetchall() if row[0]}
+        conn.close()
+        return models
+    except Exception:
+        return set()
+
+
 def scan_antigravity_tokens(today_start):
-    """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件，精确提取今日消耗"""
+    """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件, 提取今日消耗。
+
+    重要: 这个数据本质上是 cc-switch Codex 代理的**另一份镜像** (BingchaAI 客户端
+    调 gpt-5.5 都走 cc-switch 代理, 客户端和代理都各自记一份). 如果简单加入
+    tokens_data, 会被 _dedup_events 算两遍 (timestamp 不同 bucket 不重叠).
+
+    修法: 按 model 分别检查 cc-switch.db, 已有相同 model 的话 Antigravity 这条
+    跳过 (避免双计); cc-switch 没有的 model (例如 gpt-4o 等小流量) 才纳入.
+
+    cc-switch.db 不存在时, Antigravity 数据**全部纳入** (退化路径, 用户没用 cc-switch).
+    """
     tokens_data = []
 
     if not os.path.exists(ANTIGRAVITY_STATS_PATH):
@@ -301,37 +332,61 @@ def scan_antigravity_tokens(today_start):
     try:
         with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
             stats = json.load(f)
-            
-        # 获取今天的日期字符串，格式如 2026-06-04
+
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
         records = stats.get("records", {})
-        
-        # 寻找今天的记录
+
         today_record = records.get(today_str)
-        if today_record:
+        if not today_record:
+            return tokens_data
+
+        # 按 byModel 拆分, 每个 model 单独判断是否要纳入
+        by_model = today_record.get("byModel", {})
+        if by_model:
+            ccswitch_models = _get_ccswitch_today_models()
+            for model_key, m in by_model.items():
+                # 归一化后比较 (lowercase + 去日期后缀)
+                norm = model_key.lower()
+                norm = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', norm)
+                if norm in ccswitch_models:
+                    # cc-switch 已有这条 model → Antigravity 这条算重复, 跳过
+                    continue
+                # cc-switch 没有 (或没装) → 纳入
+                tokens_data.append({
+                    "time": "实时",
+                    "timestamp": int(datetime.datetime.now().timestamp()),
+                    "tool": "冰茶 AI",
+                    "model": model_key,
+                    "input_tokens": m.get("inputTokens", 0),
+                    "output_tokens": m.get("outputTokens", 0),
+                    "total_tokens": m.get("totalTokens", 0),
+                    "input_cached": m.get("cachedTokens", 0),
+                    "input_uncached": max(0, m.get("inputTokens", 0) - m.get("cachedTokens", 0)),
+                })
+        else:
+            # 没 byModel 详情 (老版本 stats 文件), 用总数据,
+            # 仅在 cc-switch 不可用时纳入
+            ccswitch_models = _get_ccswitch_today_models()
+            if ccswitch_models:
+                # cc-switch 在跑, 但 Antigravity 没 byModel 细节, 假设重复
+                return tokens_data
             input_t = today_record.get("inputTokens", 0)
             output_t = today_record.get("outputTokens", 0)
             cached_t = today_record.get("cachedTokens", 0)
-            total_t = input_t + output_t
-            
-            # 区分缓存
-            input_cached = cached_t
-            input_uncached = max(0, input_t - cached_t)
-            
             tokens_data.append({
                 "time": "实时",
                 "timestamp": int(datetime.datetime.now().timestamp()),
                 "tool": "冰茶 AI",
-                f"model": list(today_record.get("byModel", {}).keys())[0] if today_record.get("byModel") else "Gemini 3.5 Flash",
+                "model": "Gemini 3.5 Flash",
                 "input_tokens": input_t,
                 "output_tokens": output_t,
-                "total_tokens": total_t,
-                "input_cached": input_cached,
-                "input_uncached": input_uncached
+                "total_tokens": input_t + output_t,
+                "input_cached": cached_t,
+                "input_uncached": max(0, input_t - cached_t),
             })
     except Exception as e:
         print(f"[-] 读取冰茶 AI 统计文件出错: {e}")
-        
+
     return tokens_data
 
 def scan_hermes_tokens(today_start):

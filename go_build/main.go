@@ -381,6 +381,9 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 
 // 2. 冰茶 AI (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
 //    不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
+//    v1.3.89: 按 byModel 拆分, 每个 model 检查 cc-switch.db 是否已存在,
+//    存在则跳过 (避免跟 cc-switch Codex gpt-5.5 重复计).
+//    cc-switch 没装或没该 model 时, 纳入作为独立数据源
 func scanAntigravityTokens() []LogEntry {
 	statsPath := antigravityStatsPath()
 	data, err := os.ReadFile(statsPath)
@@ -394,7 +397,11 @@ func scanAntigravityTokens() []LogEntry {
 			OutputTokens int64 `json:"outputTokens"`
 			CachedTokens int64 `json:"cachedTokens"`
 			ByModel      map[string]struct {
-				ModelKey string `json:"modelKey"`
+				ModelKey      string `json:"modelKey"`
+				InputTokens  int64  `json:"inputTokens"`
+				OutputTokens int64  `json:"outputTokens"`
+				TotalTokens  int64  `json:"totalTokens"`
+				CachedTokens int64  `json:"cachedTokens"`
 			} `json:"byModel"`
 		} `json:"records"`
 	}
@@ -409,31 +416,94 @@ func scanAntigravityTokens() []LogEntry {
 		return nil
 	}
 
-	totalT := record.InputTokens + record.OutputTokens
+	// 拿 cc-switch 今天出现过的 model 集合, Antigravity 按 model 拆分
+	// 每个 model 检查 cc-switch 是否有, 有则跳过 (避免双计)
+	ccswitchModels := ccswitchTodayModels()
 	uncached := record.InputTokens - record.CachedTokens
 	if uncached < 0 {
 		uncached = 0
 	}
 
-	// model 字段不再写死 "Gemini 3.5 Flash", 改为 byModel 第一名
-	// (冰茶 AI 客户端实际跑的多是 gpt-5.5 / gpt-5.4-mini, 真实模型)
-	modelName := "Gemini 3.5 Flash"
-	for m := range record.ByModel {
-		modelName = m
-		break
+	now := time.Now().Unix()
+	var entries []LogEntry
+	if len(record.ByModel) > 0 {
+		// 按 byModel 拆分, 每个 model 单独判断
+		for m, info := range record.ByModel {
+			norm := normalizeModelName(m)
+			if _, exists := ccswitchModels[norm]; exists {
+				// cc-switch 已有这条 model → 跳过避免双计
+				continue
+			}
+			totalM := info.InputTokens + info.OutputTokens
+			uncachedM := info.InputTokens - info.CachedTokens
+			if uncachedM < 0 {
+				uncachedM = 0
+			}
+			entries = append(entries, LogEntry{
+				Time:          "实时",
+				Timestamp:     now,
+				Tool:          "冰茶 AI",
+				Model:         m,
+				InputTokens:   info.InputTokens,
+				OutputTokens:  info.OutputTokens,
+				TotalTokens:   totalM,
+				InputCached:   info.CachedTokens,
+				InputUncached: uncachedM,
+			})
+		}
+		_ = uncached // 占位
+		return entries
 	}
 
+	// 没 byModel 详情 (老版本 stats 文件), 退化路径:
+	// cc-switch 没装时全纳入, 装了则全跳过 (保守: 宁愿少计)
+	if len(ccswitchModels) > 0 {
+		return nil
+	}
+	totalT := record.InputTokens + record.OutputTokens
 	return []LogEntry{{
 		Time:          "实时",
-		Timestamp:     time.Now().Unix(),
+		Timestamp:     now,
 		Tool:          "冰茶 AI",
-		Model:         modelName,
+		Model:         "Gemini 3.5 Flash",
 		InputTokens:   record.InputTokens,
 		OutputTokens:  record.OutputTokens,
 		TotalTokens:   totalT,
 		InputCached:   record.CachedTokens,
 		InputUncached: uncached,
 	}}
+}
+
+// ccswitchTodayModels 拿今天 cc-switch.db 里出现过的 model 集合 (归一化后),
+// 给 Antigravity 去重判断用
+func ccswitchTodayModels() map[string]struct{} {
+	result := map[string]struct{}{}
+	dbPath := ccSwitchDBPath()
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return result
+	}
+	todayStart := todayMidnight()
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return result
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT DISTINCT model FROM proxy_request_logs
+		WHERE created_at >= ? AND status_code = 200
+	`, todayStart)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil || m == "" {
+			continue
+		}
+		result[normalizeModelName(m)] = struct{}{}
+	}
+	return result
 }
 
 // 3. Hermes
