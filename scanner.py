@@ -225,7 +225,7 @@ def _normalize_app_type(app_type):
         return "Other"
     t_lower = app_type.lower()
     if "antigravity" in t_lower:
-        return "Antigravity"
+        return "冰茶 AI"
     if "hermes" in t_lower:
         return "Hermes"
     if "claude" in t_lower:
@@ -321,8 +321,8 @@ def scan_antigravity_tokens(today_start):
             tokens_data.append({
                 "time": "实时",
                 "timestamp": int(datetime.datetime.now().timestamp()),
-                "tool": "Antigravity",
-                "model": "Gemini 3.5 Flash",
+                "tool": "冰茶 AI",
+                f"model": list(today_record.get("byModel", {}).keys())[0] if today_record.get("byModel") else "Gemini 3.5 Flash",
                 "input_tokens": input_t,
                 "output_tokens": output_t,
                 "total_tokens": total_t,
@@ -504,7 +504,7 @@ def get_historical_usage(days=30):
         date_list.append(d.strftime("%Y-%m-%d"))
 
     # 工具归一化映射
-    tools = ["Antigravity", "Hermes", "Codex", "Other"]
+    tools = ["冰茶 AI", "Hermes", "Codex", "Other"]
 
     def get_normalized_tool(app_type):
         return _normalize_app_type(app_type)

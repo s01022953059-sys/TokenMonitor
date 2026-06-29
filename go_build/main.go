@@ -379,7 +379,8 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	return logs
 }
 
-// 2. Antigravity (冰茶 AI)
+// 2. 冰茶 AI (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
+//    不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
 func scanAntigravityTokens() []LogEntry {
 	statsPath := antigravityStatsPath()
 	data, err := os.ReadFile(statsPath)
@@ -392,6 +393,9 @@ func scanAntigravityTokens() []LogEntry {
 			InputTokens  int64 `json:"inputTokens"`
 			OutputTokens int64 `json:"outputTokens"`
 			CachedTokens int64 `json:"cachedTokens"`
+			ByModel      map[string]struct {
+				ModelKey string `json:"modelKey"`
+			} `json:"byModel"`
 		} `json:"records"`
 	}
 	if err := json.Unmarshal(data, &stats); err != nil {
@@ -411,11 +415,19 @@ func scanAntigravityTokens() []LogEntry {
 		uncached = 0
 	}
 
+	// model 字段不再写死 "Gemini 3.5 Flash", 改为 byModel 第一名
+	// (冰茶 AI 客户端实际跑的多是 gpt-5.5 / gpt-5.4-mini, 真实模型)
+	modelName := "Gemini 3.5 Flash"
+	for m := range record.ByModel {
+		modelName = m
+		break
+	}
+
 	return []LogEntry{{
 		Time:          "实时",
 		Timestamp:     time.Now().Unix(),
-		Tool:          "Antigravity",
-		Model:         "Gemini 3.5 Flash",
+		Tool:          "冰茶 AI",
+		Model:         modelName,
 		InputTokens:   record.InputTokens,
 		OutputTokens:  record.OutputTokens,
 		TotalTokens:   totalT,
@@ -592,7 +604,7 @@ func getNormalizedTool(appType string) string {
 	}
 	lower := strings.ToLower(appType)
 	if strings.Contains(lower, "antigravity") {
-		return "Antigravity"
+		return "冰茶 AI"
 	}
 	if strings.Contains(lower, "hermes") {
 		return "Hermes"
@@ -649,7 +661,7 @@ func getHistoricalUsage(days int) HistoryResponse {
 	}
 
 	// 与 Python 版完全一致的工具和模型列表
-	tools := []string{"Antigravity", "Hermes", "Codex", "Other"}
+	tools := []string{"冰茶 AI", "Hermes", "Codex", "Other"}
 	models := []string{"deepseek-v4-flash", "gemini 3.5 flash", "deepseek-v4-pro", "gpt-5.5", "deepseek-v4-flash-free", "Other"}
 
 	dateIdx := map[string]int{}
