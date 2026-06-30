@@ -313,81 +313,25 @@ def _get_ccswitch_today_models():
 
 
 def scan_antigravity_tokens(today_start):
-    """只读扫描冰茶 AI (Antigravity 本身) 的官方每日统计文件, 提取今日消耗。
+    """v1.3.90 起冰茶 AI 降级为数据源, scanner 不再产出 events。
 
-    重要: 这个数据本质上是 cc-switch Codex 代理的**另一份镜像** (BingchaAI 客户端
-    调 gpt-5.5 都走 cc-switch 代理, 客户端和代理都各自记一份). 如果简单加入
-    tokens_data, 会被 _dedup_events 算两遍 (timestamp 不同 bucket 不重叠).
+    冰茶 AI 客户端 (BingchaAI) 实际产品定位是 IDE / 代理配置入口, 调 LLM 都
+    经过 cc-switch Codex 代理. usage_stats.json 是 BingchaAI 客户端的本地
+    累计统计, 跟 cc-switch.db 代理记录**同一批请求** (request 数 精确一致,
+    total_tokens 接近), 算两遍就是双计.
 
-    修法: 按 model 分别检查 cc-switch.db, 已有相同 model 的话 Antigravity 这条
-    跳过 (避免双计); cc-switch 没有的 model (例如 gpt-4o 等小流量) 才纳入.
+    之前 v1.3.89 试过按 model 检查 cc-switch.db 跳过重复, 但发现:
+    - BingchaAI stats 的 totalTokens 是 cc-switch 的 ~1.9x (部分请求没经代理)
+    - 跨源去重本身精度有限
+    - 冰茶 AI 既然只是代理入口, 不该作为独立"工具"维度出现
 
-    cc-switch.db 不存在时, Antigravity 数据**全部纳入** (退化路径, 用户没用 cc-switch).
+    修法: 直接 return []. 全部流量归到真实调用工具 (Codex / Claude / Other).
+    usage_stats.json 文件**不再被 scanner 读取** (保留文件本身).
+
+    退化: 用户完全没装 cc-switch → 冰茶 AI 数据完全丢失 (无法统计).
+    这种情况极罕见, 用户可改在 BingchaAI 客户端 → 设置 → 配 cc-switch provider.
     """
-    tokens_data = []
-
-    if not os.path.exists(ANTIGRAVITY_STATS_PATH):
-        return tokens_data
-
-    try:
-        with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
-            stats = json.load(f)
-
-        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-        records = stats.get("records", {})
-
-        today_record = records.get(today_str)
-        if not today_record:
-            return tokens_data
-
-        # 按 byModel 拆分, 每个 model 单独判断是否要纳入
-        by_model = today_record.get("byModel", {})
-        if by_model:
-            ccswitch_models = _get_ccswitch_today_models()
-            for model_key, m in by_model.items():
-                # 归一化后比较 (lowercase + 去日期后缀)
-                norm = model_key.lower()
-                norm = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', norm)
-                if norm in ccswitch_models:
-                    # cc-switch 已有这条 model → Antigravity 这条算重复, 跳过
-                    continue
-                # cc-switch 没有 (或没装) → 纳入
-                tokens_data.append({
-                    "time": "实时",
-                    "timestamp": int(datetime.datetime.now().timestamp()),
-                    "tool": "冰茶 AI",
-                    "model": model_key,
-                    "input_tokens": m.get("inputTokens", 0),
-                    "output_tokens": m.get("outputTokens", 0),
-                    "total_tokens": m.get("totalTokens", 0),
-                    "input_cached": m.get("cachedTokens", 0),
-                    "input_uncached": max(0, m.get("inputTokens", 0) - m.get("cachedTokens", 0)),
-                })
-        else:
-            # 没 byModel 详情 (老版本 stats 文件), 用总数据,
-            # 仅在 cc-switch 不可用时纳入
-            ccswitch_models = _get_ccswitch_today_models()
-            if ccswitch_models:
-                # cc-switch 在跑, 但 Antigravity 没 byModel 细节, 假设重复
-                return tokens_data
-            input_t = today_record.get("inputTokens", 0)
-            output_t = today_record.get("outputTokens", 0)
-            cached_t = today_record.get("cachedTokens", 0)
-            tokens_data.append({
-                "time": "实时",
-                "timestamp": int(datetime.datetime.now().timestamp()),
-                "tool": "冰茶 AI",
-                "model": "Gemini 3.5 Flash",
-                "input_tokens": input_t,
-                "output_tokens": output_t,
-                "total_tokens": input_t + output_t,
-                "input_cached": cached_t,
-                "input_uncached": max(0, input_t - cached_t),
-            })
-    except Exception as e:
-        print(f"[-] 读取冰茶 AI 统计文件出错: {e}")
-
-    return tokens_data
+    return []
 
 def scan_hermes_tokens(today_start):
     """只读扫描 Hermes 数据库中今天的会话记录，提取包含缓存细节的高精度 Token 消耗"""
@@ -559,7 +503,9 @@ def get_historical_usage(days=30):
         date_list.append(d.strftime("%Y-%m-%d"))
 
     # 工具归一化映射
-    tools = ["冰茶 AI", "Hermes", "Codex", "Other"]
+    # v1.3.90 移除 "冰茶 AI" 项: 冰茶 AI 客户端只是 IDE/代理入口, scanner 不再
+    # 单独算它 (避免跟 cc-switch Codex 代理的双计). 流量归到真实调用工具.
+    tools = ["Hermes", "Codex", "Other"]
 
     def get_normalized_tool(app_type):
         return _normalize_app_type(app_type)

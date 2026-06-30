@@ -379,99 +379,15 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	return logs
 }
 
-// 2. 冰茶 AI (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
+// 2. 冰茶 AI 客户端 (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
 //    不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
-//    v1.3.89: 按 byModel 拆分, 每个 model 检查 cc-switch.db 是否已存在,
-//    存在则跳过 (避免跟 cc-switch Codex gpt-5.5 重复计).
-//    cc-switch 没装或没该 model 时, 纳入作为独立数据源
+//    v1.3.90 降级为纯数据源: 冰茶 AI 是 IDE/代理配置入口, 调 LLM 都经 cc-switch
+//    Codex 代理. usage_stats.json 是 BingchaAI 客户端本地累计, 跟 cc-switch
+//    代理记录**同一批请求** (双计). scanner 不再产出 events, 流量归到真实
+//    调用工具 (Codex / Claude / Other). 用户完全没装 cc-switch 时冰茶 AI
+//    流量丢失, 但这种情况极罕见, 用户可在 BingchaAI 客户端配 cc-switch provider.
 func scanAntigravityTokens() []LogEntry {
-	statsPath := antigravityStatsPath()
-	data, err := os.ReadFile(statsPath)
-	if err != nil {
-		return nil
-	}
-
-	var stats struct {
-		Records map[string]struct {
-			InputTokens  int64 `json:"inputTokens"`
-			OutputTokens int64 `json:"outputTokens"`
-			CachedTokens int64 `json:"cachedTokens"`
-			ByModel      map[string]struct {
-				ModelKey      string `json:"modelKey"`
-				InputTokens  int64  `json:"inputTokens"`
-				OutputTokens int64  `json:"outputTokens"`
-				TotalTokens  int64  `json:"totalTokens"`
-				CachedTokens int64  `json:"cachedTokens"`
-			} `json:"byModel"`
-		} `json:"records"`
-	}
-	if err := json.Unmarshal(data, &stats); err != nil {
-		fmt.Printf("[-] 读取冰茶 AI 统计文件出错: %v\n", err)
-		return nil
-	}
-
-	todayStr := time.Now().Format("2006-01-02")
-	record, ok := stats.Records[todayStr]
-	if !ok {
-		return nil
-	}
-
-	// 拿 cc-switch 今天出现过的 model 集合, Antigravity 按 model 拆分
-	// 每个 model 检查 cc-switch 是否有, 有则跳过 (避免双计)
-	ccswitchModels := ccswitchTodayModels()
-	uncached := record.InputTokens - record.CachedTokens
-	if uncached < 0 {
-		uncached = 0
-	}
-
-	now := time.Now().Unix()
-	var entries []LogEntry
-	if len(record.ByModel) > 0 {
-		// 按 byModel 拆分, 每个 model 单独判断
-		for m, info := range record.ByModel {
-			norm := normalizeModelName(m)
-			if _, exists := ccswitchModels[norm]; exists {
-				// cc-switch 已有这条 model → 跳过避免双计
-				continue
-			}
-			totalM := info.InputTokens + info.OutputTokens
-			uncachedM := info.InputTokens - info.CachedTokens
-			if uncachedM < 0 {
-				uncachedM = 0
-			}
-			entries = append(entries, LogEntry{
-				Time:          "实时",
-				Timestamp:     now,
-				Tool:          "冰茶 AI",
-				Model:         m,
-				InputTokens:   info.InputTokens,
-				OutputTokens:  info.OutputTokens,
-				TotalTokens:   totalM,
-				InputCached:   info.CachedTokens,
-				InputUncached: uncachedM,
-			})
-		}
-		_ = uncached // 占位
-		return entries
-	}
-
-	// 没 byModel 详情 (老版本 stats 文件), 退化路径:
-	// cc-switch 没装时全纳入, 装了则全跳过 (保守: 宁愿少计)
-	if len(ccswitchModels) > 0 {
-		return nil
-	}
-	totalT := record.InputTokens + record.OutputTokens
-	return []LogEntry{{
-		Time:          "实时",
-		Timestamp:     now,
-		Tool:          "冰茶 AI",
-		Model:         "Gemini 3.5 Flash",
-		InputTokens:   record.InputTokens,
-		OutputTokens:  record.OutputTokens,
-		TotalTokens:   totalT,
-		InputCached:   record.CachedTokens,
-		InputUncached: uncached,
-	}}
+	return nil
 }
 
 // ccswitchTodayModels 拿今天 cc-switch.db 里出现过的 model 集合 (归一化后),
@@ -731,7 +647,7 @@ func getHistoricalUsage(days int) HistoryResponse {
 	}
 
 	// 与 Python 版完全一致的工具和模型列表
-	tools := []string{"冰茶 AI", "Hermes", "Codex", "Other"}
+	tools := []string{"Hermes", "Codex", "Other"}
 	models := []string{"deepseek-v4-flash", "gemini 3.5 flash", "deepseek-v4-pro", "gpt-5.5", "deepseek-v4-flash-free", "Other"}
 
 	dateIdx := map[string]int{}
