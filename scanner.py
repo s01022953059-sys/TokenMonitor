@@ -503,9 +503,10 @@ def get_historical_usage(days=30):
         date_list.append(d.strftime("%Y-%m-%d"))
 
     # 工具归一化映射
+    # v1.3.91 修复: 加 OpenCode (cc-switch.db 里有 11 条 opencode app_type 请求)
     # v1.3.90 移除 "冰茶 AI" 项: 冰茶 AI 客户端只是 IDE/代理入口, scanner 不再
     # 单独算它 (避免跟 cc-switch Codex 代理的双计). 流量归到真实调用工具.
-    tools = ["Hermes", "Codex", "Other"]
+    tools = ["Hermes", "Codex", "Claude", "OpenCode", "Other"]
 
     def get_normalized_tool(app_type):
         return _normalize_app_type(app_type)
@@ -622,6 +623,8 @@ def get_historical_usage(days=30):
             model_data[m_norm][d_str] += tokens
 
     # --- 填充 Antigravity 数据 ---
+    # v1.3.90 起冰茶 AI 降级为数据源, scanner 不再产出 events. 仍保留这段读取
+    # 逻辑作为历史/调试用, 写 tool_data 改用 dict.setdefault 防止 KeyError
     if os.path.exists(ANTIGRAVITY_STATS_PATH):
         try:
             with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
@@ -634,7 +637,11 @@ def get_historical_usage(days=30):
                     output_t = record.get("outputTokens", 0)
                     tokens = input_t + output_t
                     daily_totals[d_str] += tokens
+                    # 注意: 写 tool_data 时用 setdefault, 避免 KeyError
+                    # (冰茶 AI 不在 tools list 里, 这条访问会抛错)
+                    tool_data.setdefault("Antigravity", {}).setdefault(d_str, 0)
                     tool_data["Antigravity"][d_str] += tokens
+                    model_data.setdefault("gemini 3.5 flash", {}).setdefault(d_str, 0)
                     model_data["gemini 3.5 flash"][d_str] += tokens
         except Exception as e:
             print(f"[-] 历史扫描 冰茶 AI 出错: {e}")

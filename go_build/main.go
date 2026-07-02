@@ -647,7 +647,7 @@ func getHistoricalUsage(days int) HistoryResponse {
 	}
 
 	// 与 Python 版完全一致的工具和模型列表
-	tools := []string{"Hermes", "Codex", "Other"}
+	tools := []string{"Hermes", "Codex", "Claude", "OpenCode", "Other"}
 	models := []string{"deepseek-v4-flash", "gemini 3.5 flash", "deepseek-v4-pro", "gpt-5.5", "deepseek-v4-flash-free", "Other"}
 
 	dateIdx := map[string]int{}
@@ -748,8 +748,14 @@ func getHistoricalUsage(days int) HistoryResponse {
 				tokens := record.InputTokens + record.OutputTokens
 				idx := dateIdx[dStr]
 				dailyTotals[idx] += tokens
-				toolData["Antigravity"][idx] += tokens
-				modelData["gemini 3.5 flash"][idx] += tokens
+				// v1.3.91: 用 if _, ok := 防止 toolData 缺 "Antigravity" key 时 panic
+				// (v1.3.90 起冰茶 AI 降级为数据源, tools list 不含 Antigravity)
+				if _, ok := toolData["Antigravity"]; ok {
+					toolData["Antigravity"][idx] += tokens
+				}
+				if _, ok := modelData["gemini 3.5 flash"]; ok {
+					modelData["gemini 3.5 flash"][idx] += tokens
+				}
 			}
 		}
 	}
