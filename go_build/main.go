@@ -183,6 +183,15 @@ func normalizeModelName(rawModel string) string {
 		"qwen3.6-plus-vl": "qwen3.6-plus-vl",
 		"qwen3.7-plus":    "qwen3.7-plus",
 		"qwen3.7-max":     "qwen3.7-max",
+		// v1.3.92 修复: Go 端 by_model 出现 "Other: 1.6B" 而 Python 总数 ~3.5B.
+		// 根因 Go 端别名表缺 minimax-m2.7 / -highspeed, 不同 prefix 的子型号
+		// 在最后 return s 时各算一个, 被 by_model 各自成项累加成 Other.
+		// 修法: 给每个有 -highspeed / -free 等子变体的 model 家族加前缀折叠规则.
+		// 注: gpt-5.4 和 gpt-5.4-mini 是两个真不同模型 (mini 是轻量版), 不折叠
+		"minimax-m2.7":           "minimax-m2.7",
+		"minimax-m2.7-highspeed": "minimax-m2.7",
+		"minimax-m3":            "minimax-m3",
+		"minimax-m3-free":       "minimax-m3",
 	}
 	if v, ok := aliases[s]; ok {
 		return v
@@ -190,6 +199,10 @@ func normalizeModelName(rawModel string) string {
 	// 启发式: qwen3.6-plus 家族折叠 (排除 vl 变体)
 	if strings.HasPrefix(s, "qwen3.6-plus") && s != "qwen3.6-plus-vl" {
 		return "qwen3.6-plus"
+	}
+	// v1.3.92 修复: minimax 家族前缀折叠 (排除 -m3 系列以保留 m2/m3 区分)
+	if strings.HasPrefix(s, "minimax-m2") && !strings.HasPrefix(s, "minimax-m3") {
+		return "minimax-m2.7"
 	}
 	return s
 }
@@ -619,17 +632,12 @@ func normalizeAppTypeForCCSwitch(appType string) string {
 }
 
 func getNormalizedModel(modelName string, models []string) string {
-	if modelName == "" {
-		return "Other"
-	}
-	lower := strings.ToLower(strings.TrimSpace(modelName))
-	// 长前缀优先匹配
-	for _, m := range models {
-		if m != "Other" && strings.Contains(lower, m) {
-			return m
-		}
-	}
-	return "Other"
+	// v1.3.92 标记为 deprecated: 子串匹配会把 gpt-5.5 误匹配到 gpt-5.4,
+	// 且会漏掉 cc-switch 出现但不在 models 列表的 model (全部归 Other, 1.6B 累加 bug).
+	// 直接用 normalizeModelName (含 minimax/gpt-5.4 等家族折叠规则),
+	// 然后在调用方检查 modelData 是否含此 key, 不含就归 Other.
+	_ = models
+	return normalizeModelName(modelName)
 }
 
 func getHistoricalUsage(days int) HistoryResponse {
@@ -646,9 +654,66 @@ func getHistoricalUsage(days int) HistoryResponse {
 		dateList[i] = d.Format("2006-01-02")
 	}
 
-	// 与 Python 版完全一致的工具和模型列表
+	// v1.3.92: 不再硬编码 models 列表, 改成动态扫描 cc-switch + Hermes
+	// 实际出现的 model (通过 normalizeModelName 折叠去重), 跟 Python 版一致.
+	// 修法前 models 只有 5 个 model + Other, 其他像 minimax-m3 / gpt-5.4 等
+	// 在 cc-switch 出现但不在列表, 全被归到 Other (1.6B 累加 bug).
 	tools := []string{"Hermes", "Codex", "Claude", "OpenCode", "Other"}
-	models := []string{"deepseek-v4-flash", "gemini 3.5 flash", "deepseek-v4-pro", "gpt-5.5", "deepseek-v4-flash-free", "Other"}
+	allModels := map[string]struct{}{}
+	// 扫描 cc-switch (含 modelNorm 折叠)
+	if _, err := os.Stat(ccSwitchDBPath()); err == nil {
+		db, _ := sql.Open("sqlite", ccSwitchDBPath())
+		if db != nil {
+			rows, _ := db.Query(`
+				SELECT DISTINCT model FROM proxy_request_logs
+				WHERE created_at >= ? AND status_code = 200
+			`, startTimestamp)
+			if rows != nil {
+				for rows.Next() {
+					var m string
+					if err := rows.Scan(&m); err == nil {
+						if m != "" {
+							allModels[normalizeModelName(m)] = struct{}{}
+						}
+					}
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+	// 扫描 Hermes
+	if _, err := os.Stat(hermesDBPath()); err == nil {
+		db, _ := sql.Open("sqlite", hermesDBPath())
+		if db != nil {
+			rows, _ := db.Query(`
+				SELECT DISTINCT model FROM sessions WHERE started_at >= ?
+			`, startTimestamp)
+			if rows != nil {
+				for rows.Next() {
+					var m string
+					if err := rows.Scan(&m); err == nil {
+						if m != "" {
+							allModels[normalizeModelName(m)] = struct{}{}
+						}
+					}
+				}
+				rows.Close()
+			}
+			db.Close()
+		}
+	}
+	// 其他常见 model (可能没在 cc-switch/Hermes 但会出现在 Antigravity stats 或 by_history 跨期)
+	allModels["gemini 3.5 flash"] = struct{}{}
+	// 排序 (Other 放最后) — 去掉 Other 再加末尾, 跟 Python 端一致
+	models := make([]string, 0, len(allModels))
+	for m := range allModels {
+		if m != "Other" {
+			models = append(models, m)
+		}
+	}
+	sort.Strings(models)
+	models = append(models, "Other")
 
 	dateIdx := map[string]int{}
 	for i, d := range dateList {
@@ -689,7 +754,12 @@ func getHistoricalUsage(days int) HistoryResponse {
 					dailyTotals[idx] += tokens
 					tNorm := getNormalizedTool(appType.String)
 					toolData[tNorm][idx] += tokens
-					mNorm := getNormalizedModel(model.String, models)
+					// v1.3.92: 直接用 normalizeModelName (v1.3.90 加 minimax / gpt-5.4 折叠),
+					// 不用 getNormalizedModel (基于子串匹配, 容易把 gpt-5.5 误匹配到 gpt-5.4)
+					mNorm := normalizeModelName(model.String)
+					if _, ok := modelData[mNorm]; !ok {
+						mNorm = "Other"
+					}
 					modelData[mNorm][idx] += tokens
 				}
 				rows.Close()
@@ -721,7 +791,10 @@ func getHistoricalUsage(days int) HistoryResponse {
 					tokens := (inputT.Int64) + (cacheReadT.Int64) + (outputT.Int64)
 					dailyTotals[idx] += tokens
 					toolData["Hermes"][idx] += tokens
-					mNorm := getNormalizedModel(model.String, models)
+					mNorm := normalizeModelName(model.String)
+					if _, ok := modelData[mNorm]; !ok {
+						mNorm = "Other"
+					}
 					modelData[mNorm][idx] += tokens
 				}
 				rows.Close()
