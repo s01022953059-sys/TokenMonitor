@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Token Monitor 冒烟测试报告</title>
+<style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #0e1116; color: #c9d1d9; }
+    h1 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+    .summary { display: flex; gap: 16px; margin: 20px 0; }
+    .stat { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 18px; flex: 1; }
+    .stat-num { font-size: 28px; font-weight: 700; color: #f0f6fc; }
+    .stat-label { font-size: 12px; color: #8b949e; text-transform: uppercase; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .card.fail { border-left: 4px solid #f85149; }
+    .card.pass { border-left: 4px solid #3fb950; }
+    .card-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .card-title h2 { margin: 0; font-size: 18px; color: #f0f6fc; }
+    .card-title .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge-pass { background: #238636; color: #fff; }
+    .badge-fail { background: #da3633; color: #fff; }
+    .card-meta { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+    .test-row { padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+    .test-row:last-child { border: 0; }
+    .test-pass::before { content: "✓ "; color: #3fb950; font-weight: 700; }
+    .test-fail::before { content: "✗ "; color: #f85149; font-weight: 700; }
+    .test-fail { color: #ffa198; }
+    .test-msg { color: #6e7681; font-size: 11px; margin-left: 20px; }
+</style>
+</head>
+<body>
+<h1>Token Monitor 冒烟测试报告</h1>
+<p>每次发版前跑 <code>bash tests/smoke.sh --version X.Y.Z</code>, 全过才 release.</p>
+
+<div id="summary" class="summary"></div>
+<div id="reports"></div>
+
+<script>
+async function load() {
+    // 用 fetch 拉 index.json (脚本生成), 不直接列目录 (浏览器不一定能列)
+    let index = [];
+    try {
+        const r = await fetch('index.json', {cache: 'no-store'});
+        if (r.ok) index = await r.json();
+    } catch (e) {
+        document.getElementById('reports').innerHTML = '<p>暂无报告 (运行 <code>bash tests/smoke.sh</code> 第一次后生成 <code>tests/reports/index.json</code>)</p>';
+        return;
+    }
+    if (index.length === 0) {
+        document.getElementById('reports').innerHTML = '<p>暂无报告</p>';
+        return;
+    }
+    // 倒序 (最新在上)
+    index.reverse();
+    // summary
+    const latest = index[0];
+    document.getElementById('summary').innerHTML = `
+        <div class="stat">
+            <div class="stat-num">${latest.passed}/${latest.total}</div>
+            <div class="stat-label">最近一次通过率</div>
+        </div>
+        <div class="stat">
+            <div class="stat-num">${latest.failed}</div>
+            <div class="stat-label">最近一次失败数</div>
+        </div>
+        <div class="stat">
+            <div class="stat-num">${index.length}</div>
+            <div class="stat-label">历史报告数</div>
+        </div>
+    `;
+    // 渲染每份报告
+    const container = document.getElementById('reports');
+    for (const r of index) {
+        const card = document.createElement('div');
+        card.className = 'card ' + (r.failed > 0 ? 'fail' : 'pass');
+        let rows = '';
+        for (const t of (r.results || [])) {
+            const cls = t.status === 'PASS' ? 'test-pass' : 'test-fail';
+            const msg = t.message ? `<div class="test-msg">${escape(t.message)}</div>` : '';
+            rows += `<div class="test-row ${cls}">${escape(t.name)}${msg}</div>`;
+        }
+        card.innerHTML = `
+            <div class="card-title">
+                <h2>${escape(r.label)}</h2>
+                <span class="card-badge badge-${r.failed > 0 ? 'fail' : 'pass'}">${r.failed > 0 ? 'FAIL' : 'PASS'}</span>
+            </div>
+            <div class="card-meta">${escape(r.timestamp)} · ${r.passed}/${r.total} 通过 · ${escape(r.server)}</div>
+            ${rows}
+        `;
+        container.appendChild(card);
+    }
+}
+function escape(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+load();
+</script>
+</body>
+</html>

@@ -1635,7 +1635,14 @@ func main() {
 			w.WriteHeader(200)
 			return
 		}
-		data := getHistoricalUsage(30)
+		// v1.3.92: 解析 days query param (前端 /api/history?days=7 调用)
+		days := 30
+		if v := r.URL.Query().Get("days"); v != "" {
+			if d, err := strconv.Atoi(v); err == nil && d > 0 && d <= 365 {
+				days = d
+			}
+		}
+		data := getHistoricalUsage(days)
 		writeJSON(w, 200, data)
 	})
 

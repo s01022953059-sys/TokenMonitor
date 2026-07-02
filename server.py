@@ -320,9 +320,23 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
-        if self.path == "/api/history":
+        if self.path.startswith("/api/history"):
             try:
-                self._write_json(200, get_historical_usage())
+                # v1.3.92: 解析 days query (前端 /api/history?days=7 调用)
+                # 注意: BaseHTTPRequestHandler 把 query 算在 self.path 里 (不像
+                # 多数 web 框架分 path/query), 所以 urlparse 拿得到
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                days = 30
+                if 'days' in qs:
+                    try:
+                        d = int(qs['days'][0])
+                        if 1 <= d <= 365:
+                            days = d
+                    except (ValueError, IndexError):
+                        pass
+                self._write_json(200, get_historical_usage(days))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

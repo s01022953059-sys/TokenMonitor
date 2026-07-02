@@ -1,0 +1,81 @@
+{
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-40-00Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+    {
+      "name": "/api/app-info 返 200",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/history by_model Other < 5% (防累加 bug)",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/history labels = 30",
+      "status": "FAIL",
+      "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
+    },
+    {
+      "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
+      "status": "FAIL",
+      "message": "malformed result line"
+    },
+    {
+      "name": "<html>",
+      "status": "FAIL",
+      "message": "malformed result line"
+    },
+    {
+      "name": "    <head>",
+      "status": "FAIL",
+      "message": "malformed result line"
+    },
+    {
+      "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
+      "status": "FAIL",
+      "message": "malformed result line"
+    },
+    {
+      "name": "        ",
+      "status": "FAIL",
+      "message": "malformed result line"
+    },
+    {
+      "name": "/api/heatmap days=30 返 days 数组",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/check-update 返 ok+version",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/sessions 返 sessions + total",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+      "status": "PASS",
+      "message": ""
+    },
+    {
+      "name": "server 监听 0.0.0.0:15723",
+      "status": "PASS",
+      "message": ""
+    }
+  ]
+}
