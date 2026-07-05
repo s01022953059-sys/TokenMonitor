@@ -546,5 +546,61 @@
         "message": ""
       }
     ]
+  },
+  {
+    "label": "v1.3.94",
+    "timestamp": "2026-07-05T13-17-02Z",
+    "server": "python",
+    "port": 15723,
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "results": [
+      {
+        "name": "/api/app-info 返 200",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/history by_model Other < 5% (防累加 bug)",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/history labels = 30",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/heatmap days=30 返 days 数组",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/check-update 返 ok+version",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/sessions 返 sessions + total",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+        "status": "PASS",
+        "message": ""
+      },
+      {
+        "name": "server 监听 0.0.0.0:15723",
+        "status": "PASS",
+        "message": ""
+      }
+    ]
   }
 ]

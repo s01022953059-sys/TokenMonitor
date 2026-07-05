@@ -766,6 +766,31 @@
             position: relative;
             outline: 1.5px solid var(--modal-line-color);
         }
+
+        .heatmap-cell-day.is-top {
+            outline: 1.5px solid #f59e0b;
+            box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.6);
+            z-index: 5;
+        }
+        .heatmap-cell-day.is-top::after {
+            content: "🔥";
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            line-height: 1;
+            pointer-events: none;
+            filter: drop-shadow(0 0 2px rgba(255, 100, 0, 0.8));
+            animation: flame-flicker 1.2s ease-in-out infinite alternate;
+        }
+        @keyframes flame-flicker {
+            0%   { transform: translateX(-50%) scale(1)    rotate(-2deg); }
+            25%  { transform: translateX(-50%) scale(1.1)  rotate(2deg); }
+            50%  { transform: translateX(-50%) scale(0.95) rotate(-1deg); }
+            75%  { transform: translateX(-50%) scale(1.08) rotate(3deg); }
+            100% { transform: translateX(-50%) scale(1)    rotate(0deg); }
+        }
         .heatmap-month-labels {
             display: flex;
             gap: 2px;
@@ -996,6 +1021,31 @@
             z-index: 10;
             position: relative;
             outline: 1.5px solid var(--modal-line-color);
+        }
+
+        .heatmap-cell-day.is-top {
+            outline: 1.5px solid #f59e0b;
+            box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.6);
+            z-index: 5;
+        }
+        .heatmap-cell-day.is-top::after {
+            content: "🔥";
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            line-height: 1;
+            pointer-events: none;
+            filter: drop-shadow(0 0 2px rgba(255, 100, 0, 0.8));
+            animation: flame-flicker 1.2s ease-in-out infinite alternate;
+        }
+        @keyframes flame-flicker {
+            0%   { transform: translateX(-50%) scale(1)    rotate(-2deg); }
+            25%  { transform: translateX(-50%) scale(1.1)  rotate(2deg); }
+            50%  { transform: translateX(-50%) scale(0.95) rotate(-1deg); }
+            75%  { transform: translateX(-50%) scale(1.08) rotate(3deg); }
+            100% { transform: translateX(-50%) scale(1)    rotate(0deg); }
         }
         .heatmap-month-labels {
             display: flex;
@@ -2485,7 +2535,10 @@
                             const level = heatLevel(day.tokens);
                             const color = 'var(--heatmap-' + level + ')';
                             const title = day.date + ' (' + weekdayNames[day.weekday] + ') ' + (day.tokens > 0 ? formatTokens(day.tokens) : '无消耗');
-                            gridHtml += '<div class="heatmap-cell-day" data-date="' + day.date +
+                            // v1.3.94: 当前视图区间内用得最狠的一天加 .is-top (火焰燃烧标记)
+                            const isTop = day.tokens > 0 && day.tokens === peakDay.tokens && totalTokens > 0 ? ' is-top' : '';
+                            gridHtml += '<div class="heatmap-cell-day' + isTop +
+                                '" data-date="' + day.date +
                                 '" data-tokens="' + day.tokens +
                                 '" data-level="' + level + '"' +
                                 ' style="background:' + color + ';" title="' + title + '"></div>';
