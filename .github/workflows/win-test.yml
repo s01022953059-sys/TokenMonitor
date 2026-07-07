@@ -1,0 +1,135 @@
+name: Win CI
+
+# Token Monitor Windows CI
+# 在 windows-latest runner 上 build + 启动 Go server + 跑 API 冒烟测试
+# 不需要桌面环境 (用 --server-only 跳过 GUI)
+#
+# 触发: push to main / pull request / 手动 workflow_dispatch
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  win-smoke-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build TokenMonitor.exe
+        working-directory: go_build
+        run: |
+          echo "$env:GITHUB_REF_NAME" > version.txt
+          # 同步 index.html (CI 里没有主目录的 index.html, 用 go_build/static 里已有的)
+          # build 用 -s -w 不用 -H windowsgui (CI 不需要 GUI)
+          go build -ldflags="-s -w" -o TokenMonitor.exe .
+          Write-Host "Build OK: $((Get-Item TokenMonitor.exe).Length) bytes"
+
+      - name: Start server (background)
+        working-directory: go_build
+        run: |
+          # 用 --server-only 跳过 GUI, 只跑 HTTP server
+          $proc = Start-Process -FilePath ".\TokenMonitor.exe" -ArgumentList "--server-only","--port","15723" -PassThru -NoNewWindow
+          $proc.Id | Out-File -FilePath server.pid
+          Write-Host "Server PID: $($proc.Id)"
+
+      - name: Wait for server
+        run: |
+          for ($i = 0; $i -lt 20; $i++) {
+            Start-Sleep -Milliseconds 500
+            try {
+              $r = Invoke-WebRequest -Uri "http://127.0.0.1:15723/api/app-info" -UseBasicParsing -TimeoutSec 2
+              if ($r.StatusCode -eq 200) {
+                Write-Host "Server ready after $i * 500ms"
+                break
+              }
+            } catch {
+              Write-Host "Waiting... ($i)"
+            }
+            if ($i -eq 19) {
+              Write-Host "ERROR: Server failed to start"
+              exit 1
+            }
+          }
+
+      - name: API smoke tests
+        run: |
+          $tests = @(
+            @{ name = "/api/app-info"; url = "http://127.0.0.1:15723/api/app-info"; expect = "version" },
+            @{ name = "/api/usage"; url = "http://127.0.0.1:15723/api/usage"; expect = "by_tool" },
+            @{ name = "/api/history"; url = "http://127.0.0.1:15723/api/history"; expect = "labels" },
+            @{ name = "/api/history?days=7"; url = "http://127.0.0.1:15723/api/history?days=7"; expect = "labels" },
+            @{ name = "/api/heatmap?days=30"; url = "http://127.0.0.1:15723/api/heatmap?days=30"; expect = "days" },
+            @{ name = "/api/check-update"; url = "http://127.0.0.1:15723/api/check-update"; expect = "ok" },
+            @{ name = "/api/sessions"; url = "http://127.0.0.1:15723/api/sessions?days=1&page=1&page_size=1"; expect = "sessions" },
+            @{ name = "/api/heatmap_detail"; url = "http://127.0.0.1:15723/api/heatmap_detail?date=2026-07-07&page=1&page_size=1"; expect = "sessions" }
+          )
+
+          $passed = 0
+          $failed = 0
+          $results = @()
+
+          foreach ($t in $tests) {
+            Write-Host -NoNewline "  [$($t.name)] ... "
+            try {
+              $r = Invoke-WebRequest -Uri $t.url -UseBasicParsing -TimeoutSec 5
+              if ($r.StatusCode -eq 200 -and $r.Content -match $t.expect) {
+                Write-Host "PASS"
+                $passed++
+                $results += @{ name = $t.name; status = "PASS" }
+              } else {
+                Write-Host "FAIL (status=$($r.StatusCode), missing '$($t.expect)')"
+                $failed++
+                $results += @{ name = $t.name; status = "FAIL"; message = "status=$($r.StatusCode)" }
+              }
+            } catch {
+              Write-Host "FAIL (exception: $_)"
+              $failed++
+              $results += @{ name = $t.name; status = "FAIL"; message = "$_" }
+            }
+          }
+
+          Write-Host ""
+          Write-Host "=== Result: $passed/$($tests.Count) passed ==="
+
+          # 生成 JSON 报告
+          $report = @{
+            label = "win-ci-$env:GITHUB_RUN_NUMBER"
+            timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH-mm-ssZ")
+            server = "go-windows"
+            port = 15723
+            total = $tests.Count
+            passed = $passed
+            failed = $failed
+            results = $results
+          }
+          $reportJson = $report | ConvertTo-Json -Depth 5
+          $reportJson | Out-File -FilePath "tests/reports/win-ci-$env:GITHUB_RUN_NUMBER.json"
+
+          if ($failed -gt 0) {
+            Write-Host "FAILED: $failed tests"
+            exit 1
+          }
+          Write-Host "All tests passed"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-test-report
+          path: tests/reports/win-ci-*.json
+
+      - name: Stop server
+        if: always()
+        run: |
+          if (Test-Path go_build/server.pid) {
+            $pid = Get-Content go_build/server.pid
+            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+          }

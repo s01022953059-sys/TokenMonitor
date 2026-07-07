@@ -1593,6 +1593,7 @@ func main() {
 
 	// 解析命令行参数 (feedURL 是包级变量, checkUpdateRemote 会用到)
 	port := defaultPort
+	serverOnly := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
@@ -1602,6 +1603,10 @@ func main() {
 		if args[i] == "--update-feed-url" && i+1 < len(args) {
 			feedURL = args[i+1]
 			i++
+		}
+		if args[i] == "--server-only" {
+			// CI/后台模式: 只跑 HTTP server 不开 GUI (不需要桌面环境)
+			serverOnly = true
 		}
 	}
 
@@ -1771,6 +1776,15 @@ func main() {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	server := &http.Server{Addr: addr}
+
+	// --server-only 模式: 只跑 HTTP server (CI/后台, 不需要桌面环境)
+	if serverOnly {
+		fmt.Printf("[+] Token Monitor (server-only) http://%s\n", addr)
+		if err := server.Serve(ln); err != nil {
+			fmt.Printf("[-] 服务器错误: %v\n", err)
+		}
+		return
+	}
 
 	// v1.3.95: HTTP server 在 goroutine 里跑, 主线程交给 startGUI (WebView2/托盘)
 	go func() {
