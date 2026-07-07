@@ -36,10 +36,22 @@ jobs:
         working-directory: go_build
         run: |
           # 用 --server-only 跳过 GUI, 只跑 HTTP server
-          # 重定向 stdout+stderr 到日志文件, 失败时能看到错误
-          $proc = Start-Process -FilePath ".\TokenMonitor.exe" -ArgumentList "--server-only","--port","15723" -PassThru -NoNewWindow -RedirectStandardOutput "server_stdout.log" -RedirectStandardError "server_stderr.log"
-          $proc.Id | Out-File -FilePath server.pid
-          Write-Host "Server PID: $($proc.Id)"
+          # 用 cmd /c start /b 后台启动 (比 Start-Process 更可靠保持进程存活)
+          cmd /c "start /b TokenMonitor.exe --server-only --port 15723 > server_stdout.log 2> server_stderr.log"
+          Start-Sleep -Seconds 2
+          # 检查进程是否还活着
+          $proc = Get-Process TokenMonitor -ErrorAction SilentlyContinue
+          if ($proc) {
+            $proc.Id | Out-File -FilePath server.pid
+            Write-Host "Server PID: $($proc.Id)"
+          } else {
+            Write-Host "ERROR: Server process not found after start"
+            Write-Host "=== server_stdout.log ==="
+            if (Test-Path go_build/server_stdout.log) { Get-Content go_build/server_stdout.log }
+            Write-Host "=== server_stderr.log ==="
+            if (Test-Path go_build/server_stderr.log) { Get-Content go_build/server_stderr.log }
+            exit 1
+          }
 
       - name: Wait for server
         run: |
