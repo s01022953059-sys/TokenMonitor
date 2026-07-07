@@ -36,7 +36,8 @@ jobs:
         working-directory: go_build
         run: |
           # 用 --server-only 跳过 GUI, 只跑 HTTP server
-          $proc = Start-Process -FilePath ".\TokenMonitor.exe" -ArgumentList "--server-only","--port","15723" -PassThru -NoNewWindow
+          # 重定向 stdout+stderr 到日志文件, 失败时能看到错误
+          $proc = Start-Process -FilePath ".\TokenMonitor.exe" -ArgumentList "--server-only","--port","15723" -PassThru -NoNewWindow -RedirectStandardOutput "server_stdout.log" -RedirectStandardError "server_stderr.log"
           $proc.Id | Out-File -FilePath server.pid
           Write-Host "Server PID: $($proc.Id)"
 
@@ -55,6 +56,10 @@ jobs:
             }
             if ($i -eq 19) {
               Write-Host "ERROR: Server failed to start"
+              Write-Host "=== server_stdout.log ==="
+              if (Test-Path go_build/server_stdout.log) { Get-Content go_build/server_stdout.log }
+              Write-Host "=== server_stderr.log ==="
+              if (Test-Path go_build/server_stderr.log) { Get-Content go_build/server_stderr.log }
               exit 1
             }
           }
