@@ -147,6 +147,6 @@ jobs:
         if: always()
         run: |
           if (Test-Path go_build/server.pid) {
-            $pid = Get-Content go_build/server.pid
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            $procId = Get-Content go_build/server.pid
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
           }
