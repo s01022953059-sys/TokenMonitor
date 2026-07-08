@@ -178,9 +178,11 @@ func onTrayReady(port int, feedURL string) {
 				if isAutoStartEnabled() {
 					disableAutoStart()
 					mAutoStart.Uncheck()
+					injectToast("已取消开机自启", "#6b7280")
 				} else {
 					enableAutoStart()
 					mAutoStart.Check()
+					injectToast("✓ 已设置开机自启", "#3fb950")
 				}
 			case <-mQuit.ClickedCh:
 				guiLog("menu: 退出 clicked")

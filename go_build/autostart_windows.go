@@ -5,13 +5,16 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/windows/registry"
+	ole "github.com/go-ole/go-ole"
+	"github.com/go-ole/go-ole/oleutil"
 )
 
 const autoStartRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
 const autoStartValueName = "TokenMonitor"
-// Win11 的 StartupApproved 会覆盖 Run 项, 必须同时写这里才能生效
 const startupApprovedKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
 
 // isAutoStartEnabled 检查注册表 Run 里有没有 TokenMonitor 条目
@@ -25,8 +28,8 @@ func isAutoStartEnabled() bool {
 	return err == nil
 }
 
-// enableAutoStart 写注册表, 开机自启
-// Win11 需要同时写 Run + StartupApproved (否则任务管理器可能标记为禁用)
+// enableAutoStart 写注册表 Run + StartupApproved + Startup 文件夹快捷方式
+// 三管齐下确保 Win11 开机自启生效
 func enableAutoStart() {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -35,7 +38,7 @@ func enableAutoStart() {
 	}
 	guiLog("enableAutoStart: exePath=%s", exePath)
 
-	// 1. 写 Run 项
+	// 1. 写 Run 注册表项
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE)
 	if err != nil {
 		guiLog("enableAutoStart: CreateKey Run failed: %v", err)
@@ -49,23 +52,28 @@ func enableAutoStart() {
 	k.Close()
 	guiLog("enableAutoStart: Run 项写入成功")
 
-	// 2. 写 StartupApproved 项 (Win11 必需)
-	// 值是 12 字节二进制: 前 4 字节 03=启用, 02=禁用, 后 8 字节全 0
+	// 2. 写 StartupApproved (Win11 必需, 否则任务管理器可能标记为禁用)
 	saKey, _, err := registry.CreateKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
-	if err != nil {
-		guiLog("enableAutoStart: CreateKey StartupApproved failed: %v (非致命, Win10 不需要)", err)
-		return
-	}
-	defer saKey.Close()
-	// 03 00 00 00 00 00 00 00 00 00 00 00 = 启用
-	enabled := []byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-	if err := saKey.SetBinaryValue(autoStartValueName, enabled); err != nil {
-		guiLog("enableAutoStart: SetBinaryValue StartupApproved failed: %v", err)
-	} else {
-		guiLog("enableAutoStart: StartupApproved 写入成功 (03=启用)")
+	if err == nil {
+		enabled := []byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		if err := saKey.SetBinaryValue(autoStartValueName, enabled); err != nil {
+			guiLog("enableAutoStart: SetBinaryValue StartupApproved failed: %v", err)
+		} else {
+			guiLog("enableAutoStart: StartupApproved 写入成功 (03=启用)")
+		}
+		saKey.Close()
 	}
 
-	// 3. 读回验证
+	// 3. 创建 Startup 文件夹快捷方式 (最可靠的方式, Win11 不会拦截)
+	startupDir := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
+	if err := createShortcut(lnkPath, exePath); err != nil {
+		guiLog("enableAutoStart: 创建快捷方式失败: %v", err)
+	} else {
+		guiLog("enableAutoStart: Startup 快捷方式创建成功: %s", lnkPath)
+	}
+
+	// 4. 读回验证
 	k2, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.QUERY_VALUE)
 	if err == nil {
 		val, _, err := k2.GetStringValue(autoStartValueName)
@@ -78,18 +86,17 @@ func enableAutoStart() {
 	fmt.Printf("[autostart] 已启用开机自启: %s\n", exePath)
 }
 
-// disableAutoStart 删注册表条目, 取消自启
+// disableAutoStart 删除所有自启痕迹
 func disableAutoStart() {
 	// 1. 删 Run 项
 	k, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE)
-	if err != nil {
-		return
+	if err == nil {
+		k.DeleteValue(autoStartValueName)
+		k.Close()
+		guiLog("disableAutoStart: Run 项已删除")
 	}
-	k.DeleteValue(autoStartValueName)
-	k.Close()
-	guiLog("disableAutoStart: Run 项已删除")
 
-	// 2. 删 StartupApproved 项
+	// 2. 删 StartupApproved
 	saKey, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
 	if err == nil {
 		saKey.DeleteValue(autoStartValueName)
@@ -97,5 +104,50 @@ func disableAutoStart() {
 		guiLog("disableAutoStart: StartupApproved 已删除")
 	}
 
+	// 3. 删 Startup 快捷方式
+	startupDir := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
+	if err := os.Remove(lnkPath); err == nil {
+		guiLog("disableAutoStart: Startup 快捷方式已删除")
+	}
+
 	fmt.Printf("[autostart] 已取消开机自启\n")
 }
+
+// createShortcut 创建 .lnk 快捷方式 (用 COM WScript.Shell)
+func createShortcut(lnkPath, targetPath string) error {
+	ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
+	defer ole.CoUninitialize()
+
+	clsid, err := ole.CLSIDFromProgID("WScript.Shell")
+	if err != nil {
+		return fmt.Errorf("CLSIDFromProgID: %w", err)
+	}
+	unknown, err := ole.CreateInstance(clsid, nil)
+	if err != nil {
+		return fmt.Errorf("CreateInstance: %w", err)
+	}
+	defer unknown.Release()
+
+	// IUnknown → IDispatch
+	dispatch, err := unknown.QueryInterface(ole.IID_IDispatch)
+	if err != nil {
+		return fmt.Errorf("QueryInterface: %w", err)
+	}
+	defer dispatch.Release()
+
+	ds := oleutil.MustCallMethod(dispatch, "CreateShortcut", lnkPath)
+	shortcut := ds.ToIDispatch()
+	defer shortcut.Release()
+
+	oleutil.MustCallMethod(shortcut, "Item", "TargetPath", targetPath)
+	workDir := filepath.Dir(targetPath)
+	oleutil.MustCallMethod(shortcut, "Item", "WorkingDirectory", workDir)
+	oleutil.MustCallMethod(shortcut, "Item", "WindowStyle", 1)
+	oleutil.MustCallMethod(shortcut, "Save")
+
+	return nil
+}
+
+// 确保 strings 被引用 (避免 import 但未使用)
+var _ = strings.ToLower
