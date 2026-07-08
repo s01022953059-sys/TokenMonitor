@@ -133,6 +133,15 @@ func onTrayReady(port int, feedURL string) {
 			w.SetTitle("Token Monitor")
 			w.SetSize(1280, 800, webview.HintNone)
 
+			// v1.4.01: 注册 JS 桥, 让前端"立即更新"按钮能调 Win 自更新
+			// 前端 JS: if (window.triggerWinUpdate) { window.triggerWinUpdate(); }
+			updatePort := port
+			w.Bind("triggerWinUpdate", func() string {
+				guiLog("JS bridge: triggerWinUpdate called")
+				go doTrayCheckUpdate(updatePort)
+				return "ok"
+			})
+
 			windowMu.Lock()
 			currentWv = w
 			windowMu.Unlock()

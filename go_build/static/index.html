@@ -2325,15 +2325,21 @@
                 if (e.target === aboutModal) aboutModal.classList.remove('active');
             });
 
-            // 立即更新 → 调 Swift 端的 performAutoUpdate
+            // 立即更新 → macOS 走 Swift, Windows 走 WebView2 JS 桥
             aboutUpdateBtn.addEventListener('click', () => {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
+                    // macOS: 调 Swift performAutoUpdate
                     window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'triggerAutoUpdate' });
                     aboutUpdateBtn.disabled = true;
                     aboutUpdateBtn.innerText = '已请求, 请稍候...';
+                } else if (typeof window.triggerWinUpdate === 'function') {
+                    // Windows WebView2: 调 Go 端 doTrayCheckUpdate (下 zip 替换重启)
+                    aboutUpdateBtn.disabled = true;
+                    aboutUpdateBtn.innerText = '正在下载更新...';
+                    window.triggerWinUpdate();
                 } else {
-                    // 浏览器直接打开 index.html 的场景 (开发/调试), 降级提示
-                    if (typeof alert === 'function') alert('当前不是 macOS app 环境, 无法触发应用内更新。\n请用 macOS .app 打开此页面。');
+                    // 浏览器直接打开 (开发/调试)
+                    if (typeof alert === 'function') alert('请在应用内使用更新功能 (macOS .app 或 Windows TokenMonitor.exe)。');
                 }
             });
             // 下载 zip → 调 Swift 端用默认浏览器打开 release 下载页
