@@ -23,9 +23,10 @@ echo "$APP_VERSION" > version.txt
 cp ../index.html static/index.html
 [ -f ../chart.js ] && cp ../chart.js static/chart.js
 
-# v1.3.95: 单 exe, -H windowsgui 隐藏 cmd 窗口
-# 合并了原 launcher 的 WebView2 + HTTP server + 检查更新 toast
-GOOS=windows GOARCH=amd64 go build -ldflags="-H windowsgui -s -w" -o "TokenMonitor.exe" .
+# v1.3.97: 单 exe, -H windowsgui 隐藏 cmd 窗口
+# -X main.appVersion 注入版本号 (不依赖 version.txt, 修复更新检测失败)
+# rsrc.syso (icon.ico) 自动被 go build 链接, 给 exe 加图标
+GOOS=windows GOARCH=amd64 go build -ldflags="-H windowsgui -s -w -X main.appVersion=$APP_VERSION" -o "TokenMonitor.exe" .
 EXE_SIZE=$(du -h "TokenMonitor.exe" | cut -f1)
 echo "[build_windows]   TokenMonitor.exe ($EXE_SIZE)"
 
@@ -36,6 +37,8 @@ echo "[build_windows] [2/3] 打 ZIP"
 STAGE_DIR="$SOURCE_ROOT/build/windows_stage"
 mkdir -p "$STAGE_DIR"
 cp go_build/TokenMonitor.exe "$STAGE_DIR/TokenMonitor.exe"
+# v1.3.97: version.txt 也放进去 (双保险, exe 内已注入版本号)
+cp go_build/version.txt "$STAGE_DIR/version.txt"
 
 cat > "$STAGE_DIR/README.txt" << 'README'
 Token Monitor for Windows

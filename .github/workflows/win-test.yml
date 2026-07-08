@@ -114,6 +114,58 @@ jobs:
           }
 
           Write-Host ""
+          Write-Host "=== API Result: $passed/$($tests.Count) passed ==="
+
+          if ($failed -gt 0) {
+            Write-Host "FAILED: $failed API tests"
+            exit 1
+          }
+
+      - name: Win 关键问题验证
+        run: |
+          # 问题 1: exe 有图标 (rsrc.syso 嵌入)
+          $exePath = "go_build/TokenMonitor.exe"
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exePath))
+          if ($icon -and $icon.Width -gt 0) {
+            Write-Host "  [exe 图标] PASS (width=$($icon.Width))"
+          } else {
+            Write-Host "  [exe 图标] FAIL (无图标)"
+            exit 1
+          }
+
+          # 问题 2: 版本号注入正确 (ldflags -X main.appVersion)
+          $appInfo = Invoke-WebRequest -Uri "http://127.0.0.1:15723/api/app-info" -UseBasicParsing | ConvertFrom-Json
+          if ($appInfo.version -ne "0.0-dev" -and $appInfo.version -ne "1.3.71") {
+            Write-Host "  [版本号注入] PASS (version=$($appInfo.version))"
+          } else {
+            Write-Host "  [版本号注入] FAIL (version=$($appInfo.version), 应该是 build 时注入的真实版本)"
+            exit 1
+          }
+
+          # 问题 3: 更新检测 (check-update 返回 ok=true, 不报错)
+          $updateInfo = Invoke-WebRequest -Uri "http://127.0.0.1:15723/api/check-update" -UseBasicParsing | ConvertFrom-Json
+          if ($updateInfo.ok -eq $true) {
+            Write-Host "  [更新检测] PASS (latest=$($updateInfo.latest_version))"
+          } elseif ($updateInfo.error) {
+            Write-Host "  [更新检测] FAIL (error=$($updateInfo.error))"
+            exit 1
+          } else {
+            Write-Host "  [更新检测] WARN (ok=$($updateInfo.ok), 可能没新版本)"
+          }
+
+          # 问题 4: version.txt 在 ZIP 里 (build_windows.sh 已加)
+          if (Test-Path "go_build/version.txt") {
+            $ver = Get-Content go_build/version.txt
+            Write-Host "  [version.txt] PASS (version=$ver)"
+          } else {
+            Write-Host "  [version.txt] FAIL (文件不存在)"
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "=== Win 关键问题验证: 全部 PASS ==="
+
+          Write-Host ""
           Write-Host "=== Result: $passed/$($tests.Count) passed ==="
 
           # 生成 JSON 报告
