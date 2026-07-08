@@ -84,8 +84,8 @@
             --chart-total-point: rgba(0, 0, 0, 0.5);
             --chart-total-point-border: #1e293b;
             --chart-point-border: #ffffff;
-            --aurora-1: rgba(99, 102, 241, 0.08);
-            --aurora-2: rgba(168, 85, 247, 0.06);
+            --aurora-1: rgba(99, 102, 241, 0.12);
+            --aurora-2: rgba(168, 85, 247, 0.10);
             --shadow-card: rgba(0, 0, 0, 0.08);
             --btn-hover-accent: rgba(99, 102, 241, 0.3);
             --btn-hover-text: #4f46e5;
@@ -116,6 +116,16 @@
             align-items: center;
             overflow-x: hidden;
             position: relative;
+        }
+
+        /* 浅色主题加柔和渐变背景纹理, 避免大片纯色空白 */
+        [data-theme="light"] body,
+        body:has([data-theme="light"]) {
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(168, 85, 247, 0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(59, 130, 246, 0.03) 0%, transparent 70%);
+            background-attachment: fixed;
         }
 
         /* 缓慢飘动的梦幻极光背景 */

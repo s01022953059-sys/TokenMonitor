@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ var (
 	guiWg     sync.WaitGroup
 	windowMu  sync.Mutex
 	windowUp  bool
+	currentWv webview.WebView // 当前 WebView2 引用, 给 injectToast 用
 )
 
 // startGUI 启动系统托盘 + WebView2, 阻塞主线程
@@ -85,8 +87,10 @@ func onTrayReady(port int, feedURL string) {
 			w.SetTitle("Token Monitor")
 			w.SetSize(1280, 800, webview.HintNone)
 
-			// v1.3.98: 去掉 Windows 粗边框 (WS_THICKFRAME), 只保留标题栏+关闭按钮
-			thinWindowBorder(w.Window())
+			// 存全局引用, 给 injectToast 用
+			windowMu.Lock()
+			currentWv = w
+			windowMu.Unlock()
 
 			// 先加载暗色 loading 页, 避免白屏/黑边闪烁
 			w.SetHtml(`<!html><body style="background:#0e1116;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#58a6ff;"><div>Token Monitor 加载中...</div></body></html>`)
@@ -113,6 +117,7 @@ func onTrayReady(port int, feedURL string) {
 
 			windowMu.Lock()
 			windowUp = false
+			currentWv = nil
 			windowMu.Unlock()
 
 			// 关窗口后不退出, 回到循环等下次"显示"或"退出"
@@ -153,12 +158,10 @@ func onTrayReady(port int, feedURL string) {
 				default: // channel 满, 跳过
 				}
 			case <-mCheckUpdate.ClickedCh:
-				// 手动点"检查更新": 立刻检查, 有新版则静默自更新
-				go func() {
-					if trySelfUpdate(port) {
-						systray.Quit()
-					}
-				}()
+				// 手动点"检查更新": 先检查 (跟 About 页面一样调 /api/check-update)
+				// 有新版 → toast 提示 + 后台下载替换重启
+				// 失败 → toast 显示错误
+				go doTrayCheckUpdate(port)
 			case <-mAutoStart.ClickedCh:
 				if isAutoStartEnabled() {
 					disableAutoStart()
@@ -200,6 +203,70 @@ func checkAndUpdateTray(port int, mCheckUpdate *systray.MenuItem) {
 		mCheckUpdate.SetTitle("检查更新")
 		systray.SetTooltip("Token Monitor")
 	}
+}
+
+// doTrayCheckUpdate 用户点托盘"检查更新"时调用
+// 1. 调 /api/check-update (server 端走系统代理访问 GitCode)
+// 2. 有新版 → 在主窗口注入 toast "正在下载更新..." → 调 trySelfUpdate 下载替换重启
+// 3. 无新版 → toast "已是最新版本"
+// 4. 失败 → toast 显示错误信息 (不再静默)
+func doTrayCheckUpdate(port int) {
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/check-update", port))
+	if err != nil {
+		injectToast("检查更新失败: 无法连接本地服务", "#f85149")
+		return
+	}
+	defer resp.Body.Close()
+	var data struct {
+		OK              bool   `json:"ok"`
+		LatestVersion   string `json:"latest_version"`
+		UpdateAvailable bool   `json:"update_available"`
+		Error           string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		injectToast("检查更新失败: 解析响应失败", "#f85149")
+		return
+	}
+	if !data.OK {
+		injectToast("检查更新失败: "+data.Error, "#f85149")
+		return
+	}
+	if !data.UpdateAvailable {
+		injectToast("✓ 已是最新版本 (v"+data.LatestVersion+")", "#3fb950")
+		return
+	}
+	// 有新版: 先弹 toast "正在下载", 然后下载替换重启
+	injectToast("发现新版本 v"+data.LatestVersion+", 正在下载更新...", "#f59e0b")
+	if trySelfUpdate(port) {
+		injectToast("下载完成, 正在重启...", "#f59e0b")
+		time.Sleep(2 * time.Second)
+		systray.Quit()
+	} else {
+		injectToast("下载失败, 请检查网络或稍后重试", "#f85149")
+	}
+}
+
+// injectToast 在 WebView2 主窗口注入一个 toast 通知
+func injectToast(msg string, color string) {
+	windowMu.Lock()
+	wv := currentWv
+	windowMu.Unlock()
+	if wv == nil {
+		return // 窗口没开, 无法注入
+	}
+	safeMsg := strings.ReplaceAll(msg, `'`, `\'`)
+	js := fmt.Sprintf(`
+		(function() {
+			var t = document.createElement('div');
+			t.style.cssText = 'position:fixed;top:20px;right:20px;background:%s;color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-family:sans-serif;max-width:400px;';
+			t.innerHTML = '%s';
+			document.body.appendChild(t);
+			setTimeout(function() { if (t.parentNode) t.remove(); }, 8000);
+		})();
+	`, color, safeMsg)
+	wv.Dispatch(func() {
+		wv.Eval(js)
+	})
 }
 
 func onTrayExit() {
