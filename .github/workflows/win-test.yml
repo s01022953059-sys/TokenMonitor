@@ -165,6 +165,137 @@ jobs:
           Write-Host ""
           Write-Host "=== Win 关键问题验证: 全部 PASS ==="
 
+      - name: Win 自更新 + GUI 功能验证
+        run: |
+          $passed = 0
+          $failed = 0
+
+          # 测试 1: 自更新下载链路 (不实际替换 exe, 只验证下载+解压)
+          Write-Host -NoNewline "  [自更新下载] ... "
+          $updateInfo = Invoke-WebRequest -Uri "http://127.0.0.1:15723/api/check-update" -UseBasicParsing | ConvertFrom-Json
+          if ($updateInfo.ok -eq $true -and $updateInfo.latest_version) {
+            $zipUrl = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v$($updateInfo.latest_version)/TokenMonitor-win.zip"
+            try {
+              $tmpZip = "$env:TEMP\tm_selfupdate_test.zip"
+              Invoke-WebRequest -Uri $zipUrl -OutFile $tmpZip -TimeoutSec 30
+              $zipSize = (Get-Item $tmpZip).Length
+              if ($zipSize -gt 100000) {
+                Write-Host "PASS (zip=$($zipSize) bytes, v$($updateInfo.latest_version))"
+                $passed++
+              } else {
+                Write-Host "FAIL (zip too small: $zipSize bytes)"
+                $failed++
+              }
+              Remove-Item $tmpZip -Force
+            } catch {
+              Write-Host "FAIL (download error: $_)"
+              $failed++
+            }
+          } else {
+            Write-Host "SKIP (no update available or check failed)"
+          }
+
+          # 测试 2: GUI 日志文件存在 (说明 systray + GUI 初始化跑过)
+          # 注意: --server-only 模式不写 GUI 日志, 这个测试只在完整模式有意义
+          # CI 当前用 --server-only, 所以这个测试是 SKIP
+          Write-Host -NoNewline "  [GUI 日志] ... "
+          $guiLog = "$env:TEMP\token_monitor_gui.log"
+          if (Test-Path $guiLog) {
+            $logContent = Get-Content $guiLog -Raw
+            if ($logContent -match "onTrayReady") {
+              Write-Host "PASS (systray 初始化日志存在)"
+              $passed++
+            } else {
+              Write-Host "FAIL (日志存在但无 onTrayReady)"
+              $failed++
+            }
+          } else {
+            Write-Host "SKIP (--server-only 模式无 GUI 日志, 正常)"
+          }
+
+          # 测试 3: 托盘检查更新 API 链路 (模拟 doTrayCheckUpdate 的 API 调用)
+          Write-Host -NoNewline "  [托盘更新 API] ... "
+          $trayResp = Invoke-WebRequest -Uri "http://127.0.0.1:15723/api/check-update" -UseBasicParsing -TimeoutSec 10
+          $trayData = $trayResp.Content | ConvertFrom-Json
+          if ($trayData.ok -eq $true) {
+            Write-Host "PASS (ok=true, latest=v$($trayData.latest_version))"
+            $passed++
+          } elseif ($trayData.error) {
+            Write-Host "FAIL (error=$($trayData.error))"
+            $failed++
+          } else {
+            Write-Host "FAIL (unexpected response)"
+            $failed++
+          }
+
+          # 测试 4: 前端"立即更新"JS 桥存在性 (检查 index.html 有 triggerWinUpdate)
+          Write-Host -NoNewline "  [JS 桥 triggerWinUpdate] ... "
+          $indexHtml = Get-Content "go_build/static/index.html" -Raw
+          if ($indexHtml -match "triggerWinUpdate") {
+            Write-Host "PASS (前端有 triggerWinUpdate 调用)"
+            $passed++
+          } else {
+            Write-Host "FAIL (前端缺少 triggerWinUpdate)"
+            $failed++
+          }
+
+          # 测试 5: 自更新 update.bat 模板 (检查 update_windows.go 有 update.bat 逻辑)
+          Write-Host -NoNewline "  [update.bat 模板] ... "
+          $updateGo = Get-Content "go_build/update_windows.go" -Raw
+          if ($updateGo -match "update.bat" -and $updateGo -match "TokenMonitor.exe.new") {
+            Write-Host "PASS (update.bat 替换逻辑存在)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少 update.bat 或 .new 替换逻辑)"
+            $failed++
+          }
+
+          # 测试 6: 托盘菜单项完整性 (检查 gui_windows.go 有所有菜单)
+          Write-Host -NoNewline "  [托盘菜单完整性] ... "
+          $guiGo = Get-Content "go_build/gui_windows.go" -Raw
+          $hasShow = $guiGo -match "显示仪表盘"
+          $hasUpdate = $guiGo -match "检查更新"
+          $hasAutoStart = $guiGo -match "开机自启"
+          $hasQuit = $guiGo -match "退出"
+          if ($hasShow -and $hasUpdate -and $hasAutoStart -and $hasQuit) {
+            Write-Host "PASS (显示仪表盘/检查更新/开机自启/退出 4 项齐全)"
+            $passed++
+          } else {
+            Write-Host "FAIL (菜单缺失: show=$hasShow update=$hasUpdate autostart=$hasAutoStart quit=$hasQuit)"
+            $failed++
+          }
+
+          # 测试 7: 开机自启注册表逻辑 (检查 autostart_windows.go)
+          Write-Host -NoNewline "  [开机自启注册表] ... "
+          $autoGo = Get-Content "go_build/autostart_windows.go" -Raw
+          if ($autoGo -match "CurrentVersion.\\\\Run" -and $autoGo -match "enableAutoStart" -and $autoGo -match "disableAutoStart") {
+            Write-Host "PASS (注册表读写逻辑存在)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少注册表读写逻辑)"
+            $failed++
+          }
+
+          # 测试 8: 系统代理读取 (检查 proxy_windows.go)
+          Write-Host -NoNewline "  [系统代理读取] ... "
+          $proxyGo = Get-Content "go_build/proxy_windows.go" -Raw
+          if ($proxyGo -match "Internet Settings" -and $proxyGo -match "ProxyServer" -and $proxyGo -match "newProxyHTTPClient") {
+            Write-Host "PASS (注册表代理读取逻辑存在)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少代理读取逻辑)"
+            $failed++
+          }
+
+          Write-Host ""
+          Write-Host "=== Win 自更新+GUI 验证: $passed passed, $failed failed ==="
+
+          if ($failed -gt 0) {
+            Write-Host "FAILED: $failed tests"
+            exit 1
+          }
+          Write-Host "All GUI/update tests passed"
+
           Write-Host ""
           Write-Host "=== Result: $passed/$($tests.Count) passed ==="
 
