@@ -8,7 +8,9 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"runtime"
 	"sync"
 	"time"
@@ -47,6 +49,7 @@ func onTrayReady(port int, feedURL string) {
 	// 菜单
 	mShow := systray.AddMenuItem("显示仪表盘", "打开/聚焦 Token Monitor 窗口")
 	systray.AddSeparator()
+	mCheckUpdate := systray.AddMenuItem("检查更新", "检查是否有新版本")
 	mAutoStart := systray.AddMenuItem("开机自启", "开机时自动启动 Token Monitor")
 	// 初始状态: 读注册表判断是否已设自启
 	if isAutoStartEnabled() {
@@ -121,6 +124,22 @@ func onTrayReady(port int, feedURL string) {
 	// 初始显示窗口
 	showChan <- struct{}{}
 
+	// 后台定时检查更新, 有新版给托盘菜单加红点 + 改标题
+	go func() {
+		time.Sleep(10 * time.Second)
+		checkAndUpdateTray(port, mCheckUpdate)
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				checkAndUpdateTray(port, mCheckUpdate)
+			case <-exitChan:
+				return
+			}
+		}
+	}()
+
 	// 菜单事件
 	go func() {
 		for {
@@ -130,6 +149,13 @@ func onTrayReady(port int, feedURL string) {
 				case showChan <- struct{}{}:
 				default: // channel 满, 跳过
 				}
+			case <-mCheckUpdate.ClickedCh:
+				// 手动点"检查更新": 立刻检查, 有新版则静默自更新
+				go func() {
+					if trySelfUpdate(port) {
+						systray.Quit()
+					}
+				}()
 			case <-mAutoStart.ClickedCh:
 				if isAutoStartEnabled() {
 					disableAutoStart()
@@ -145,6 +171,32 @@ func onTrayReady(port int, feedURL string) {
 			}
 		}
 	}()
+}
+
+// checkAndUpdateTray 检查更新, 有新版给托盘菜单加红点 + 改 tooltip
+func checkAndUpdateTray(port int, mCheckUpdate *systray.MenuItem) {
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/check-update", port))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var data struct {
+		OK              bool   `json:"ok"`
+		LatestVersion   string `json:"latest_version"`
+		UpdateAvailable bool   `json:"update_available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return
+	}
+	if data.OK && data.UpdateAvailable {
+		// 有新版: 菜单加红点 + tooltip 提示
+		mCheckUpdate.SetTitle("● 检查更新 (有新版 v" + data.LatestVersion + ")")
+		systray.SetTooltip("Token Monitor - 有新版本 v" + data.LatestVersion + ", 点击检查更新")
+	} else {
+		// 无新版: 恢复正常
+		mCheckUpdate.SetTitle("检查更新")
+		systray.SetTooltip("Token Monitor")
+	}
 }
 
 func onTrayExit() {
