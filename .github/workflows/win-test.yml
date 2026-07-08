@@ -348,14 +348,15 @@ jobs:
             $failed++
           }
 
-          # 测试 12: 窗口重开逻辑 (检查 gui_windows.go 用新 goroutine 创建窗口)
-          Write-Host -NoNewline "  [窗口重开逻辑] ... "
+          # 测试 12: 窗口隐藏/显示逻辑 (v1.4.03: 不重建 webview, 用 Win32 SW_HIDE/SW_SHOW)
+          Write-Host -NoNewline "  [窗口隐藏/显示逻辑] ... "
           $guiGo2 = Get-Content "go_build/gui_windows.go" -Raw
-          if ($guiGo2 -match "func showWebView" -and $guiGo2 -match "LockOSThread" -and $guiGo2 -match "windowUp") {
-            Write-Host "PASS (每次显示用新 goroutine + LockOSThread + windowUp 防重)"
+          $winGo = Get-Content "go_build/winwindow_windows.go" -Raw
+          if ($winGo -match "setupWindowHide" -and $winGo -match "showHiddenWindow" -and $winGo -match "WM_CLOSE" -and $winGo -match "SW_HIDE") {
+            Write-Host "PASS (Win32 subclass 拦截 WM_CLOSE → SW_HIDE, 显示 → SW_RESTORE)"
             $passed++
           } else {
-            Write-Host "FAIL (缺少窗口重开逻辑)"
+            Write-Host "FAIL (缺少窗口隐藏/显示逻辑)"
             $failed++
           }
 
