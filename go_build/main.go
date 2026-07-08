@@ -1001,7 +1001,8 @@ func checkUpdateRemote() map[string]interface{} {
 		return result
 	}
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	// v1.3.98: 走系统代理 (VPN), 不用默认 http.Client (不读 Windows 注册表代理)
+	client := newProxyHTTPClient(8)
 	req, _ := http.NewRequest("GET", feedURL, nil)
 	req.Header.Set("User-Agent", fmt.Sprintf("TokenMonitor/%s (+https://gitcode.com/baggiopeng/TokenMonitor)", currentVer))
 	req.Header.Set("Accept", "application/json, text/plain;q=0.9, */*;q=0.5")

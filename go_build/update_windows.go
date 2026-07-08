@@ -20,7 +20,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const winReleaseURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor-win.zip"
@@ -115,9 +114,9 @@ del "%s" 2>nul
 	return true
 }
 
-// downloadFile 下载 URL 到本地文件
+// downloadFile 下载 URL 到本地文件 (走系统代理)
 func downloadFile(url, dest string) error {
-	client := &http.Client{Timeout: 5 * time.Minute}
+	client := newProxyHTTPClient(300) // 5 分钟超时
 	resp, err := client.Get(url)
 	if err != nil {
 		return err

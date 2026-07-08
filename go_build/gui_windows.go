@@ -83,7 +83,10 @@ func onTrayReady(port int, feedURL string) {
 
 			w := webview.New(false)
 			w.SetTitle("Token Monitor")
-			w.SetSize(1280, 800, webview.HintNone) // HintNone: 可调整大小
+			w.SetSize(1280, 800, webview.HintNone)
+
+			// v1.3.98: 去掉 Windows 粗边框 (WS_THICKFRAME), 只保留标题栏+关闭按钮
+			thinWindowBorder(w.Window())
 
 			// 先加载暗色 loading 页, 避免白屏/黑边闪烁
 			w.SetHtml(`<!html><body style="background:#0e1116;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#58a6ff;"><div>Token Monitor 加载中...</div></body></html>`)
