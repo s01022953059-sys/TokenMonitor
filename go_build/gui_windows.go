@@ -1,7 +1,8 @@
 //go:build windows
 
 // Token Monitor Windows GUI
-// v1.4.02: 单 exe = HTTP server + WebView2 + 系统托盘 + 自更新
+// v1.4.03: 窗口只创建一次, 关窗口=隐藏, 托盘"显示"=ShowWindow
+// 不再 Destroy+重新 New webview (COM apartment 绑定线程, 重建会失败)
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	webview "github.com/jchv/go-webview2"
 	"github.com/getlantern/systray"
@@ -25,9 +27,9 @@ var trayIconBytes []byte
 var (
 	exitChan  = make(chan struct{})
 	guiWg     sync.WaitGroup
-	windowMu  sync.Mutex
-	windowUp  bool
 	currentWv webview.WebView
+	windowReady bool
+	windowMu  sync.Mutex
 	guiPort   int
 )
 
@@ -46,7 +48,8 @@ func startGUI(port int, feedURL string) {
 	systray.Run(func() {
 		onTrayReady(port, feedURL)
 	}, func() {
-		guiLog("onTrayExit")
+		guiLog("onTrayExit, forceCloseWindow")
+		forceCloseWindow()
 		guiWg.Wait()
 	})
 }
@@ -67,8 +70,74 @@ func onTrayReady(port int, feedURL string) {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "关闭 Token Monitor")
 
-	// 初始显示
-	go showWebView(port)
+	// v1.4.03: 窗口只创建一次, 在独占线程上跑消息循环
+	// 关窗口 = WM_CLOSE 被拦截 → SW_HIDE (窗口对象不销毁)
+	// 托盘"显示" = PostMessage(WM_USER_SHOW) → SW_RESTORE
+	guiWg.Add(1)
+	go func() {
+		defer guiWg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				guiLog("PANIC in webview goroutine: %v", r)
+			}
+		}()
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		guiLog("creating webview (only once)")
+		var w webview.WebView
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					guiLog("PANIC in webview.New: %v", r)
+				}
+			}()
+			w = webview.New(false)
+		}()
+		if w == nil {
+			guiLog("webview.New returned nil")
+			systray.SetTooltip("Token Monitor - WebView2 初始化失败")
+			return
+		}
+		guiLog("webview created OK")
+
+		w.SetTitle("Token Monitor")
+		w.SetSize(1280, 800, webview.HintNone)
+
+		// JS 桥
+		updatePort := port
+		w.Bind("triggerWinUpdate", func() string {
+			guiLog("JS bridge: triggerWinUpdate")
+			go doTrayCheckUpdate(updatePort)
+			return "ok"
+		})
+
+		windowMu.Lock()
+		currentWv = w
+		windowReady = true
+		windowMu.Unlock()
+
+		// 安装 WM_CLOSE 拦截 (关窗口按钮 → 隐藏)
+		setupWindowHide(w.Window())
+
+		// loading 页
+		w.SetHtml(`<!html><body style="background:#0e1116;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#58a6ff;"><div>Token Monitor 加载中...</div></body></html>`)
+
+		// 500ms 后导航
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			w.Dispatch(func() {
+				w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
+			})
+		}()
+
+		// 检查更新循环
+		go startUpdateCheckLoop(w, port)
+
+		guiLog("calling w.Run() (message loop, blocks forever until forceClose)")
+		w.Run()
+		guiLog("w.Run() returned")
+	}()
 
 	// 后台定时检查更新
 	go func() {
@@ -92,7 +161,16 @@ func onTrayReady(port int, feedURL string) {
 			select {
 			case <-mShow.ClickedCh:
 				guiLog("menu: 显示仪表盘 clicked")
-				go showWebView(port)
+				// 如果窗口已创建 → ShowWindow; 否则等创建
+				windowMu.Lock()
+				ready := windowReady
+				windowMu.Unlock()
+				if ready {
+					guiLog("showHiddenWindow called")
+					showHiddenWindow()
+				} else {
+					guiLog("window not ready yet, skip")
+				}
 			case <-mCheckUpdate.ClickedCh:
 				guiLog("menu: 检查更新 clicked")
 				go doTrayCheckUpdate(port)
@@ -111,96 +189,6 @@ func onTrayReady(port int, feedURL string) {
 				return
 			}
 		}
-	}()
-}
-
-// showWebView 在新 goroutine + 新 OS thread 上创建 WebView2 窗口
-// v1.4.02: 每次都用新 thread, 避免 Destroy 后同线程重新 New 失败
-func showWebView(port int) {
-	windowMu.Lock()
-	if windowUp {
-		windowMu.Unlock()
-		guiLog("showWebView: already up, skip")
-		return
-	}
-	windowUp = true
-	windowMu.Unlock()
-
-	guiWg.Add(1)
-	go func() {
-		defer guiWg.Done()
-		// 每次都 LockOSThread, 确保WebView2 在独占线程上创建+销毁
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-
-		// panic recovery
-		defer func() {
-			if r := recover(); r != nil {
-				guiLog("PANIC in showWebView: %v", r)
-				systray.SetTooltip("Token Monitor - 窗口创建失败")
-			}
-			windowMu.Lock()
-			windowUp = false
-			currentWv = nil
-			windowMu.Unlock()
-		}()
-
-		guiLog("showWebView: creating webview")
-		var w webview.WebView
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					guiLog("PANIC in webview.New: %v", r)
-				}
-			}()
-			w = webview.New(false)
-		}()
-		if w == nil {
-			guiLog("showWebView: webview.New returned nil")
-			return
-		}
-		guiLog("showWebView: webview created OK")
-
-		w.SetTitle("Token Monitor")
-		w.SetSize(1280, 800, webview.HintNone)
-
-		// JS 桥: 前端"立即更新"调 triggerWinUpdate
-		updatePort := port
-		w.Bind("triggerWinUpdate", func() string {
-			guiLog("JS bridge: triggerWinUpdate called")
-			go doTrayCheckUpdate(updatePort)
-			return "ok"
-		})
-
-		windowMu.Lock()
-		currentWv = w
-		windowMu.Unlock()
-
-		// 暗色 loading 页
-		w.SetHtml(`<!html><body style="background:#0e1116;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#58a6ff;"><div>Token Monitor 加载中...</div></body></html>`)
-
-		// 500ms 后导航到仪表盘
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			w.Dispatch(func() {
-				w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
-			})
-		}()
-
-		// 检查更新循环 (随窗口生命周期)
-		updateDone := make(chan struct{})
-		go func() {
-			startUpdateCheckLoop(w, port)
-			close(updateDone)
-		}()
-
-		guiLog("showWebView: calling w.Run()")
-		w.Run()
-		guiLog("showWebView: w.Run() returned, destroying")
-		w.Destroy()
-		<-updateDone
-
-		guiLog("showWebView: window closed, goroutine exiting")
 	}()
 }
 
@@ -282,7 +270,6 @@ func doTrayCheckUpdate(port int) {
 		injectToast("✓ 已是最新版本 (v"+data.LatestVersion+")", "#3fb950")
 		return
 	}
-	// 有新版 → 下载 + 进度
 	injectToast("发现新版本 v"+data.LatestVersion+", 正在下载...", "#f59e0b")
 	systray.SetTooltip("Token Monitor - 正在下载 v" + data.LatestVersion + "...")
 
@@ -302,7 +289,7 @@ func injectToast(msg string, color string) {
 	wv := currentWv
 	windowMu.Unlock()
 	if wv == nil {
-		guiLog("injectToast: window closed, skip (msg=%s)", msg)
+		guiLog("injectToast: window not ready, skip (msg=%s)", msg)
 		return
 	}
 	safeMsg := strings.ReplaceAll(msg, `'`, `\'`)
@@ -319,3 +306,6 @@ func injectToast(msg string, color string) {
 		wv.Eval(js)
 	})
 }
+
+// 引用 unsafe 包 (w.Window() 返回 unsafe.Pointer)
+var _ unsafe.Pointer

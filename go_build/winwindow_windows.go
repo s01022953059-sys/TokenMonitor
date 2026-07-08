@@ -8,39 +8,90 @@ import (
 )
 
 var (
-	user32                       = syscall.NewLazyDLL("user32.dll")
-	procSetWindowLongPtrW        = user32.NewProc("SetWindowLongPtrW")
-	procGetWindowLongPtrW        = user32.NewProc("GetWindowLongPtrW")
-	procSetWindowPos             = user32.NewProc("SetWindowPos")
+	pUser32                       = syscall.NewLazyDLL("user32.dll")
+	pSetWindowLongPtrW            = pUser32.NewProc("SetWindowLongPtrW")
+	pGetWindowLongPtrW            = pUser32.NewProc("GetWindowLongPtrW")
+	pCallWindowProcW              = pUser32.NewProc("CallWindowProcW")
+	pShowWindow                   = pUser32.NewProc("ShowWindow")
+	pSetForegroundWindow          = pUser32.NewProc("SetForegroundWindow")
+	pPostMessageW                 = pUser32.NewProc("PostMessageW")
+	pIsWindowVisible              = pUser32.NewProc("IsWindowVisible")
 )
 
 const (
-	GWL_STYLE         = ^uintptr(15) // -16 as uintptr
-	WS_OVERLAPPED     = 0x00000000
-	WS_CAPTION        = 0x00C00000
-	WS_SYSMENU        = 0x00080000
-	WS_THICKFRAME     = 0x00040000
-	WS_MINIMIZEBOX    = 0x00020000
-	WS_MAXIMIZEBOX    = 0x00010000
-	SWP_NOMOVE        = 0x0002
-	SWP_NOSIZE        = 0x0001
-	SWP_NOZORDER      = 0x0004
-	SWP_FRAMECHANGED  = 0x0020
+	GWLP_WNDPROC      = ^uintptr(3) // -4 as uintptr
+	WM_CLOSE          = 0x0010
+	WM_USER_SHOW      = 0x0401       // 自定义消息: 显示窗口
+	SW_HIDE           = 0
+	SW_SHOW           = 5
+	SW_RESTORE        = 9
 )
 
-// thinWindowBorder 去掉窗口粗边框 (WS_THICKFRAME) + 最大化按钮,
-// 保留标题栏 + 关闭按钮 + 最小化按钮, 让窗口边框变薄
-func thinWindowBorder(hwnd unsafe.Pointer) {
+var (
+	originalWndProc uintptr // 原始窗口过程
+	hiddenHwnd      uintptr // 当前窗口 HWND (隐藏后保留)
+)
+
+// hideWindowProc 拦截 WM_CLOSE: 不关闭, 改为隐藏
+// WM_USER_SHOW: 显示窗口
+func hideWindowProc(hwnd, msg, wp, lp uintptr) uintptr {
+	if msg == WM_CLOSE {
+		// 隐藏窗口而不是关闭
+		pShowWindow.Call(hwnd, uintptr(SW_HIDE))
+		return 0 // 阻止默认关闭
+	}
+	if msg == WM_USER_SHOW {
+		// 显示并前置
+		pShowWindow.Call(hwnd, uintptr(SW_RESTORE))
+		pSetForegroundWindow.Call(hwnd)
+		return 0
+	}
+	// 其余消息交给原始窗口过程
+	ret, _, _ := pCallWindowProcW.Call(originalWndProc, hwnd, msg, wp, lp)
+	return ret
+}
+
+// setupWindowHide 给窗口安装 WM_CLOSE 拦截 (关窗口按钮 → 隐藏)
+// hwnd 是 webview.Window() 返回的 unsafe.Pointer
+func setupWindowHide(hwnd unsafe.Pointer) {
 	if hwnd == nil {
 		return
 	}
 	h := uintptr(hwnd)
-	// 读当前样式
-	style, _, _ := procGetWindowLongPtrW.Call(h, uintptr(GWL_STYLE))
-	// 去掉 WS_THICKFRAME + WS_MAXIMIZEBOX, 保留其余
-	newStyle := style &^ WS_THICKFRAME &^ WS_MAXIMIZEBOX
-	procSetWindowLongPtrW.Call(h, uintptr(GWL_STYLE), newStyle)
-	// 刷新窗口框架 (SWP_FRAMECHANGED + 不移动 + 不改大小)
-	procSetWindowPos.Call(h, 0, 0, 0, 0, 0,
-		uintptr(SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_FRAMECHANGED))
+	hiddenHwnd = h
+	// 保存原始窗口过程, 安装自定义
+	orig, _, _ := pGetWindowLongPtrW.Call(h, uintptr(GWLP_WNDPROC))
+	originalWndProc = orig
+	pSetWindowLongPtrW.Call(h, uintptr(GWLP_WNDPROC),
+		syscall.NewCallback(hideWindowProc))
+}
+
+// showHiddenWindow 显示已隐藏的窗口
+func showHiddenWindow() bool {
+	if hiddenHwnd == 0 {
+		return false
+	}
+	// 检查窗口是否还存在
+	vis, _, _ := pIsWindowVisible.Call(hiddenHwnd)
+	if vis != 0 {
+		// 已可见, 前置
+		pSetForegroundWindow.Call(hiddenHwnd)
+		return true
+	}
+	// 发 WM_USER_SHOW 让窗口过程处理
+	pPostMessageW.Call(hiddenHwnd, uintptr(WM_USER_SHOW), 0, 0)
+	return true
+}
+
+// forceCloseWindow 强制关闭窗口 (退出时用, 不拦截 WM_CLOSE)
+func forceCloseWindow() {
+	if hiddenHwnd == 0 {
+		return
+	}
+	// 先恢复原始窗口过程 (取消拦截)
+	if originalWndProc != 0 {
+		pSetWindowLongPtrW.Call(hiddenHwnd, uintptr(GWLP_WNDPROC), originalWndProc)
+	}
+	// 发 WM_CLOSE 关闭
+	pPostMessageW.Call(hiddenHwnd, uintptr(WM_CLOSE), 0, 0)
 }
