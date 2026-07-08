@@ -47,6 +47,12 @@ func onTrayReady(port int, feedURL string) {
 	// 菜单
 	mShow := systray.AddMenuItem("显示仪表盘", "打开/聚焦 Token Monitor 窗口")
 	systray.AddSeparator()
+	mAutoStart := systray.AddMenuItem("开机自启", "开机时自动启动 Token Monitor")
+	// 初始状态: 读注册表判断是否已设自启
+	if isAutoStartEnabled() {
+		mAutoStart.Check()
+	}
+	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "关闭 Token Monitor")
 
 	// WebView2 在 locked OS thread 上跑 (Windows GUI 需要消息循环绑定线程)
@@ -113,6 +119,14 @@ func onTrayReady(port int, feedURL string) {
 				select {
 				case showChan <- struct{}{}:
 				default: // channel 满, 跳过
+				}
+			case <-mAutoStart.ClickedCh:
+				if isAutoStartEnabled() {
+					disableAutoStart()
+					mAutoStart.Uncheck()
+				} else {
+					enableAutoStart()
+					mAutoStart.Check()
 				}
 			case <-mQuit.ClickedCh:
 				close(exitChan)
