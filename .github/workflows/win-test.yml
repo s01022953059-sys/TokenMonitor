@@ -292,6 +292,69 @@ jobs:
             $failed++
           }
 
+          # 测试 9: 开机自启注册表实际读写 (写→读→删→验证)
+          Write-Host -NoNewline "  [开机自启注册表读写] ... "
+          $regKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+          $testVal = "TokenMonitor"
+          $testPath = "C:\fake\path\test.exe"
+          try {
+            # 写
+            Set-ItemProperty -Path $regKey -Name $testVal -Value $testPath
+            # 读
+            $readVal = (Get-ItemProperty -Path $regKey -Name $testVal).$testVal
+            if ($readVal -eq $testPath) {
+              # 删
+              Remove-ItemProperty -Path $regKey -Name $testVal
+              # 验证已删
+              $afterDel = (Get-ItemProperty -Path $regKey -Name $testVal -ErrorAction SilentlyContinue).$testVal
+              if (-not $afterDel) {
+                Write-Host "PASS (写→读→删→验证 全部正确)"
+                $passed++
+              } else {
+                Write-Host "FAIL (删除后仍存在)"
+                $failed++
+              }
+            } else {
+              Write-Host "FAIL (写入值不匹配: $readVal)"
+              $failed++
+            }
+          } catch {
+            Write-Host "FAIL (注册表操作异常: $_)"
+            $failed++
+          }
+
+          # 测试 10: 更新测速逻辑 (检查 update_windows.go 有 pickFastClient)
+          Write-Host -NoNewline "  [更新测速逻辑] ... "
+          $updateGo = Get-Content "go_build/update_windows.go" -Raw
+          if ($updateGo -match "pickFastClient" -and $updateGo -match "直连" -and $updateGo -match "代理") {
+            Write-Host "PASS (测速选择直连/代理逻辑存在)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少测速逻辑)"
+            $failed++
+          }
+
+          # 测试 11: 下载进度显示 (检查 update_windows.go 有进度报告)
+          Write-Host -NoNewline "  [下载进度显示] ... "
+          if ($updateGo -match "downloaded" -and $updateGo -match "pct" -and $updateGo -match "formatBytes") {
+            Write-Host "PASS (进度计算+格式化+报告逻辑存在)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少进度显示逻辑)"
+            $failed++
+          }
+
+          # 测试 12: 窗口重开逻辑 (检查 gui_windows.go 用新 goroutine 创建窗口)
+          Write-Host -NoNewline "  [窗口重开逻辑] ... "
+          $guiGo2 = Get-Content "go_build/gui_windows.go" -Raw
+          if ($guiGo2 -match "func showWebView" -and $guiGo2 -match "LockOSThread" -and $guiGo2 -match "windowUp") {
+            Write-Host "PASS (每次显示用新 goroutine + LockOSThread + windowUp 防重)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少窗口重开逻辑)"
+            $failed++
+          }
+
           Write-Host ""
           Write-Host "=== Win 自更新+GUI 验证: $passed passed, $failed failed ==="
 

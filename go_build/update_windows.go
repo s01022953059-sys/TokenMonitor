@@ -1,13 +1,7 @@
 //go:build windows
 
 // Token Monitor Windows 自更新引擎
-// v1.3.95: 静默下载新版本 zip → 解压 → 替换 exe → 重启
-// 流程:
-//   1. 定时检查 /api/check-update, 有新版 → 后台下 TokenMonitor-win.zip
-//   2. 解压到 %TEMP%/tm_update/, 拿到新 TokenMonitor.exe
-//   3. 拷新 exe 为 TokenMonitor.exe.new (同目录)
-//   4. 写 update.bat: 等旧 exe 退出 → ren 旧→.old → ren .new→exe → start 新 → del .old
-//   5. 启动 update.bat (detached), 当前进程退出
+// v1.4.02: 测速选直连/代理 + 下载进度显示
 package main
 
 import (
@@ -20,16 +14,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/getlantern/systray"
 )
 
 const winReleaseURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor-win.zip"
 
-// selfUpdateState 防止重复触发
 var selfUpdateInProgress bool
 
-// trySelfUpdate 检查更新, 有新版静默下载 + 替换 + 重启
-// 返回 true 如果触发了更新 (调用方应退出进程)
+// trySelfUpdate 原始版本 (不显示进度, 给后台定时调用)
 func trySelfUpdate(port int) bool {
+	return trySelfUpdateWithProgress(port)
+}
+
+// trySelfUpdateWithProgress 检查更新 + 测速 + 下载(进度) + 替换 + 重启
+func trySelfUpdateWithProgress(port int) bool {
 	if selfUpdateInProgress {
 		return false
 	}
@@ -52,44 +52,95 @@ func trySelfUpdate(port int) bool {
 	}
 
 	selfUpdateInProgress = true
-	fmt.Printf("[update] 检测到新版本 v%s, 开始静默下载...\n", data.LatestVersion)
+	defer func() { selfUpdateInProgress = false }()
+	guiLog("trySelfUpdate: v%s, 开始测速", data.LatestVersion)
 
-	// 1. 下载 zip
+	// 1. 测速: 直连 vs 代理, 选快的
 	zipURL := fmt.Sprintf(winReleaseURLTemplate, data.LatestVersion)
+	client := pickFastClient(zipURL)
+
+	// 2. 下载 (带进度)
 	tmpZip := filepath.Join(os.TempDir(), "tm_update.zip")
-	if err := downloadFile(zipURL, tmpZip); err != nil {
-		fmt.Printf("[update] 下载失败: %v\n", err)
-		selfUpdateInProgress = false
+	guiLog("trySelfUpdate: 下载 %s", zipURL)
+	injectToast("正在下载更新包...", "#f59e0b")
+
+	downloadResp, err := client.Get(zipURL)
+	if err != nil {
+		guiLog("trySelfUpdate: 下载失败: %v", err)
 		return false
 	}
-	fmt.Printf("[update] 下载完成, 解压中...\n")
+	defer downloadResp.Body.Close()
+	if downloadResp.StatusCode != 200 {
+		guiLog("trySelfUpdate: 下载 HTTP %d", downloadResp.StatusCode)
+		return false
+	}
 
-	// 2. 解压, 找 TokenMonitor.exe
+	totalSize := downloadResp.ContentLength
+	out, err := os.Create(tmpZip)
+	if err != nil {
+		return false
+	}
+
+	// 进度 reader
+	lastReport := time.Now()
+	var downloaded int64
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := downloadResp.Body.Read(buf)
+		if n > 0 {
+			out.Write(buf[:n])
+			downloaded += int64(n)
+			// 每 2 秒报告一次进度
+			if time.Since(lastReport) > 2*time.Second {
+				pct := 0
+				if totalSize > 0 {
+					pct = int(downloaded * 100 / totalSize)
+				}
+				injectToast(fmt.Sprintf("下载中... %d%% (%s / %s)",
+					pct, formatBytes(downloaded), formatBytes(totalSize)), "#f59e0b")
+				systray.SetTooltip(fmt.Sprintf("Token Monitor - 下载更新 %d%%", pct))
+				lastReport = time.Now()
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			out.Close()
+			guiLog("trySelfUpdate: 下载读取失败: %v", err)
+			return false
+		}
+	}
+	out.Close()
+	guiLog("trySelfUpdate: 下载完成 %d bytes", downloaded)
+
+	// 3. 解压
+	injectToast("正在解压...", "#f59e0b")
+	systray.SetTooltip("Token Monitor - 解压中...")
 	tmpDir := filepath.Join(os.TempDir(), "tm_update")
 	os.RemoveAll(tmpDir)
 	if err := unzipTo(tmpZip, tmpDir); err != nil {
-		fmt.Printf("[update] 解压失败: %v\n", err)
-		selfUpdateInProgress = false
+		guiLog("trySelfUpdate: 解压失败: %v", err)
 		return false
 	}
 	newExe := findFile(tmpDir, "TokenMonitor.exe")
 	if newExe == "" {
-		fmt.Printf("[update] 解压后找不到 TokenMonitor.exe\n")
-		selfUpdateInProgress = false
+		guiLog("trySelfUpdate: 解压后找不到 TokenMonitor.exe")
 		return false
 	}
 
-	// 3. 拷新 exe 到当前 exe 旁边, 命名 .new
+	// 4. 替换 exe
+	injectToast("正在安装...", "#f59e0b")
+	systray.SetTooltip("Token Monitor - 安装中...")
 	currentExe, _ := os.Executable()
 	currentDir := filepath.Dir(currentExe)
 	newExePath := filepath.Join(currentDir, "TokenMonitor.exe.new")
 	if err := copyFile(newExe, newExePath); err != nil {
-		fmt.Printf("[update] 拷新 exe 失败: %v\n", err)
-		selfUpdateInProgress = false
+		guiLog("trySelfUpdate: 拷新 exe 失败: %v", err)
 		return false
 	}
 
-	// 4. 写 update.bat
+	// 5. 写 update.bat + 启动
 	batPath := filepath.Join(currentDir, "update.bat")
 	batContent := fmt.Sprintf(`@echo off
 timeout /t 2 /nobreak >nul
@@ -101,40 +152,49 @@ del "%s.old" 2>nul
 del "%s" 2>nul
 `, currentExe, currentExe, newExePath, currentExe, currentExe, batPath)
 	if err := os.WriteFile(batPath, []byte(batContent), 0644); err != nil {
-		fmt.Printf("[update] 写 update.bat 失败: %v\n", err)
-		selfUpdateInProgress = false
 		return false
 	}
 
-	// 5. 启动 update.bat (detached), 当前进程退出
-	fmt.Printf("[update] 启动更新脚本, 进程即将退出...\n")
+	guiLog("trySelfUpdate: 启动 update.bat, 退出")
 	cmd := exec.Command("cmd", "/c", "start", "/min", batPath)
 	cmd.Start()
-
 	return true
 }
 
-// downloadFile 下载 URL 到本地文件 (走系统代理)
-func downloadFile(url, dest string) error {
-	client := newProxyHTTPClient(300) // 5 分钟超时
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
+// pickFastClient 测速: 直连 vs 代理, 选快的
+// GitCode CDN 直连可能被墙, 代理可能慢, 取 3 秒内能连上的
+func pickFastClient(url string) *http.Client {
+	// 先试直连 (3 秒超时)
+	guiLog("pickFastClient: 测速直连...")
+	directClient := &http.Client{Timeout: 3 * time.Second}
+	start := time.Now()
+	resp, err := directClient.Get(url)
+	if err == nil && resp.StatusCode == 200 {
+		directLatency := time.Since(start)
+		resp.Body.Close()
+		guiLog("pickFastClient: 直连 OK (%v), 用直连", directLatency)
+		return &http.Client{Timeout: 5 * time.Minute}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	if resp != nil {
+		resp.Body.Close()
 	}
-	out, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, resp.Body)
-	return err
+	guiLog("pickFastClient: 直连失败 (%v), 用代理", err)
+
+	// 直连失败, 用代理
+	return newProxyHTTPClient(300)
 }
 
-// unzipTo 解压 zip 到目录
+// formatBytes 格式化字节数
+func formatBytes(b int64) string {
+	if b >= 1024*1024 {
+		return fmt.Sprintf("%.1fMB", float64(b)/1024/1024)
+	}
+	if b >= 1024 {
+		return fmt.Sprintf("%.0fKB", float64(b)/1024)
+	}
+	return fmt.Sprintf("%dB", b)
+}
+
 func unzipTo(zipPath, destDir string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -144,7 +204,7 @@ func unzipTo(zipPath, destDir string) error {
 	for _, f := range r.File {
 		path := filepath.Join(destDir, f.Name)
 		if strings.Contains(f.Name, "..") {
-			continue // 防 zip slip
+			continue
 		}
 		if f.FileInfo().IsDir() {
 			os.MkdirAll(path, 0755)
@@ -167,7 +227,6 @@ func unzipTo(zipPath, destDir string) error {
 	return nil
 }
 
-// findFile 在目录里递归找指定文件名
 func findFile(dir, name string) string {
 	var found string
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -179,7 +238,6 @@ func findFile(dir, name string) string {
 	return found
 }
 
-// copyFile 拷贝文件
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
