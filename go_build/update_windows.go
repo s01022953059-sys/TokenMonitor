@@ -1,7 +1,7 @@
 //go:build windows
 
 // Token Monitor Windows 自更新引擎
-// v1.4.02: 测速选直连/代理 + 下载进度显示
+// v1.4.09: HEAD 测连通 + 下载卡死检测 + 自动切代理
 package main
 
 import (
@@ -23,12 +23,11 @@ const winReleaseURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/r
 
 var selfUpdateInProgress bool
 
-// trySelfUpdate 原始版本 (不显示进度, 给后台定时调用)
 func trySelfUpdate(port int) bool {
 	return trySelfUpdateWithProgress(port)
 }
 
-// trySelfUpdateWithProgress 检查更新 + 测速 + 下载(进度) + 替换 + 重启
+// trySelfUpdateWithProgress 检查更新 + 下载(卡死检测+自动切代理) + 替换 + 重启
 func trySelfUpdateWithProgress(port int) bool {
 	if selfUpdateInProgress {
 		return false
@@ -53,70 +52,27 @@ func trySelfUpdateWithProgress(port int) bool {
 
 	selfUpdateInProgress = true
 	defer func() { selfUpdateInProgress = false }()
-	guiLog("trySelfUpdate: v%s, 开始测速", data.LatestVersion)
+	guiLog("trySelfUpdate: v%s", data.LatestVersion)
 
-	// 1. 测速: 直连 vs 代理, 选快的
 	zipURL := fmt.Sprintf(winReleaseURLTemplate, data.LatestVersion)
-	client := pickFastClient(zipURL)
-
-	// 2. 下载 (带进度)
 	tmpZip := filepath.Join(os.TempDir(), "tm_update.zip")
-	guiLog("trySelfUpdate: 下载 %s", zipURL)
+
+	// 下载: 先试直连, 卡死自动切代理
 	injectToast("正在下载更新包...", "#f59e0b")
+	systray.SetTooltip("Token Monitor - 正在下载更新...")
 
-	downloadResp, err := client.Get(zipURL)
+	totalSize, err := downloadWithFallback(zipURL, tmpZip, data.LatestVersion)
 	if err != nil {
-		guiLog("trySelfUpdate: 下载失败: %v", err)
+		guiLog("trySelfUpdate: 下载最终失败: %v", err)
+		injectToast("下载失败: "+err.Error(), "#f85149")
+		systray.SetTooltip("Token Monitor - 下载失败")
 		return false
 	}
-	defer downloadResp.Body.Close()
-	if downloadResp.StatusCode != 200 {
-		guiLog("trySelfUpdate: 下载 HTTP %d", downloadResp.StatusCode)
-		return false
-	}
-
-	totalSize := downloadResp.ContentLength
-	out, err := os.Create(tmpZip)
-	if err != nil {
-		return false
-	}
-
-	// 进度 reader
-	lastReport := time.Now()
-	var downloaded int64
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := downloadResp.Body.Read(buf)
-		if n > 0 {
-			out.Write(buf[:n])
-			downloaded += int64(n)
-			// 每 2 秒报告一次进度
-			if time.Since(lastReport) > 2*time.Second {
-				pct := 0
-				if totalSize > 0 {
-					pct = int(downloaded * 100 / totalSize)
-				}
-				injectToast(fmt.Sprintf("下载中... %d%% (%s / %s)",
-					pct, formatBytes(downloaded), formatBytes(totalSize)), "#f59e0b")
-				systray.SetTooltip(fmt.Sprintf("Token Monitor - 下载更新 %d%%", pct))
-				lastReport = time.Now()
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			out.Close()
-			guiLog("trySelfUpdate: 下载读取失败: %v", err)
-			return false
-		}
-	}
-	out.Close()
-	guiLog("trySelfUpdate: 下载完成 %d bytes", downloaded)
-
-	// 3. 解压
-	injectToast("正在解压...", "#f59e0b")
+	guiLog("trySelfUpdate: 下载完成 %d bytes", totalSize)
+	injectToast("下载完成, 正在解压...", "#f59e0b")
 	systray.SetTooltip("Token Monitor - 解压中...")
+
+	// 解压
 	tmpDir := filepath.Join(os.TempDir(), "tm_update")
 	os.RemoveAll(tmpDir)
 	if err := unzipTo(tmpZip, tmpDir); err != nil {
@@ -129,7 +85,7 @@ func trySelfUpdateWithProgress(port int) bool {
 		return false
 	}
 
-	// 4. 替换 exe
+	// 替换 exe
 	injectToast("正在安装...", "#f59e0b")
 	systray.SetTooltip("Token Monitor - 安装中...")
 	currentExe, _ := os.Executable()
@@ -140,7 +96,7 @@ func trySelfUpdateWithProgress(port int) bool {
 		return false
 	}
 
-	// 5. 写 update.bat + 启动
+	// update.bat
 	batPath := filepath.Join(currentDir, "update.bat")
 	batContent := fmt.Sprintf(`@echo off
 timeout /t 2 /nobreak >nul
@@ -161,30 +117,121 @@ del "%s" 2>nul
 	return true
 }
 
-// pickFastClient 测速: 直连 vs 代理, 选快的
-// GitCode CDN 直连可能被墙, 代理可能慢, 取 3 秒内能连上的
-func pickFastClient(url string) *http.Client {
-	// 先试直连 (3 秒超时)
-	guiLog("pickFastClient: 测速直连...")
-	directClient := &http.Client{Timeout: 3 * time.Second}
-	start := time.Now()
-	resp, err := directClient.Get(url)
-	if err == nil && resp.StatusCode == 200 {
-		directLatency := time.Since(start)
-		resp.Body.Close()
-		guiLog("pickFastClient: 直连 OK (%v), 用直连", directLatency)
-		return &http.Client{Timeout: 5 * time.Minute}
+// downloadWithFallback 先试直连, 10 秒无数据自动切代理
+func downloadWithFallback(url, destPath, version string) (int64, error) {
+	// 1. 先试直连 (HEAD 测连通, 不下载 body)
+	guiLog("downloadWithFallback: 测速直连 HEAD...")
+	directOK := testConnectivity(url, false)
+	if directOK {
+		guiLog("downloadWithFallback: 直连 HEAD OK, 尝试直连下载")
+		n, err := downloadWithStallDetection(url, destPath, false, version)
+		if err == nil {
+			return n, nil
+		}
+		guiLog("downloadWithFallback: 直连下载失败/卡死: %v, 切代理", err)
+		injectToast("直连下载失败, 切换到代理...", "#f59e0b")
+	} else {
+		guiLog("downloadWithFallback: 直连 HEAD 失败, 直接用代理")
 	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-	guiLog("pickFastClient: 直连失败 (%v), 用代理", err)
 
-	// 直连失败, 用代理
-	return newProxyHTTPClient(300)
+	// 2. 代理下载
+	n, err := downloadWithStallDetection(url, destPath, true, version)
+	if err != nil {
+		return 0, fmt.Errorf("代理下载也失败: %w", err)
+	}
+	return n, nil
 }
 
-// formatBytes 格式化字节数
+// testConnectivity HEAD 请求测连通性 (不下载 body)
+func testConnectivity(url string, useProxy bool) bool {
+	var client *http.Client
+	if useProxy {
+		client = newProxyHTTPClient(5)
+	} else {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "TokenMonitor-update-check")
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
+// downloadWithStallDetection 下载文件, 10 秒无新数据则判定卡死
+func downloadWithStallDetection(url, destPath string, useProxy bool, version string) (int64, error) {
+	var client *http.Client
+	if useProxy {
+		client = newProxyHTTPClient(300)
+		guiLog("downloadWithStallDetection: 用代理下载")
+	} else {
+		client = &http.Client{Timeout: 5 * time.Minute}
+		guiLog("downloadWithStallDetection: 用直连下载")
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	totalSize := resp.ContentLength
+	out, err := os.Create(destPath)
+	if err != nil {
+		return 0, err
+	}
+
+	var downloaded int64
+	buf := make([]byte, 32*1024)
+	lastDataTime := time.Now()
+	lastReport := time.Now()
+
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			out.Write(buf[:n])
+			downloaded += int64(n)
+			lastDataTime = time.Now()
+
+			// 每 2 秒报告进度
+			if time.Since(lastReport) > 2*time.Second {
+				pct := 0
+				if totalSize > 0 {
+					pct = int(downloaded * 100 / totalSize)
+				}
+				injectToast(fmt.Sprintf("下载中... %d%% (%s / %s)",
+					pct, formatBytes(downloaded), formatBytes(totalSize)), "#f59e0b")
+				systray.SetTooltip(fmt.Sprintf("Token Monitor - 下载更新 %d%%", pct))
+				lastReport = time.Now()
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			out.Close()
+			return 0, err
+		}
+		// 卡死检测: 10 秒无新数据 → 中断
+		if time.Since(lastDataTime) > 10*time.Second {
+			out.Close()
+			guiLog("downloadWithStallDetection: 10 秒无数据, 判定卡死 (downloaded=%d)", downloaded)
+			return 0, fmt.Errorf("下载卡死 (10s 无数据, 已下载 %s)", formatBytes(downloaded))
+		}
+	}
+	out.Close()
+	guiLog("downloadWithStallDetection: 下载完成 %d bytes", downloaded)
+	return downloaded, nil
+}
+
 func formatBytes(b int64) string {
 	if b >= 1024*1024 {
 		return fmt.Sprintf("%.1fMB", float64(b)/1024/1024)
