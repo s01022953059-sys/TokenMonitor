@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync"
 
 	"golang.org/x/sys/windows/registry"
 	ole "github.com/go-ole/go-ole"
@@ -16,6 +16,9 @@ import (
 const autoStartRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
 const autoStartValueName = "TokenMonitor"
 const startupApprovedKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
+
+// 防止 enable/disable 并发调用导致 COM 状态混乱
+var autoStartMu sync.Mutex
 
 // isAutoStartEnabled 检查注册表 Run 里有没有 TokenMonitor 条目
 func isAutoStartEnabled() bool {
@@ -29,8 +32,17 @@ func isAutoStartEnabled() bool {
 }
 
 // enableAutoStart 写注册表 Run + StartupApproved + Startup 文件夹快捷方式
-// 三管齐下确保 Win11 开机自启生效
 func enableAutoStart() {
+	autoStartMu.Lock()
+	defer autoStartMu.Unlock()
+
+	// panic recovery, 防止 COM 调用崩溃杀掉整个进程
+	defer func() {
+		if r := recover(); r != nil {
+			guiLog("enableAutoStart PANIC: %v", r)
+		}
+	}()
+
 	exePath, err := os.Executable()
 	if err != nil {
 		guiLog("enableAutoStart: os.Executable failed: %v", err)
@@ -52,7 +64,7 @@ func enableAutoStart() {
 	k.Close()
 	guiLog("enableAutoStart: Run 项写入成功")
 
-	// 2. 写 StartupApproved (Win11 必需, 否则任务管理器可能标记为禁用)
+	// 2. 写 StartupApproved
 	saKey, _, err := registry.CreateKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
 	if err == nil {
 		enabled := []byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
@@ -64,7 +76,7 @@ func enableAutoStart() {
 		saKey.Close()
 	}
 
-	// 3. 创建 Startup 文件夹快捷方式 (最可靠的方式, Win11 不会拦截)
+	// 3. 创建 Startup 文件夹快捷方式
 	startupDir := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
 	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
 	if err := createShortcut(lnkPath, exePath); err != nil {
@@ -88,6 +100,15 @@ func enableAutoStart() {
 
 // disableAutoStart 删除所有自启痕迹
 func disableAutoStart() {
+	autoStartMu.Lock()
+	defer autoStartMu.Unlock()
+
+	defer func() {
+		if r := recover(); r != nil {
+			guiLog("disableAutoStart PANIC: %v", r)
+		}
+	}()
+
 	// 1. 删 Run 项
 	k, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE)
 	if err == nil {
@@ -114,10 +135,23 @@ func disableAutoStart() {
 	fmt.Printf("[autostart] 已取消开机自启\n")
 }
 
-// createShortcut 创建 .lnk 快捷方式 (用 COM WScript.Shell)
-func createShortcut(lnkPath, targetPath string) error {
-	ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
-	defer ole.CoUninitialize()
+// createShortcut 创建 .lnk 快捷方式
+// v1.4.07: 修复快速切换崩溃
+// - 不用 MustCallMethod (会 panic), 改用 CallMethod + 错误检查
+// - COM 初始化用 RPC_E_CHANGED_MODE 容忍 (已初始化时不报错)
+// - 不调 CoUninitialize (避免重复反初始化导致后续 COM 调用崩溃)
+func createShortcut(lnkPath, targetPath string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("COM panic: %v", r)
+		}
+	}()
+
+	// CoInitializeEx 容忍已初始化的情况 (返回 S_FALSE 不算错误)
+	// 不调 CoUninitialize — 避免快速切换时重复反初始化崩溃
+	hr := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
+	// S_OK(0) = 首次初始化成功, S_FALSE(1) = 已初始化, RPC_E_CHANGED_MODE = 线程模式冲突
+	_ = hr // 忽略返回值, 不影响后续调用
 
 	clsid, err := ole.CLSIDFromProgID("WScript.Shell")
 	if err != nil {
@@ -129,25 +163,33 @@ func createShortcut(lnkPath, targetPath string) error {
 	}
 	defer unknown.Release()
 
-	// IUnknown → IDispatch
 	dispatch, err := unknown.QueryInterface(ole.IID_IDispatch)
 	if err != nil {
 		return fmt.Errorf("QueryInterface: %w", err)
 	}
 	defer dispatch.Release()
 
-	ds := oleutil.MustCallMethod(dispatch, "CreateShortcut", lnkPath)
+	// 用 CallMethod (返回 error) 而不是 MustCallMethod (会 panic)
+	ds, err := oleutil.CallMethod(dispatch, "CreateShortcut", lnkPath)
+	if err != nil {
+		return fmt.Errorf("CreateShortcut: %w", err)
+	}
 	shortcut := ds.ToIDispatch()
 	defer shortcut.Release()
 
-	oleutil.MustCallMethod(shortcut, "Item", "TargetPath", targetPath)
+	if _, err := oleutil.CallMethod(shortcut, "Item", "TargetPath", targetPath); err != nil {
+		return fmt.Errorf("Item TargetPath: %w", err)
+	}
 	workDir := filepath.Dir(targetPath)
-	oleutil.MustCallMethod(shortcut, "Item", "WorkingDirectory", workDir)
-	oleutil.MustCallMethod(shortcut, "Item", "WindowStyle", 1)
-	oleutil.MustCallMethod(shortcut, "Save")
+	if _, err := oleutil.CallMethod(shortcut, "Item", "WorkingDirectory", workDir); err != nil {
+		return fmt.Errorf("Item WorkingDirectory: %w", err)
+	}
+	if _, err := oleutil.CallMethod(shortcut, "Item", "WindowStyle", 1); err != nil {
+		return fmt.Errorf("Item WindowStyle: %w", err)
+	}
+	if _, err := oleutil.CallMethod(shortcut, "Save"); err != nil {
+		return fmt.Errorf("Save: %w", err)
+	}
 
 	return nil
 }
-
-// 确保 strings 被引用 (避免 import 但未使用)
-var _ = strings.ToLower

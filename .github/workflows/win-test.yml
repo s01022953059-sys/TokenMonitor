@@ -360,6 +360,46 @@ jobs:
             $failed++
           }
 
+          # 测试 13: 自启开关循环不崩溃 (注册表快速写→删→写→删→写)
+          Write-Host -NoNewline "  [自启开关循环] ... "
+          $regKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+          $testVal = "TokenMonitor"
+          if (-not (Test-Path $regKey)) { New-Item -Path $regKey -Force | Out-Null }
+          try {
+            $cycleOK = $true
+            for ($i = 1; $i -le 5; $i++) {
+              # 写
+              Set-ItemProperty -Path $regKey -Name $testVal -Value "C:\test\$i.exe"
+              $v1 = (Get-ItemProperty -Path $regKey -Name $testVal).$testVal
+              if ($v1 -ne "C:\test\$i.exe") { $cycleOK = $false; break }
+              # 删
+              Remove-ItemProperty -Path $regKey -Name $testVal
+              $v2 = (Get-ItemProperty -Path $regKey -Name $testVal -ErrorAction SilentlyContinue).$testVal
+              if ($v2) { $cycleOK = $false; break }
+            }
+            if ($cycleOK) {
+              Write-Host "PASS (5 轮写→删循环无错误)"
+              $passed++
+            } else {
+              Write-Host "FAIL (第 $i 轮循环失败)"
+              $failed++
+            }
+          } catch {
+            Write-Host "FAIL (异常: $_)"
+            $failed++
+          }
+
+          # 测试 14: 自启代码防崩溃 (检查 autostart_windows.go 有 panic recovery + mutex)
+          Write-Host -NoNewline "  [自启防崩溃] ... "
+          $autoGo2 = Get-Content "go_build/autostart_windows.go" -Raw
+          if ($autoGo2 -match "autoStartMu" -and $autoGo2 -match "recover\(\)" -and $autoGo2 -match "CallMethod" -and $autoGo2 -notmatch "MustCallMethod") {
+            Write-Host "PASS (mutex + panic recovery + 不用 MustCallMethod)"
+            $passed++
+          } else {
+            Write-Host "FAIL (缺少防崩溃机制: mutex=$($autoGo2 -match 'autoStartMu') recovery=$($autoGo2 -match 'recover') CallMethod=$($autoGo2 -match 'CallMethod') noMust=$($autoGo2 -notmatch 'MustCallMethod'))"
+            $failed++
+          }
+
           Write-Host ""
           Write-Host "=== Win 自更新+GUI 验证: $passed passed, $failed failed ==="
 
