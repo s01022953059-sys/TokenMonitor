@@ -1327,9 +1327,15 @@
                         </div>
                     </div>
                 </div>
-                <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px;">
+                <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px; flex-wrap: wrap; align-items: center;">
                     <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
                     <button id="aboutDownloadBtn" class="secondary-btn" style="display: none;">下载 zip</button>
+                    <div id="aboutUpdateProgress" style="display: none; flex: 1; min-width: 200px; gap: 8px; align-items: center;">
+                        <div style="flex: 1; height: 8px; background: var(--bg-subtle); border-radius: 4px; overflow: hidden;">
+                            <div id="aboutUpdateProgressFill" style="height: 100%; width: 0%; background: var(--modal-line-color); border-radius: 4px; transition: width 0.3s ease;"></div>
+                        </div>
+                        <span id="aboutUpdateProgressText" style="font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap;">0%</span>
+                    </div>
                 </div>
                 <p style="margin-bottom: 12px; color: var(--text-primary); font-size: 13px; font-weight: 600;">已支持平台</p>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -2332,10 +2338,12 @@
                     window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'triggerAutoUpdate' });
                     aboutUpdateBtn.disabled = true;
                     aboutUpdateBtn.innerText = '已请求, 请稍候...';
+                    showUpdateProgress(0, '准备中...');
                 } else if (typeof window.triggerWinUpdate === 'function') {
                     // Windows WebView2: 调 Go 端 doTrayCheckUpdate (下 zip 替换重启)
                     aboutUpdateBtn.disabled = true;
                     aboutUpdateBtn.innerText = '正在下载更新...';
+                    showUpdateProgress(0, '准备中...');
                     window.triggerWinUpdate();
                 } else {
                     // 浏览器直接打开 (开发/调试)
@@ -2405,6 +2413,21 @@
                 if (db) db.style.display = 'none';
             };
         });
+
+        // ===== 更新进度条 (Mac Swift + Win Go 都调这个) =====
+        function showUpdateProgress(pct, text) {
+            var bar = document.getElementById('aboutUpdateProgress');
+            var fill = document.getElementById('aboutUpdateProgressFill');
+            var ptext = document.getElementById('aboutUpdateProgressText');
+            if (bar) bar.style.display = 'flex';
+            if (fill) fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+            if (ptext) ptext.textContent = text || (Math.round(pct) + '%');
+        }
+        window.__tmSetUpdateProgress = function(pct, text) { showUpdateProgress(pct, text); };
+        window.__tmHideUpdateProgress = function() {
+            var bar = document.getElementById('aboutUpdateProgress');
+            if (bar) bar.style.display = 'none';
+        };
 
         // ===== 活动热力图 =====
         function renderSessionList(sessions, listEl) {

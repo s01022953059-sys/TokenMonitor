@@ -1064,6 +1064,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         guard let window = inProgressUpdateWindow,
               let label = window.contentView?.viewWithTag(9001) as? NSTextField else { return }
         label.stringValue = stage
+        // v1.4.10: 同时推进度到 About 页面的 WebView 进度条
+        // 从 stage 里提取百分比 (如 "下载更新包 (45%, 2300KB / 5100KB)" → 45)
+        var pct = -1
+        if let r = stage.range(of: "\\((\\d+)%", options: .regularExpression) {
+            let numStr = String(stage[r]).replacingOccurrences(of: "(", with: "").replacingOccurrences(of: "%", with: "")
+            pct = Int(numStr) ?? -1
+        }
+        if stage.contains("准备中") || stage.contains("解压") || stage.contains("编译") || stage.contains("准备安装") {
+            pct = 100 // 非下载阶段, 进度条满
+        }
+        if pct >= 0 {
+            let escapedStage = stage.replacingOccurrences(of: "'", with: "\\'")
+            let js = "window.__tmSetUpdateProgress && window.__tmSetUpdateProgress(\(pct), '\(escapedStage)');"
+            webView?.evaluateJavaScript(js, completionHandler: nil)
+        } else {
+            let escapedStage = stage.replacingOccurrences(of: "'", with: "\\'")
+            let js = "window.__tmSetUpdateProgress && window.__tmSetUpdateProgress(0, '\(escapedStage)');"
+            webView?.evaluateJavaScript(js, completionHandler: nil)
+        }
     }
 
     func summarizedReleaseNotes(_ notes: String, limit: Int = 280) -> String {

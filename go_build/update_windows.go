@@ -207,9 +207,12 @@ func downloadWithStallDetection(url, destPath string, useProxy bool, version str
 				if totalSize > 0 {
 					pct = int(downloaded * 100 / totalSize)
 				}
-				injectToast(fmt.Sprintf("下载中... %d%% (%s / %s)",
-					pct, formatBytes(downloaded), formatBytes(totalSize)), "#f59e0b")
+				progressText := fmt.Sprintf("下载中... %d%% (%s / %s)",
+					pct, formatBytes(downloaded), formatBytes(totalSize))
+				injectToast(progressText, "#f59e0b")
 				systray.SetTooltip(fmt.Sprintf("Token Monitor - 下载更新 %d%%", pct))
+				// v1.4.10: 同时更新 About 页面进度条
+				injectProgress(pct, progressText)
 				lastReport = time.Now()
 			}
 		}

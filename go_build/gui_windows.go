@@ -288,6 +288,21 @@ func doTrayCheckUpdate(port int) {
 	}
 }
 
+// injectProgress 更新 About 页面的进度条 (Mac Swift + Win Go 共用 __tmSetUpdateProgress)
+func injectProgress(pct int, text string) {
+	windowMu.Lock()
+	wv := currentWv
+	windowMu.Unlock()
+	if wv == nil {
+		return
+	}
+	safeText := strings.ReplaceAll(text, `'`, `\'`)
+	js := fmt.Sprintf(`window.__tmSetUpdateProgress && window.__tmSetUpdateProgress(%d, '%s');`, pct, safeText)
+	wv.Dispatch(func() {
+		wv.Eval(js)
+	})
+}
+
 func injectToast(msg string, color string) {
 	windowMu.Lock()
 	wv := currentWv
