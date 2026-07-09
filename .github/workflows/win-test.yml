@@ -327,14 +327,14 @@ jobs:
             $failed++
           }
 
-          # 测试 10: 更新测速逻辑 (检查 update_windows.go 有 pickFastClient)
+          # 测试 10: 更新测速+卡死检测逻辑 (v1.4.09: downloadWithFallback + stall detection)
           Write-Host -NoNewline "  [更新测速逻辑] ... "
           $updateGo = Get-Content "go_build/update_windows.go" -Raw
-          if ($updateGo -match "pickFastClient" -and $updateGo -match "直连" -and $updateGo -match "代理") {
-            Write-Host "PASS (测速选择直连/代理逻辑存在)"
+          if ($updateGo -match "downloadWithFallback" -and $updateGo -match "testConnectivity" -and $updateGo -match "downloadWithStallDetection" -and $updateGo -match "代理") {
+            Write-Host "PASS (HEAD 测连通 + 下载卡死检测 + 自动切代理)"
             $passed++
           } else {
-            Write-Host "FAIL (缺少测速逻辑)"
+            Write-Host "FAIL (缺少测速/卡死检测逻辑)"
             $failed++
           }
 
