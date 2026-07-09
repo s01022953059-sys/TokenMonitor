@@ -392,7 +392,7 @@ jobs:
           # 测试 14: 自启代码防崩溃 (检查 autostart_windows.go 有 panic recovery + mutex)
           Write-Host -NoNewline "  [自启防崩溃] ... "
           $autoGo2 = Get-Content "go_build/autostart_windows.go" -Raw
-          if ($autoGo2 -match "autoStartMu" -and $autoGo2 -match "recover\(\)" -and $autoGo2 -match "CallMethod" -and $autoGo2 -notmatch "MustCallMethod") {
+          if ($autoGo2 -match "autoStartMu" -and $autoGo2 -match "recover\(\)" -and $autoGo2 -match "CallMethod" -and $autoGo2 -notmatch "oleutil\.MustCallMethod") {
             Write-Host "PASS (mutex + panic recovery + 不用 MustCallMethod)"
             $passed++
           } else {
