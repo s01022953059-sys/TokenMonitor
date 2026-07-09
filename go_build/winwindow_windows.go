@@ -16,6 +16,8 @@ var (
 	pSetForegroundWindow          = pUser32.NewProc("SetForegroundWindow")
 	pPostMessageW                 = pUser32.NewProc("PostMessageW")
 	pIsWindowVisible              = pUser32.NewProc("IsWindowVisible")
+	pGetSystemMetrics             = pUser32.NewProc("GetSystemMetrics")
+	pMoveWindow                   = pUser32.NewProc("MoveWindow")
 )
 
 const (
@@ -25,6 +27,8 @@ const (
 	SW_HIDE           = 0
 	SW_SHOW           = 5
 	SW_RESTORE        = 9
+	SM_CXSCREEN       = 0            // 屏幕宽
+	SM_CYSCREEN       = 1            // 屏幕高
 )
 
 var (
@@ -94,4 +98,47 @@ func forceCloseWindow() {
 	}
 	// 发 WM_CLOSE 关闭
 	pPostMessageW.Call(hiddenHwnd, uintptr(WM_CLOSE), 0, 0)
+}
+
+// fitWindowToScreen 根据屏幕分辨率调整窗口大小 + 居中
+// v1.4.08: 修复初始化窗口越界 (1280x800 在小屏幕上超出)
+func fitWindowToScreen(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	// 获取屏幕分辨率
+	screenW, _, _ := pGetSystemMetrics.Call(uintptr(SM_CXSCREEN))
+	screenH, _, _ := pGetSystemMetrics.Call(uintptr(SM_CYSCREEN))
+
+	// 窗口不超过屏幕 90%, 最小 900x600
+	maxW := int(float64(screenW) * 0.9)
+	maxH := int(float64(screenH) * 0.9)
+	winW := 1280
+	winH := 800
+	if winW > maxW {
+		winW = maxW
+	}
+	if winH > maxH {
+		winH = maxH
+	}
+	if winW < 900 {
+		winW = 900
+	}
+	if winH < 600 {
+		winH = 600
+	}
+
+	// 居中
+	posX := (int(screenW) - winW) / 2
+	posY := (int(screenH) - winH) / 2
+	if posX < 0 {
+		posX = 0
+	}
+	if posY < 0 {
+		posY = 0
+	}
+
+	// MoveWindow(hwnd, x, y, w, h, repaint)
+	pMoveWindow.Call(hwnd, uintptr(posX), uintptr(posY), uintptr(winW), uintptr(winH), 1)
+	guiLog("fitWindowToScreen: screen=%dx%d window=%dx%d pos=(%d,%d)", screenW, screenH, winW, winH, posX, posY)
 }

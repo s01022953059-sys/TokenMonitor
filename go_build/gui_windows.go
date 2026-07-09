@@ -103,6 +103,8 @@ func onTrayReady(port int, feedURL string) {
 
 		w.SetTitle("Token Monitor")
 		w.SetSize(1280, 800, webview.HintNone)
+		// v1.4.08: 根据屏幕分辨率调整窗口大小 + 居中, 防止越界
+		fitWindowToScreen(uintptr(w.Window()))
 
 		// JS 桥
 		updatePort := port
