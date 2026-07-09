@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 
@@ -85,6 +86,20 @@ func enableAutoStart() {
 		guiLog("enableAutoStart: Startup 快捷方式创建成功: %s", lnkPath)
 	}
 
+	// 4. v1.4.11: 创建 Task Scheduler 任务 (Win11 最可靠, 不受 SmartScreen 拦截)
+	// schtasks /create /tn "TokenMonitor" /tr "\"exe_path\"" /sc ONLOGON /rl LIMITED /f
+	taskCmd := exec.Command("schtasks", "/create",
+		"/tn", "TokenMonitor",
+		"/tr", `"`+exePath+`"`,
+		"/sc", "ONLOGON",
+		"/rl", "LIMITED",
+		"/f")
+	if output, err := taskCmd.CombinedOutput(); err != nil {
+		guiLog("enableAutoStart: Task Scheduler 创建失败: %v, output=%s", err, string(output))
+	} else {
+		guiLog("enableAutoStart: Task Scheduler 创建成功")
+	}
+
 	// 4. 读回验证
 	k2, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.QUERY_VALUE)
 	if err == nil {
@@ -130,6 +145,14 @@ func disableAutoStart() {
 	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
 	if err := os.Remove(lnkPath); err == nil {
 		guiLog("disableAutoStart: Startup 快捷方式已删除")
+	}
+
+	// 4. 删 Task Scheduler 任务
+	delTask := exec.Command("schtasks", "/delete", "/tn", "TokenMonitor", "/f")
+	if output, err := delTask.CombinedOutput(); err != nil {
+		guiLog("disableAutoStart: Task Scheduler 删除失败 (可能不存在): %v", err)
+	} else {
+		guiLog("disableAutoStart: Task Scheduler 已删除, output=%s", string(output))
 	}
 
 	fmt.Printf("[autostart] 已取消开机自启\n")
