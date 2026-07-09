@@ -1803,6 +1803,18 @@ func main() {
 
 	server := &http.Server{Addr: addr}
 
+	// v1.4.12: 社区统计自动上报 (opt-in 默认开启, 每 1 小时)
+	go func() {
+		time.Sleep(30 * time.Second)
+		for {
+			if isOptedIn() {
+				usage := getTodayUsage()
+				reportCommunityStats(&usage)
+			}
+			time.Sleep(1 * time.Hour)
+		}
+	}()
+
 	// --server-only 模式: 只跑 HTTP server (CI/后台, 不需要桌面环境)
 	if serverOnly {
 		fmt.Printf("[+] Token Monitor (server-only) http://%s\n", addr)

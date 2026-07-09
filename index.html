@@ -2763,7 +2763,7 @@
             }).join('');
 
             const optinHtml = optedIn
-                ? '<span style="color:var(--neon-green,#39d353);">✓ 已加入</span>'
+                ? '<span style="color:var(--neon-green,#39d353);">✓ 已加入社区统计</span> <button id="communityOptoutBtn" class="recheck-btn" style="margin-left:8px;font-size:10px;">退出</button>'
                 : '<button id="communityOptinBtn" class="recheck-btn" style="background:var(--tab-active-bg);color:var(--tab-active-text);border:1px solid var(--tab-active-border);">加入社区统计</button>';
 
             const rankHtml = myRank ? '<span style="color:var(--neon-green,#39d353);">你的排名: No.' + myRank + '</span>' : '<span style="color:var(--text-muted);">未上榜</span>';
@@ -2807,9 +2807,23 @@
                     optinBtn.innerText = '加入中...';
                     try {
                         await fetch(API_BASE + '/api/community/optin?enabled=true', {cache: 'no-store'});
-                        loadCommunity(); // 重新加载
+                        loadCommunity();
                     } catch (e) {
                         optinBtn.innerText = '加入失败';
+                    }
+                });
+            }
+            // opt-out 按钮事件
+            const optoutBtn = document.getElementById('communityOptoutBtn');
+            if (optoutBtn) {
+                optoutBtn.addEventListener('click', async () => {
+                    optoutBtn.disabled = true;
+                    optoutBtn.innerText = '退出中...';
+                    try {
+                        await fetch(API_BASE + '/api/community/optin?enabled=false', {cache: 'no-store'});
+                        loadCommunity();
+                    } catch (e) {
+                        optoutBtn.innerText = '退出失败';
                     }
                 });
             }

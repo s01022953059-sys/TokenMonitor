@@ -55,11 +55,11 @@ def get_user_id():
 
 
 def is_opted_in():
-    """检查用户是否 opt-in 社区统计"""
+    """检查用户是否 opt-in 社区统计 (v1.4.12: 默认开启, 用户量小先自动收集)"""
     if not os.path.exists(OPTIN_FILE):
-        return False
+        return True  # 默认开启
     with open(OPTIN_FILE, "r") as f:
-        return f.read().strip().lower() == "true"
+        return f.read().strip().lower() != "false"
 
 
 def set_optin(enabled):

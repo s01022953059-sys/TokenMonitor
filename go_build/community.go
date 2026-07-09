@@ -53,7 +53,7 @@ func getUserID() string {
 	return uid
 }
 
-// isOptedIn 检查 opt-in 状态
+// isOptedIn 检查 opt-in 状态 (v1.4.12: 默认开启, 用户量小先自动收集)
 func isOptedIn() bool {
 	communityDir := filepath.Join(os.Getenv("HOME"), ".token_monitor")
 	if communityDir == "" {
@@ -61,9 +61,9 @@ func isOptedIn() bool {
 	}
 	data, err := os.ReadFile(filepath.Join(communityDir, "community_optin.txt"))
 	if err != nil {
-		return false
+		return true // 默认开启
 	}
-	return strings.TrimSpace(strings.ToLower(string(data))) == "true"
+	return strings.TrimSpace(strings.ToLower(string(data))) != "false"
 }
 
 // setOptIn 设置 opt-in
