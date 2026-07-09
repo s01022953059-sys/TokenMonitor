@@ -86,7 +86,8 @@ jobs:
             @{ name = "/api/heatmap?days=30"; url = "http://127.0.0.1:15723/api/heatmap?days=30"; expect = "days" },
             @{ name = "/api/check-update"; url = "http://127.0.0.1:15723/api/check-update"; expect = "ok" },
             @{ name = "/api/sessions"; url = "http://127.0.0.1:15723/api/sessions?days=1&page=1&page_size=1"; expect = "sessions" },
-            @{ name = "/api/heatmap_detail"; url = "http://127.0.0.1:15723/api/heatmap_detail?date=2026-07-07&page=1&page_size=1"; expect = "sessions" }
+            @{ name = "/api/heatmap_detail"; url = "http://127.0.0.1:15723/api/heatmap_detail?date=2026-07-07&page=1&page_size=1"; expect = "sessions" },
+            @{ name = "/api/community"; url = "http://127.0.0.1:15723/api/community"; expect = "my_id" }
           )
 
           $passed = 0

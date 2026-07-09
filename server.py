@@ -27,8 +27,10 @@ from urllib import request as urlrequest
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
+    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
+    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -400,6 +402,40 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 page = int(qs.get("page", ["1"])[0])
                 page_size = int(qs.get("page_size", ["20"])[0])
                 self._write_json(200, get_session_detail(session_id, timestamp=timestamp, page=page, page_size=page_size))
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+
+        # ─── 社区 Dashboard API ───
+        if self.path == "/api/community" or self.path.startswith("/api/community?"):
+            try:
+                self._write_json(200, get_community_stats())
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+
+        if self.path == "/api/community/optin" or self.path.startswith("/api/community/optin?"):
+            try:
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path)
+                qs = parse_qs(parsed.query)
+                enabled = qs.get("enabled", ["true"])[0].lower() == "true"
+                set_optin(enabled)
+                # 如果开启 opt-in, 立即上报一次
+                if enabled:
+                    try:
+                        report_community_stats(get_today_usage())
+                    except Exception:
+                        pass
+                self._write_json(200, {"ok": True, "opted_in": is_opted_in(), "user_id": get_user_id()})
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+
+        if self.path == "/api/community/report":
+            try:
+                report_community_stats(get_today_usage())
+                self._write_json(200, {"ok": True})
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

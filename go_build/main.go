@@ -1732,6 +1732,31 @@ func main() {
 		}
 		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days, page, pageSize, dateStr))
 	})
+	// 社区 Dashboard API
+	http.HandleFunc("/api/community", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		writeJSON(w, 200, getCommunityStats())
+	})
+	http.HandleFunc("/api/community/optin", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		enabled := r.URL.Query().Get("enabled") != "false"
+		setOptIn(enabled)
+		if enabled {
+			usage := getTodayUsage()
+			go reportCommunityStats(&usage)
+		}
+		writeJSON(w, 200, map[string]interface{}{"ok": true, "opted_in": isOptedIn(), "user_id": getUserID()})
+	})
+	http.HandleFunc("/api/community/report", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		usage := getTodayUsage()
+		ok := reportCommunityStats(&usage)
+		writeJSON(w, 200, map[string]interface{}{"ok": ok})
+	})
+
 	// 静态文件 (嵌入的 index.html + chart.js)
 	staticContent, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticContent))

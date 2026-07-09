@@ -430,6 +430,7 @@
         }
         .history-btn { right: 25px; }
         .heatmap-btn { right: 75px; }
+        .community-btn { right: 125px; }
         .theme-btn { right: 125px; }
         .about-btn { left: 25px; }
 
@@ -1147,6 +1148,14 @@
                 <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
         </button>
+        <button id="communityOpenBtn" class="header-action-btn community-btn" title="社区 Dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+        </button>
         <button id="aboutOpenBtn" class="header-action-btn about-btn" title="关于 Token Monitor">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -1275,6 +1284,19 @@
                         <option value="200">200条/页</option>
                     </select>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 社区 Dashboard 弹窗 -->
+    <div id="communityModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 1080px; width: 94vw; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>🏆 Token Olympics · 社区 Dashboard</h3>
+                <button id="communityCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div id="communityContainer" style="padding: 16px 20px;">
+                <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>
             </div>
         </div>
     </div>
@@ -2684,6 +2706,126 @@
             document.querySelectorAll('#heatmapTabContainer .tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             loadHeatmap(parseInt(btn.dataset.days));
+        });
+
+        // ===== 社区 Dashboard =====
+        async function loadCommunity() {
+            const container = document.getElementById('communityContainer');
+            container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>';
+            try {
+                const res = await fetch(API_BASE + '/api/community', {cache: 'no-store'});
+                const data = await res.json();
+                if (data.error) {
+                    container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">社区数据加载失败: ' + data.error + '</div>';
+                    return;
+                }
+                renderCommunity(data);
+            } catch (err) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败: ' + err.message + '</div>';
+            }
+        }
+
+        function renderCommunity(data) {
+            const container = document.getElementById('communityContainer');
+            const myId = data.my_id || '';
+            const optedIn = data.opted_in;
+            const totalUsers = data.total_users || 0;
+            const totalToday = data.total_tokens_today || 0;
+            const totalAll = data.total_tokens_all || 0;
+            const leaderboard = data.leaderboard || [];
+            const toolDist = data.tool_distribution || {};
+            const funFacts = data.fun_facts || {};
+            const myRank = data.my_rank;
+
+            const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'OpenCode': '#f59e0b', 'Other': '#6b7280'};
+            const toolDots = Object.entries(toolDist).map(([tool, pct]) => {
+                const color = toolColors[tool] || '#6b7280';
+                return '<div class="dist-item" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+                    '<div style="width:8px;height:8px;border-radius:50%;background:' + color + ';"></div>' +
+                    '<span style="font-size:11px;width:60px;font-family:JetBrains Mono,monospace;">' + tool + '</span>' +
+                    '<div style="flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;">' +
+                    '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:3px;"></div></div>' +
+                    '<span style="font-size:10px;color:var(--text-muted);width:36px;text-align:right;">' + pct + '%</span>' +
+                    '</div>';
+            }).join('');
+
+            const podium = leaderboard.slice(0, 3).map((u, i) => {
+                const medals = ['🥇', '🥈', '🥉'];
+                const colors = ['var(--gold, #ffd700)', '#c0c0c0', '#cd7f32'];
+                const isMe = u.is_me ? ' （你）' : '';
+                return '<div style="text-align:center;padding:14px 10px;background:var(--bg-subtle);border-radius:10px;border:1px solid var(--border-card);' + (u.is_me ? 'border-color:' + colors[i] + ';' : '') + '">' +
+                    '<div style="font-size:24px;">' + medals[i] + '</div>' +
+                    '<div style="font-size:9px;color:var(--text-muted);">No.' + (i+1) + '</div>' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;margin:4px 0;">' + u.id + isMe + '</div>' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:800;color:' + colors[i] + ';">' + formatTokens(u.tokens) + '</div>' +
+                    '<div style="font-size:9px;color:var(--text-muted);">' + (u.tool || '') + '</div>' +
+                    '</div>';
+            }).join('');
+
+            const optinHtml = optedIn
+                ? '<span style="color:var(--neon-green,#39d353);">✓ 已加入</span>'
+                : '<button id="communityOptinBtn" class="recheck-btn" style="background:var(--tab-active-bg);color:var(--tab-active-text);border:1px solid var(--tab-active-border);">加入社区统计</button>';
+
+            const rankHtml = myRank ? '<span style="color:var(--neon-green,#39d353);">你的排名: No.' + myRank + '</span>' : '<span style="color:var(--text-muted);">未上榜</span>';
+
+            container.innerHTML =
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">' +
+                    '<div style="font-size:11px;color:var(--text-muted);">你的社区 ID: <b style="font-family:JetBrains Mono,monospace;color:var(--text-main);">' + myId + '</b></div>' +
+                    '<div style="display:flex;gap:12px;align-items:center;">' + rankHtml + optinHtml + '</div>' +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">' +
+                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
+                        '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">社区今日总消耗</div>' +
+                        '<div style="font-family:JetBrains Mono,monospace;font-size:24px;font-weight:800;margin-top:4px;">' + formatTokens(totalToday) + '</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">≈ 读完《战争与和平》' + (funFacts.war_and_peace_reads || 0).toLocaleString() + ' 遍</div>' +
+                    '</div>' +
+                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
+                        '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">社区累计 (估)</div>' +
+                        '<div style="font-family:JetBrains Mono,monospace;font-size:24px;font-weight:800;margin-top:4px;">' + formatTokens(totalAll) + '</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">≈ 维基百科 ' + (funFacts.wikipedia_multiple || 0) + ' 倍</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">' +
+                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">👥</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + totalUsers + '</div><div style="font-size:8px;color:var(--text-muted);">活跃用户</div></div>' +
+                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">💰</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">$' + (funFacts.estimated_cost_saved || 0) + '</div><div style="font-size:8px;color:var(--text-muted);">缓存省$</div></div>' +
+                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">📚</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (funFacts.war_and_peace_reads || 0).toLocaleString() + '</div><div style="font-size:8px;color:var(--text-muted);">战争与和平</div></div>' +
+                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">🌍</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (funFacts.wikipedia_multiple || 0) + 'x</div><div style="font-size:8px;color:var(--text-muted);">维基百科</div></div>' +
+                '</div>' +
+                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">🏆 Token 冠军榜</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">' + podium + '</div>' : '') +
+                (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">🛠️ 工具占比</div>' +
+                    '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
+                '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
+                    '🔒 所有数据匿名化处理 · 仅含数字统计 · 不含对话内容/个人信息 · 数据每5分钟更新' +
+                '</div>';
+
+            // opt-in 按钮事件
+            const optinBtn = document.getElementById('communityOptinBtn');
+            if (optinBtn) {
+                optinBtn.addEventListener('click', async () => {
+                    optinBtn.disabled = true;
+                    optinBtn.innerText = '加入中...';
+                    try {
+                        await fetch(API_BASE + '/api/community/optin?enabled=true', {cache: 'no-store'});
+                        loadCommunity(); // 重新加载
+                    } catch (e) {
+                        optinBtn.innerText = '加入失败';
+                    }
+                });
+            }
+        }
+
+        document.getElementById('communityOpenBtn').addEventListener('click', () => {
+            document.getElementById('communityModal').classList.add('active');
+            loadCommunity();
+        });
+        document.getElementById('communityCloseBtn').addEventListener('click', () => {
+            document.getElementById('communityModal').classList.remove('active');
+        });
+        document.getElementById('communityModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('communityModal')) {
+                document.getElementById('communityModal').classList.remove('active');
+            }
         });
 
 
