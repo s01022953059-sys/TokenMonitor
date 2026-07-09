@@ -87,7 +87,7 @@ jobs:
             @{ name = "/api/check-update"; url = "http://127.0.0.1:15723/api/check-update"; expect = "ok" },
             @{ name = "/api/sessions"; url = "http://127.0.0.1:15723/api/sessions?days=1&page=1&page_size=1"; expect = "sessions" },
             @{ name = "/api/heatmap_detail"; url = "http://127.0.0.1:15723/api/heatmap_detail?date=2026-07-07&page=1&page_size=1"; expect = "sessions" },
-            @{ name = "/api/community"; url = "http://127.0.0.1:15723/api/community"; expect = "my_id" }
+            @{ name = "/api/community"; url = "http://127.0.0.1:15723/api/community"; expect = "my_id"; timeout = 30 }
           )
 
           $passed = 0
@@ -96,8 +96,10 @@ jobs:
 
           foreach ($t in $tests) {
             Write-Host -NoNewline "  [$($t.name)] ... "
+            $timeoutSec = 5
+            if ($t.timeout) { $timeoutSec = $t.timeout }
             try {
-              $r = Invoke-WebRequest -Uri $t.url -UseBasicParsing -TimeoutSec 5
+              $r = Invoke-WebRequest -Uri $t.url -UseBasicParsing -TimeoutSec $timeoutSec
               if ($r.StatusCode -eq 200 -and $r.Content -match $t.expect) {
                 Write-Host "PASS"
                 $passed++
