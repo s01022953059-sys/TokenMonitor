@@ -113,6 +113,12 @@ func onTrayReady(port int, feedURL string) {
 			go doTrayCheckUpdate(updatePort)
 			return "ok"
 		})
+		// v1.4.11: JS 桥 — 前端"稍后"按钮调这个, 告诉 Go 端不再弹 toast
+		w.Bind("setSnoozedVersion", func(version string) string {
+			guiLog("JS bridge: setSnoozedVersion=%s", version)
+			snoozedVersion = version
+			return "ok"
+		})
 
 		windowMu.Lock()
 		currentWv = w
@@ -196,26 +202,55 @@ func onTrayReady(port int, feedURL string) {
 	}()
 }
 
-// ─── 检查更新 + 静默自更新 ───
+// ─── 检查更新 (v1.4.11: 不自动更新, 只通知; 不阻塞后台数据扫描) ───
 
+// snoozedVersion 记录用户"稍后"跳过的版本, 该版本不再重复提醒
+var snoozedVersion string
+
+// startUpdateCheckLoop 后台定时检查, 有新版只弹 toast 通知 (不自动下载/重启)
+// 用户必须手动点"立即更新"或托盘"检查更新"才会触发下载
 func startUpdateCheckLoop(w webview.WebView, port int) {
 	time.Sleep(10 * time.Second)
+	notifyUpdateIfAvailable(w, port)
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 	for {
-		if trySelfUpdate(port) {
-			w.Dispatch(func() {
-				w.Eval(`(function(){var t=document.createElement('div');t.style.cssText='position:fixed;top:20px;right:20px;background:#f59e0b;color:#fff;padding:12px 20px;border-radius:8px;font-size:14px;z-index:99999;';t.innerHTML='更新完成, 正在重启...';document.body.appendChild(t);})();`)
-			})
-			time.Sleep(2 * time.Second)
-			systray.Quit()
-			return
-		}
 		select {
 		case <-ticker.C:
-		case <-time.After(100 * time.Millisecond):
+			notifyUpdateIfAvailable(w, port)
+		case <-exitChan:
+			return
 		}
 	}
+}
+
+// notifyUpdateIfAvailable 检查更新, 有新版且未被 snooze → 弹 toast
+// 不调 trySelfUpdate, 不阻塞, 不重启
+func notifyUpdateIfAvailable(w webview.WebView, port int) {
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/check-update", port))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var data struct {
+		OK              bool   `json:"ok"`
+		LatestVersion   string `json:"latest_version"`
+		UpdateAvailable bool   `json:"update_available"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return
+	}
+	if !data.OK || !data.UpdateAvailable {
+		return
+	}
+	// 用户已 snooze 这个版本, 不再提醒
+	if snoozedVersion == data.LatestVersion {
+		guiLog("notifyUpdate: v%s 已被 snooze, 跳过", data.LatestVersion)
+		return
+	}
+	// 只弹 toast 通知, 不自动下载
+	injectToast("🔥 有新版本 v"+data.LatestVersion+", 点击 About → 立即更新", "#f59e0b")
+	guiLog("notifyUpdate: 发现 v%s, 已弹 toast (不自动下载)", data.LatestVersion)
 }
 
 func checkAndUpdateTray(port int, mCheckUpdate *systray.MenuItem) {
