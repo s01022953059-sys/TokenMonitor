@@ -79,14 +79,12 @@ cp "$SOURCE_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
 RESOURCE_FILES=(
     "scanner.py"
     "server.py"
+    "community.py"
     "start.sh"
     "_singleton_check.py"
     "index.html"
     "chart.js"
     "update_helper.sh"  # 自更新 helper, 主 app 退出后接管替换 + 重启
-    # 注意: extract_zip.py 和 icon.png **不**放这里。extract_zip.py 不用
-    # (走 ditto 不用 Python); icon.png 是 master 图标, build 完生成
-    # AppIcon.icns, 源文件不打包进 .app。
 )
 for f in "${RESOURCE_FILES[@]}"; do
     if [[ ! -f "$SOURCE_ROOT/$f" ]]; then
