@@ -148,6 +148,10 @@ func hermesDBPath() string {
 	return filepath.Join(homeDir(), ".hermes", "state.db")
 }
 
+func workbuddyDBPath() string {
+	return filepath.Join(homeDir(), ".workbuddy", "workbuddy.db")
+}
+
 func antigravityStatsPath() string {
 	if runtime.GOOS == "darwin" {
 		return filepath.Join(homeDir(), "Library", "Application Support", "BingchaAI", "usage_stats.json")
@@ -502,6 +506,60 @@ type dedupKey struct {
 	TotalToken int64
 }
 
+// scanWorkBuddyTokens 扫描 WorkBuddy (腾讯 CodeBuddy) 数据库
+func scanWorkBuddyTokens(todayStart int64) []LogEntry {
+	dbPath := workbuddyDBPath()
+	if !fileExists(dbPath) {
+		return nil
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+	todayStartMs := todayStart * 1000
+	rows, err := db.Query(`
+		SELECT s.id, s.model, s.created_at, s.updated_at, su.used
+		FROM sessions s
+		LEFT JOIN session_usage su ON s.id = su.session_id
+		WHERE s.deleted_at IS NULL AND s.updated_at >= ?
+		ORDER BY s.updated_at ASC
+	`, todayStartMs)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var logs []LogEntry
+	for rows.Next() {
+		var sid, model sql.NullString
+		var createdAt, updatedAt, used sql.NullInt64
+		rows.Scan(&sid, &model, &createdAt, &updatedAt, &used)
+		if !used.Valid || used.Int64 <= 0 {
+			continue
+		}
+		ts := updatedAt.Int64 / 1000
+		if ts < todayStart {
+			continue
+		}
+		m := model.String
+		if idx := strings.Index(m, ":"); idx >= 0 {
+			m = m[idx+1:]
+		}
+		logs = append(logs, LogEntry{
+			Time:          time.Unix(ts, 0).Format("15:04:05"),
+			Timestamp:     ts,
+			Tool:          "WorkBuddy",
+			Model:         normalizeModelName(m),
+			InputTokens:   used.Int64,
+			OutputTokens:  0,
+			TotalTokens:   used.Int64,
+			InputCached:   0,
+			InputUncached: used.Int64,
+		})
+	}
+	return logs
+}
+
 func dedupEvents(events []LogEntry) []LogEntry {
 	if len(events) == 0 {
 		return nil
@@ -536,15 +594,17 @@ func getTodayUsage() UsageResponse {
 	// 三源并行扫描
 	var ccLogs, antigravityLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(todayStart) }()
 	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens() }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(todayStart) }()
+	var workbuddyLogs []LogEntry
+	go func() { defer wg.Done(); workbuddyLogs = scanWorkBuddyTokens(todayStart) }()
 	wg.Wait()
 
 	// 合并去重
-	eventsBeforeDedup := len(ccLogs) + len(antigravityLogs) + len(hermesLogs)
-	allLogs := append(append(ccLogs, antigravityLogs...), hermesLogs...)
+	eventsBeforeDedup := len(ccLogs) + len(antigravityLogs) + len(hermesLogs) + len(workbuddyLogs)
+	allLogs := append(append(append(ccLogs, antigravityLogs...), hermesLogs...), workbuddyLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var totalTokens, inputTokens, outputTokens, inputCached, inputUncached int64
@@ -1226,12 +1286,14 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 
 	var ccLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	var wbLogs []LogEntry
+	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(ccLogs, hermesLogs...)
+	allLogs := append(append(ccLogs, hermesLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	sort.Slice(allLogs, func(i, j int) bool {
@@ -1502,12 +1564,14 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 
 	var ccLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	var wbLogs []LogEntry
+	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(ccLogs, hermesLogs...)
+	allLogs := append(append(ccLogs, hermesLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var filtered []LogEntry

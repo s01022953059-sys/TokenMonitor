@@ -16,6 +16,7 @@ ANTIGRAVITY_STATS_PATH = os.path.expanduser(
     "~/Library/Application Support/BingchaAI/usage_stats.json"
 )
 HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
+WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
 
 # 三源去重的"时间窗口", 单位秒。
 # 同一时间窗口内 + 同模型 + 同 token 量视为同一事件, 只计一次。
@@ -228,6 +229,8 @@ def _normalize_app_type(app_type):
         return "冰茶 AI"
     if "hermes" in t_lower:
         return "Hermes"
+    if "workbuddy" in t_lower or "codebuddy" in t_lower:
+        return "WorkBuddy"
     if "claude" in t_lower:
         # 不区分 desktop / cli / code, 统一为 Claude
         return "Claude"
@@ -382,6 +385,49 @@ def scan_hermes_tokens(today_start):
         
     return logs_data
 
+def scan_workbuddy_tokens(today_start):
+    """只读扫描 WorkBuddy (腾讯 CodeBuddy) 数据库中今天的会话记录"""
+    logs_data = []
+    if not os.path.exists(WORKBUDDY_DB_PATH):
+        return logs_data
+    try:
+        conn = sqlite3.connect(WORKBUDDY_DB_PATH)
+        cursor = conn.cursor()
+        # sessions + session_usage 联查, created_at/updated_at 是毫秒时间戳
+        today_start_ms = int(today_start) * 1000
+        cursor.execute("""
+            SELECT s.id, s.model, s.created_at, s.updated_at, su.used
+            FROM sessions s
+            LEFT JOIN session_usage su ON s.id = su.session_id
+            WHERE s.deleted_at IS NULL AND s.updated_at >= ?
+            ORDER BY s.updated_at ASC
+        """, (today_start_ms,))
+        for sid, model, created_at, updated_at, used in cursor.fetchall():
+            if not used or used <= 0:
+                continue
+            # WorkBuddy 的 used 字段是总 token (input+output)
+            ts = int((updated_at or created_at or 0) / 1000)
+            if ts < today_start:
+                continue
+            local_time = datetime.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+            # model 格式可能是 "custom-local:MiniMax-M3" 或 "hy3"
+            actual_model = model.split(":")[-1] if model and ":" in model else (model or "Unknown")
+            logs_data.append({
+                "time": local_time,
+                "timestamp": ts,
+                "tool": "WorkBuddy",
+                "model": normalize_model_name(actual_model),
+                "input_tokens": used,  # WorkBuddy 只存总量, 不分 input/output
+                "output_tokens": 0,
+                "total_tokens": used,
+                "input_cached": 0,
+                "input_uncached": used
+            })
+        conn.close()
+    except Exception as e:
+        print(f"[-] 扫描 WorkBuddy 数据库出错: {e}")
+    return logs_data
+
 def _dedup_events(events):
     """跨数据源去重: 把同一笔请求在多源里都被记录的事件合并为一条。
 
@@ -421,9 +467,10 @@ def get_today_usage():
     cc_logs = scan_cc_switch_logs(today_start)
     antigravity_logs = scan_antigravity_tokens(today_start)
     hermes_logs = scan_hermes_tokens(today_start)
+    workbuddy_logs = scan_workbuddy_tokens(today_start)
 
     # 2. 合并去重 + 按时间戳排序
-    all_logs = _dedup_events(cc_logs + antigravity_logs + hermes_logs)
+    all_logs = _dedup_events(cc_logs + antigravity_logs + hermes_logs + workbuddy_logs)
 
     # 3. 统计汇总
     total_tokens = 0
@@ -477,7 +524,7 @@ def get_today_usage():
             "deepseek_status": ds_balance.get("status", "Offline"),
             # 去重后的事件条数, 给前端做"是否发生跨源重复"的提示
             "events_after_dedup": len(all_logs),
-            "events_before_dedup": len(cc_logs) + len(antigravity_logs) + len(hermes_logs),
+            "events_before_dedup": len(cc_logs) + len(antigravity_logs) + len(hermes_logs) + len(workbuddy_logs),
         },
         "by_tool": by_tool,
         "by_model": by_model,
