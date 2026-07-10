@@ -422,20 +422,26 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 enabled = qs.get("enabled", ["true"])[0].lower() == "true"
                 set_optin(enabled)
                 # 如果开启 opt-in, 立即上报一次
+                report_result = None
                 if enabled:
                     try:
-                        report_community_stats(get_today_usage())
-                    except Exception:
-                        pass
-                self._write_json(200, {"ok": True, "opted_in": is_opted_in(), "user_id": get_user_id()})
+                        report_result = report_community_stats(get_today_usage())
+                    except Exception as exc:
+                        report_result = {"ok": False, "status": "error", "message": str(exc)}
+                self._write_json(200, {
+                    "ok": True,
+                    "opted_in": is_opted_in(),
+                    "user_id": get_user_id(),
+                    "report": report_result,
+                })
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
 
         if self.path == "/api/community/report":
             try:
-                report_community_stats(get_today_usage())
-                self._write_json(200, {"ok": True})
+                result = report_community_stats(get_today_usage())
+                self._write_json(200, result)
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

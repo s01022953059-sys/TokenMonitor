@@ -119,8 +119,7 @@
         }
 
         /* 浅色主题加柔和渐变背景纹理, 避免大片纯色空白 */
-        [data-theme="light"] body,
-        body:has([data-theme="light"]) {
+        :root[data-theme="light"] body {
             background-image:
                 radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
                 radial-gradient(ellipse at 80% 100%, rgba(168, 85, 247, 0.05) 0%, transparent 50%),
@@ -431,7 +430,8 @@
         .history-btn { right: 25px; }
         .heatmap-btn { right: 75px; }
         .community-btn { right: 125px; }
-        .theme-btn { right: 125px; }
+        .userid-btn { right: 175px; }
+        .theme-btn { right: 225px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -1156,6 +1156,12 @@
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
         </button>
+        <button id="userIdOpenBtn" class="header-action-btn userid-btn" title="我的匿名 ID">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+        </button>
         <button id="aboutOpenBtn" class="header-action-btn about-btn" title="关于 Token Monitor">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -1290,9 +1296,9 @@
 
     <!-- 社区 Dashboard 弹窗 -->
     <div id="communityModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 1080px; width: 94vw; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-content" style="max-width: 880px; width: 94vw; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
-                <h3>🏆 Token Olympics · 社区 Dashboard</h3>
+                <h3>社区用量排行</h3>
                 <button id="communityCloseBtn" class="close-btn">&times;</button>
             </div>
             <div id="communityContainer" style="padding: 16px 20px;">
@@ -1329,6 +1335,24 @@
     </div>
 
     <!-- 关于弹窗 -->
+    <div id="userIdModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3>匿名社区 ID</h3>
+                <button id="userIdCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div style="padding: 20px 24px 24px; font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
+                <p style="margin: 0 0 8px; color: var(--text-muted); font-size: 11px;">用于识别同一台设备的匿名统计。只提交 Token 数量和工具汇总，不提交对话、模型名称或个人信息。</p>
+                <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--bg-subtle); border: 1px solid var(--border-card); border-radius: 10px; margin: 12px 0;">
+                    <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--modal-line-color); user-select: all;" id="userIdValue">--</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted);">
+                    <span>今日状态:</span>
+                    <span id="userIdRank" style="font-family: 'JetBrains Mono', monospace; color: var(--neon-green);">读取中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="aboutModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 520px;">
             <div class="modal-header">
@@ -2720,114 +2744,138 @@
                 const res = await fetch(API_BASE + '/api/community', {cache: 'no-store'});
                 const data = await res.json();
                 if (data.error) {
-                    container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">社区数据加载失败: ' + data.error + '</div>';
+                    container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +
+                        '<div style="font-size:13px;color:var(--text-main);margin-bottom:8px;">社区数据暂时不可用</div>' +
+                        '<div style="font-size:11px;">' + escapeHtml(data.error) + '</div></div>';
                     return;
                 }
                 renderCommunity(data);
             } catch (err) {
-                container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败: ' + err.message + '</div>';
+                container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +
+                    '<div style="font-size:13px;color:var(--text-main);margin-bottom:8px;">社区数据暂时不可用</div>' +
+                    '<div style="font-size:11px;">' + escapeHtml(err.message) + '</div></div>';
             }
+        }
+
+        function formatCommunityTime(value) {
+            if (!value) return '尚未同步';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '尚未同步';
+            return new Intl.DateTimeFormat('zh-CN', {
+                month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            }).format(date);
         }
 
         function renderCommunity(data) {
             const container = document.getElementById('communityContainer');
             const myId = data.my_id || '';
-            const optedIn = data.opted_in;
+            const optedIn = Boolean(data.opted_in);
+            const canReport = Boolean(data.can_report);
+            const mySyncedToday = Boolean(data.my_synced_today);
             const totalUsers = data.total_users || 0;
+            const allReporters = data.all_reporters || 0;
             const totalToday = data.total_tokens_today || 0;
-            const totalAll = data.total_tokens_all || 0;
             const leaderboard = data.leaderboard || [];
             const toolDist = data.tool_distribution || {};
-            const funFacts = data.fun_facts || {};
             const myRank = data.my_rank;
+            const myTokens = data.my_tokens || 0;
+            const rankStatus = data.rank_status || 'pending';
+            const rankMessage = data.rank_message || '等待今日首次同步';
+            const dataStatus = data.data_status || 'empty';
+            const dataWarning = data.data_warning || '';
+            const rankTotal = data.rank_total || totalUsers;
 
-            const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'OpenCode': '#f59e0b', 'Other': '#6b7280'};
+            const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'OpenCode': '#f59e0b', 'WorkBuddy': '#8b5cf6', 'Other': '#6b7280'};
             const toolDots = Object.entries(toolDist).map(([tool, pct]) => {
                 const color = toolColors[tool] || '#6b7280';
                 return '<div class="dist-item" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
                     '<div style="width:8px;height:8px;border-radius:50%;background:' + color + ';"></div>' +
-                    '<span style="font-size:11px;width:60px;font-family:JetBrains Mono,monospace;">' + tool + '</span>' +
+                    '<span style="font-size:11px;width:72px;font-family:JetBrains Mono,monospace;">' + escapeHtml(tool) + '</span>' +
                     '<div style="flex:1;height:6px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden;">' +
                     '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:3px;"></div></div>' +
                     '<span style="font-size:10px;color:var(--text-muted);width:36px;text-align:right;">' + pct + '%</span>' +
                     '</div>';
             }).join('');
 
-            const podium = leaderboard.slice(0, 3).map((u, i) => {
-                const medals = ['🥇', '🥈', '🥉'];
-                const colors = ['var(--gold, #ffd700)', '#c0c0c0', '#cd7f32'];
-                const isMe = u.is_me ? ' （你）' : '';
-                return '<div style="text-align:center;padding:14px 10px;background:var(--bg-subtle);border-radius:10px;border:1px solid var(--border-card);' + (u.is_me ? 'border-color:' + colors[i] + ';' : '') + '">' +
-                    '<div style="font-size:24px;">' + medals[i] + '</div>' +
-                    '<div style="font-size:9px;color:var(--text-muted);">No.' + (i+1) + '</div>' +
-                    '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;margin:4px 0;">' + u.id + isMe + '</div>' +
-                    '<div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:800;color:' + colors[i] + ';">' + formatTokens(u.tokens) + '</div>' +
-                    '<div style="font-size:9px;color:var(--text-muted);">' + (u.tool || '') + '</div>' +
+            const leaderboardRows = leaderboard.map((u, i) => {
+                return '<div style="display:grid;grid-template-columns:44px minmax(110px,1fr) minmax(70px,0.7fr) 90px;align-items:center;gap:8px;padding:9px 10px;border-top:' + (i ? '1px solid var(--border-subtle)' : '0') + ';' + (u.is_me ? 'background:var(--hover-bg);' : '') + '">' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-muted);">No.' + (i + 1) + '</div>' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.id || '?') + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
+                    '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.tool || '未识别') + '</div>' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;text-align:right;">' + formatTokens(u.tokens || 0) + '</div>' +
                     '</div>';
             }).join('');
 
-            const optinHtml = optedIn
-                ? '<span style="color:var(--neon-green,#39d353);">✓ 已加入社区统计</span> <button id="communityOptoutBtn" class="recheck-btn" style="margin-left:8px;font-size:10px;">退出</button>'
-                : '<button id="communityOptinBtn" class="recheck-btn" style="background:var(--tab-active-bg);color:var(--tab-active-text);border:1px solid var(--tab-active-border);">加入社区统计</button>';
-
-            const rankHtml = myRank ? '<span style="color:var(--neon-green,#39d353);">你的排名: No.' + myRank + '</span>' : '<span style="color:var(--text-muted);">未上榜</span>';
+            const statusColor = rankStatus === 'ranked' ? 'var(--neon-green)' :
+                (rankStatus === 'outside_top10' ? '#d97706' : 'var(--text-muted)');
+            const syncButton = optedIn && canReport
+                ? '<button id="communityReportNowBtn" class="recheck-btn" style="font-size:10px;">立即同步</button>'
+                : '';
+            const dataNotice = dataStatus === 'partial'
+                ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid #d97706;background:var(--bg-subtle);border-radius:8px;">' +
+                    '<div style="font-size:12px;color:#d97706;font-weight:600;margin-bottom:4px;">当前统计可能不完整</div>' +
+                    '<div style="font-size:10px;color:var(--text-muted);">' + escapeHtml(dataWarning) + '</div></div>'
+                : dataStatus === 'empty'
+                ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid var(--border-card);background:var(--bg-subtle);border-radius:8px;">' +
+                    '<div style="font-size:12px;color:var(--text-main);font-weight:600;margin-bottom:4px;">今天还没有有效的社区上报</div>' +
+                    '<div style="font-size:10px;color:var(--text-muted);">' +
+                        (canReport ? '你的本地统计尚未同步成功，可以点击“立即同步”重试。' : '当前设备可以查看公开数据，但未配置提交匿名统计所需的 GitCode 凭据。') +
+                    '</div></div>'
+                : '';
 
             container.innerHTML =
-                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">' +
-                    '<div style="font-size:11px;color:var(--text-muted);">你的社区 ID: <b style="font-family:JetBrains Mono,monospace;color:var(--text-main);">' + myId + '</b></div>' +
-                    '<div style="display:flex;gap:12px;align-items:center;">' + rankHtml + optinHtml + '</div>' +
+                '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px;">' +
+                    '<div><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">匿名社区 ID</div>' +
+                    '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:var(--text-main);">' + escapeHtml(myId) + '</div></div>' +
+                    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">' +
+                        '<span id="communitySyncFeedback" style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' + syncButton +
+                    '</div>' +
                 '</div>' +
+                dataNotice +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
-                        '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">社区今日总消耗</div>' +
-                        '<div style="font-family:JetBrains Mono,monospace;font-size:24px;font-weight:800;margin-top:4px;">' + formatTokens(totalToday) + '</div>' +
-                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">≈ 读完《战争与和平》' + (funFacts.war_and_peace_reads || 0).toLocaleString() + ' 遍</div>' +
+                        '<div style="font-size:10px;color:var(--text-muted);">今日社区用量</div>' +
+                        '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + (dataStatus === 'empty' ? '--' : formatTokens(totalToday)) + '</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">仅统计今天已成功同步的数据</div>' +
                     '</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
-                        '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">社区累计 (估)</div>' +
-                        '<div style="font-family:JetBrains Mono,monospace;font-size:24px;font-weight:800;margin-top:4px;">' + formatTokens(totalAll) + '</div>' +
-                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">≈ 维基百科 ' + (funFacts.wikipedia_multiple || 0) + ' 倍</div>' +
+                        '<div style="font-size:10px;color:var(--text-muted);">今日参与用户</div>' +
+                        '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + (dataStatus === 'empty' ? '--' : totalUsers) + '</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">累计有 ' + allReporters + ' 个匿名 ID 提交过数据</div>' +
                     '</div>' +
                 '</div>' +
-                '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">' +
-                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">👥</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + totalUsers + '</div><div style="font-size:8px;color:var(--text-muted);">活跃用户</div></div>' +
-                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">💰</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">$' + (funFacts.estimated_cost_saved || 0) + '</div><div style="font-size:8px;color:var(--text-muted);">缓存省$</div></div>' +
-                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">📚</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (funFacts.war_and_peace_reads || 0).toLocaleString() + '</div><div style="font-size:8px;color:var(--text-muted);">战争与和平</div></div>' +
-                    '<div style="text-align:center;background:var(--bg-subtle);border-radius:8px;padding:10px;"><div style="font-size:16px;">🌍</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (funFacts.wikipedia_multiple || 0) + 'x</div><div style="font-size:8px;color:var(--text-muted);">维基百科</div></div>' +
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
+                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
+                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
+                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">最近成功同步</div><div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;margin-top:4px;">' + formatCommunityTime(data.my_last_synced_at) + '</div></div>' +
                 '</div>' +
-                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">🏆 Token 冠军榜</div>' +
-                    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">' + podium + '</div>' : '') +
-                (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">🛠️ 工具占比</div>' +
+                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日用量 Top 10</div>' +
+                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
+                (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
-                    '🔒 所有数据匿名化处理 · 仅含数字统计 · 不含对话内容/个人信息 · 数据每5分钟更新' +
+                    '仅提交匿名 ID、Token 数量和工具汇总，不提交对话、模型名称或个人信息。自动上报每小时一次，页面数据最多缓存 5 分钟。' +
                 '</div>';
 
-            // opt-in 按钮事件
-            const optinBtn = document.getElementById('communityOptinBtn');
-            if (optinBtn) {
-                optinBtn.addEventListener('click', async () => {
-                    optinBtn.disabled = true;
-                    optinBtn.innerText = '加入中...';
+            const reportBtn = document.getElementById('communityReportNowBtn');
+            if (reportBtn) {
+                reportBtn.addEventListener('click', async () => {
+                    const feedback = document.getElementById('communitySyncFeedback');
+                    reportBtn.disabled = true;
+                    reportBtn.innerText = '同步中...';
+                    if (feedback) feedback.innerText = '正在提交匿名统计...';
                     try {
-                        await fetch(API_BASE + '/api/community/optin?enabled=true', {cache: 'no-store'});
-                        loadCommunity();
-                    } catch (e) {
-                        optinBtn.innerText = '加入失败';
-                    }
-                });
-            }
-            // opt-out 按钮事件
-            const optoutBtn = document.getElementById('communityOptoutBtn');
-            if (optoutBtn) {
-                optoutBtn.addEventListener('click', async () => {
-                    optoutBtn.disabled = true;
-                    optoutBtn.innerText = '退出中...';
-                    try {
-                        await fetch(API_BASE + '/api/community/optin?enabled=false', {cache: 'no-store'});
-                        loadCommunity();
-                    } catch (e) {
-                        optoutBtn.innerText = '退出失败';
+                        const res = await fetch(API_BASE + '/api/community/report', { cache: 'no-store' });
+                        const result = await res.json();
+                        if (!result.ok) throw new Error(result.message || '同步失败');
+                        await loadCommunity();
+                    } catch (err) {
+                        reportBtn.disabled = false;
+                        reportBtn.innerText = '重新同步';
+                        if (feedback) {
+                            feedback.style.color = '#ef4444';
+                            feedback.innerText = err.message;
+                        }
                     }
                 });
             }
@@ -2843,6 +2891,35 @@
         document.getElementById('communityModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('communityModal')) {
                 document.getElementById('communityModal').classList.remove('active');
+            }
+        });
+
+        // ===== 用户 ID 弹窗 (只读, v1.4.16) =====
+        async function loadUserId() {
+            const idEl = document.getElementById('userIdValue');
+            const rankEl = document.getElementById('userIdRank');
+            if (!idEl || !rankEl) return;
+            try {
+                const res = await fetch(API_BASE + '/api/community', { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                idEl.innerText = data.my_id || '--';
+                rankEl.innerText = data.rank_message || (data.my_rank ? `今日第 ${data.my_rank} 名` : '等待今日首次同步');
+            } catch (e) {
+                idEl.innerText = '读取失败';
+                rankEl.innerText = '--';
+            }
+        }
+        document.getElementById('userIdOpenBtn').addEventListener('click', () => {
+            document.getElementById('userIdModal').classList.add('active');
+            loadUserId();
+        });
+        document.getElementById('userIdCloseBtn').addEventListener('click', () => {
+            document.getElementById('userIdModal').classList.remove('active');
+        });
+        document.getElementById('userIdModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('userIdModal')) {
+                document.getElementById('userIdModal').classList.remove('active');
             }
         });
 

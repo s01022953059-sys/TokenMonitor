@@ -9,9 +9,9 @@
 
 隐私保证:
 - 只上报数字 (token 数量, 工具占比, 活跃时段)
-- 不上报对话内容/模型名/时间戳/文件路径
+- 不上报对话内容/模型名/请求时间戳明细/文件路径；仅记录报告日期和同步时间
 - ID 随机生成, 不关联个人信息
-- opt-in 默认关闭
+- 社区统计默认开启，可通过本地配置关闭
 """
 import os
 import json
@@ -21,6 +21,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import datetime
+import plistlib
 import time
 
 COMMUNITY_DIR = os.path.expanduser("~/.token_monitor")
@@ -28,13 +29,31 @@ USER_ID_FILE = os.path.join(COMMUNITY_DIR, "community_id.txt")
 OPTIN_FILE = os.path.join(COMMUNITY_DIR, "community_optin.txt")
 GITCODE_API = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
 REPORTS_PATH = "community/reports"
+COMMUNITY_BRANCH = os.environ.get("TOKEN_MONITOR_COMMUNITY_BRANCH", "community-data")
 # 聚合缓存 (5 分钟 TTL)
 _aggregate_cache = {"data": None, "ts": 0}
 AGGREGATE_TTL = 300  # 5 分钟
+LEADERBOARD_LIMIT = 10
 
 
 def _ensure_dir():
     os.makedirs(COMMUNITY_DIR, exist_ok=True)
+
+
+def _read_app_version():
+    """从源码目录或 .app bundle 读取当前版本号。"""
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(module_dir, "Info.plist"),
+        os.path.join(module_dir, "..", "Info.plist"),
+    ]
+    for path in candidates:
+        try:
+            with open(path, "rb") as f:
+                return str(plistlib.load(f).get("CFBundleShortVersionString", ""))
+        except (OSError, ValueError, plistlib.InvalidFileException):
+            continue
+    return ""
 
 
 def get_user_id():
@@ -67,6 +86,8 @@ def set_optin(enabled):
     _ensure_dir()
     with open(OPTIN_FILE, "w") as f:
         f.write("true" if enabled else "false")
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
 
 
 def _get_gitcode_token():
@@ -85,14 +106,18 @@ def _get_gitcode_token():
     return None
 
 
-def _gitcode_api(method, path, data=None, token=None):
+def _gitcode_api(method, path, data=None, token=None, require_auth=True):
     """调用 GitCode API"""
-    if not token:
+    if token is None:
         token = _get_gitcode_token()
-    if not token:
-        return None
+    if require_auth and not token:
+        return {"error": "credential_missing", "body": "本机未配置 GitCode 凭据"}
     url = GITCODE_API + "/contents/" + path
-    headers = {"Authorization": "Bearer " + token}
+    if method == "GET" and "?" not in path:
+        url += "?ref=" + COMMUNITY_BRANCH
+    headers = {}
+    if token:
+        headers["Authorization"] = "Bearer " + token
     if data:
         headers["Content-Type"] = "application/json"
         body = json.dumps(data).encode()
@@ -104,8 +129,30 @@ def _gitcode_api(method, path, data=None, token=None):
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         return {"error": e.code, "body": e.read().decode()[:200]}
-    except Exception:
-        return None
+    except Exception as exc:
+        return {"error": "network_error", "body": str(exc)}
+
+
+def _read_remote_json(url, token=None):
+    """读取公开报告；有凭据时附带认证，失败时返回 (None, message)。"""
+    headers = {}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return json.loads(resp.read()), None
+    except urllib.error.HTTPError as exc:
+        return None, f"HTTP {exc.code}"
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _report_result(ok, status, message, reported_at=None):
+    result = {"ok": ok, "status": status, "message": message}
+    if reported_at:
+        result["reported_at"] = reported_at
+    return result
 
 
 def report_community_stats(today_usage):
@@ -115,25 +162,28 @@ def report_community_stats(today_usage):
         today_usage: get_today_usage() 的返回值
 
     Returns:
-        True 成功, False 失败
+        包含 ok/status/message 的结果字典
     """
     if not is_opted_in():
-        return False
+        return _report_result(False, "disabled", "社区数据上报未开启")
     uid = get_user_id()
     token = _get_gitcode_token()
     if not token:
-        return False
+        return _report_result(False, "credential_missing", "本机未配置 GitCode 凭据，无法提交匿名统计")
 
     # 构建上报数据 (只含数字, 不含隐私信息)
     summary = today_usage.get("summary", {})
     by_tool = today_usage.get("by_tool", {})
+    reported_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    report_date = str(summary.get("date") or datetime.date.today().isoformat())
     report = {
         "id": uid,
-        "updated_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at": reported_at,
+        "report_date": report_date,
         "today_tokens": summary.get("total_tokens", 0),
         "by_tool": {k: v.get("total_tokens", 0) for k, v in by_tool.items()},
         "tool_count": len(by_tool),
-        "version": "1.4.11",
+        "version": _read_app_version(),
     }
 
     file_path = REPORTS_PATH + "/" + uid + ".json"
@@ -150,12 +200,22 @@ def report_community_stats(today_usage):
     payload = {
         "message": "community: " + uid + " 上报统计",
         "content": content_b64,
-        "branch": "main",
-        "sha": sha or ""
+        "branch": COMMUNITY_BRANCH,
     }
+    # GitCode 创建新文件时不能传空 sha；仅更新已有文件时携带真实 sha。
+    if sha:
+        payload["sha"] = sha
 
-    result = _gitcode_api("PUT", file_path, payload, token)
-    return result and "error" not in (result if isinstance(result, dict) else {})
+    method = "PUT" if sha else "POST"
+    result = _gitcode_api(method, file_path, payload, token)
+    if not result or (isinstance(result, dict) and result.get("error")):
+        detail = result.get("body", "GitCode 未返回结果") if isinstance(result, dict) else "GitCode 未返回结果"
+        return _report_result(False, "upload_failed", f"匿名统计提交失败：{detail}")
+
+    # 上报成功后立即清缓存，避免页面继续显示上报前的 0 数据。
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
+    return _report_result(True, "synced", "匿名统计已同步", reported_at)
 
 
 def get_community_stats():
@@ -183,10 +243,16 @@ def get_community_stats():
         return data
 
     token = _get_gitcode_token()
-    if not token:
+
+    # GET reports 目录列表
+    files = _gitcode_api("GET", REPORTS_PATH, token=token, require_auth=False)
+    if not isinstance(files, list):
+        detail = files.get("body", "未知错误") if isinstance(files, dict) else "未知错误"
         return {
-            "error": "无法获取 GitCode 凭据",
+            "error": "社区数据读取失败：" + detail,
+            "data_status": "load_failed",
             "opted_in": is_opted_in(),
+            "can_report": bool(token),
             "my_id": get_user_id(),
             "total_users": 0,
             "total_tokens_today": 0,
@@ -195,40 +261,54 @@ def get_community_stats():
             "active_hours": [0] * 24,
         }
 
-    # GET reports 目录列表
-    url = GITCODE_API + "/contents/" + REPORTS_PATH
-    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            files = json.loads(resp.read())
-    except Exception:
-        files = []
-
-    if not isinstance(files, list):
-        files = []
-
     # 批量读取每个用户的 report
     reports = []
-    for f in files[:200]:  # 限制最多 200 个用户 (防 API 超时)
+    report_files = [f for f in files if isinstance(f, dict) and str(f.get("name", "")).endswith(".json")]
+    read_failures = 0
+    for f in report_files[:200]:  # 限制最多 200 个用户 (防 API 超时)
         if not isinstance(f, dict):
             continue
         file_url = f.get("download_url") or f.get("url")
         if not file_url:
+            read_failures += 1
             continue
         try:
-            req2 = urllib.request.Request(file_url, headers={"Authorization": "Bearer " + token})
-            with urllib.request.urlopen(req2, timeout=5) as resp2:
-                report = json.loads(resp2.read())
+            report, read_error = _read_remote_json(file_url, token=token)
             if isinstance(report, dict) and report.get("id"):
                 reports.append(report)
+            elif read_error:
+                read_failures += 1
         except Exception:
-            continue
+            read_failures += 1
+
+    if report_files and not reports:
+        return {
+            "error": "社区报告存在，但本次全部读取失败，请稍后重试",
+            "data_status": "load_failed",
+            "opted_in": is_opted_in(),
+            "can_report": bool(token),
+            "my_id": get_user_id(),
+            "total_users": 0,
+            "total_tokens_today": 0,
+            "leaderboard": [],
+            "tool_distribution": {},
+            "active_hours": [0] * 24,
+        }
 
     # 聚合
     my_id = get_user_id()
-    total_tokens_today = sum(r.get("today_tokens", 0) for r in reports)
-    # 排行榜 (今日 token 最多)
-    leaderboard = sorted(reports, key=lambda r: r.get("today_tokens", 0), reverse=True)[:10]
+    today = datetime.date.today().isoformat()
+
+    def report_date(report):
+        return str(report.get("report_date") or report.get("updated_at", "")[:10])
+
+    reports_today = [r for r in reports if report_date(r) == today]
+    sorted_reports = sorted(reports_today, key=lambda r: r.get("today_tokens", 0), reverse=True)
+    total_tokens_today = sum(r.get("today_tokens", 0) for r in reports_today)
+
+    # 排名在全部今日参与用户中计算；榜单仅展示前 10。
+    my_rank = next((i + 1 for i, r in enumerate(sorted_reports) if r.get("id") == my_id), None)
+    leaderboard = sorted_reports[:LEADERBOARD_LIMIT]
     leaderboard = [{
         "id": r.get("id", "?"),
         "tokens": r.get("today_tokens", 0),
@@ -238,19 +318,31 @@ def get_community_stats():
 
     # 工具占比
     tool_totals = {}
-    for r in reports:
+    for r in reports_today:
         for tool, tokens in r.get("by_tool", {}).items():
             tool_totals[tool] = tool_totals.get(tool, 0) + tokens
     total_tool_tokens = sum(tool_totals.values()) or 1
     tool_distribution = {k: round(v / total_tool_tokens * 100, 1) for k, v in tool_totals.items()}
     tool_distribution = dict(sorted(tool_distribution.items(), key=lambda x: -x[1]))
 
-    # 找自己的排名
-    my_rank = None
-    for i, r in enumerate(leaderboard):
-        if r["is_me"]:
-            my_rank = i + 1
-            break
+    my_report = next((r for r in reports if r.get("id") == my_id), None)
+    my_synced_today = bool(my_report and report_date(my_report) == today)
+    my_tokens = my_report.get("today_tokens", 0) if my_synced_today else 0
+    if not is_opted_in():
+        rank_status = "disabled"
+        rank_message = "数据上报未开启"
+    elif my_synced_today and my_rank is not None and my_rank <= LEADERBOARD_LIMIT:
+        rank_status = "ranked"
+        rank_message = f"今日第 {my_rank} 名"
+    elif my_synced_today:
+        rank_status = "outside_top10"
+        rank_message = f"已同步，当前第 {my_rank} 名（榜单展示前 {LEADERBOARD_LIMIT}）"
+    elif not token:
+        rank_status = "credential_missing"
+        rank_message = "仅可查看：本机未配置 GitCode 上报凭据"
+    else:
+        rank_status = "pending"
+        rank_message = "等待今日首次同步"
 
     # 趣味统计
     import math
@@ -262,15 +354,28 @@ def get_community_stats():
     }
 
     result = {
-        "total_users": len(reports),
+        "total_users": len(reports_today),
+        "all_reporters": len(reports),
         "total_tokens_today": total_tokens_today,
         "total_tokens_all": total_tokens_today * 30,  # 粗估月度
+        "projected_30d_tokens": total_tokens_today * 30,
         "leaderboard": leaderboard,
         "tool_distribution": tool_distribution,
         "active_hours": [0] * 24,  # 暂不收集小时数据
         "my_rank": my_rank,
+        "my_tokens": my_tokens,
+        "my_synced_today": my_synced_today,
+        "my_report_found": my_report is not None,
+        "my_last_synced_at": my_report.get("updated_at") if my_report else None,
+        "rank_status": rank_status,
+        "rank_message": rank_message,
+        "rank_total": len(sorted_reports),
+        "leaderboard_limit": LEADERBOARD_LIMIT,
+        "can_report": bool(token),
+        "data_status": "partial" if read_failures else ("ok" if reports_today else "empty"),
+        "data_warning": f"有 {read_failures} 份社区报告读取失败，当前统计可能不完整" if read_failures else None,
         "fun_facts": fun_facts,
-        "updated_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     # 写缓存

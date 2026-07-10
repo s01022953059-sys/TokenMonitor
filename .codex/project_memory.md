@@ -13,6 +13,8 @@
    - 确认端口 15723 上 server.py 正常监听
    - 打开热力图弹窗, 确认有数据渲染
    - 打开会话详情, 确认有数据且分页正常
+   - 社区功能变更时, 验证 `/api/community/report` 真实成功并能从 `community-data` 分支读回报告
+   - 确认 `/api/community` 能区分等待同步、完整排名、Top 10 和读取失败
    - 前端 JS 无语法错误 (`node -e` 校验)
 8. **单实例锁健壮性**: server.py / go_build/main.go 的 `acquireSingletonLock` 会检查锁文件中的 PID 是否仍存活, 若已死则自动清理残留锁文件, 防止更新后旧进程残留导致新 server 无法启动
 
@@ -20,7 +22,7 @@
 
 - **macOS**: Swift 壳 (app_wrapper.swift) + Python 后端 (scanner.py / server.py) + HTML 前端 (index.html / chart.js)
 - **Windows**: Go 单体 (go_build/main.go), 嵌入前端, 系统托盘, 交叉编译 `GOOS=windows GOARCH=amd64`
-- **两版功能完全对齐**: 三源扫描 + 去重 + 模型归一化 + DeepSeek 余额 + check-update
+- **两版功能完全对齐**: 四源扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
 - **前端同一份** index.html + chart.js, go_build/static/ 是同步副本
 
 ## 数据源
@@ -28,6 +30,7 @@
 - cc-switch: `~/.cc-switch/cc-switch.db` (SQLite)
 - Antigravity: `~/Library/Application Support/BingchaAI/usage_stats.json` (macOS 专属, Windows 跳过)
 - Hermes: `~/.hermes/state.db` (SQLite)
+- WorkBuddy: `~/.workbuddy/workbuddy.db` (SQLite, v1.4.14 接入)
 
 ## Windows 限制 (README 中需维护)
 
@@ -36,6 +39,7 @@
 - Antigravity 数据源不存在
 - 无代码签名 (SmartScreen 拦截)
 - check-update 返回 .dmg 优先
+- 社区公开排行可读取, 但提交匿名统计要求本机安装 Git 并配置 GitCode 凭据
 
 ## 已废弃 (不要恢复)
 
@@ -130,3 +134,38 @@
 - 修复: 单实例锁文件残留导致更新后 server.py 无法启动, 主面板显示 0
 - server.py / go_build/main.go: 获取锁前检查旧 PID 是否存活, 若已死自动清理
 - 新增发版前验证检查清单 (写入核心约定第 7 条)
+
+## 2026-07-10 社区功能复盘
+
+### v1.4.12-v1.4.17 已发布变更
+- v1.4.12 加入匿名社区 ID、自动上报、社区聚合和 Dashboard
+- v1.4.13 修复 `community.py` 未打进 macOS App Resources 导致后端启动失败
+- v1.4.14 接入 WorkBuddy 数据源并加入社区统计；v1.4.15 补发热更新占位版
+- v1.4.16 增加顶部匿名 ID 入口；v1.4.17 修复亮色主题背景渐变
+
+### 社区排行未上榜根因 (v1.4.18 已修复)
+- GitCode Contents API 创建文件应使用 POST, 更新文件才使用 PUT + sha
+- 旧实现新建/更新都使用 PUT: 空 sha 返回 `400 input value is null`, 省略 sha 返回 `400 param is missing`
+- `/api/community/report` 忽略 `report_community_stats()` 的 False, 无论失败都返回 `ok: true`
+- 因此 `community/reports` 只有 `.gitkeep`, 用户虽显示“已加入”但从未进入数据集, 所有社区数字均为 0
+- Windows 另有类型错误: `summary.total_tokens` 实际为 int64, 旧代码只接收 float64, 即使上报成功也会写 0
+
+### 社区数据架构 (2026-07-10)
+- 报告写入独立 `community-data` 分支的 `community/reports/User_XXXXX.json`, 不再污染 main 代码历史
+- 公开仓库报告无需 token 即可读取；写入仍依赖本机 GitCode 凭据, 这是当前明确限制
+- 新文件用 POST, 已有文件用 PUT + sha；成功后立即清除 5 分钟聚合缓存
+- 报告增加 `report_date`, 聚合只统计今天的报告, 防止离线用户昨天的数据混进今天
+- 完整排名在所有今日报告中计算, Top 10 只用于榜单展示
+- UI 状态必须区分: `pending` / `credential_missing` / `ranked` / `outside_top10` / `load_failed`
+- 页面不再展示伪“累计总量”或按全部 Token 粗算的“缓存省钱”
+
+### 社区功能发版门禁
+- 必须运行 `python3 -m unittest -v tests.test_community`
+- 必须验证 Python/Go 编译、Windows 交叉编译和前端 JS 语法
+- 必须通过真实 GitCode 链路验证一次 POST 新建和一次 PUT 更新
+- 必须使用桌面及 390px 移动视口检查社区弹窗无溢出、状态可读、同步按钮可用
+
+### v1.4.18 (2026-07-10)
+- 修复社区报告从未创建、接口误报成功、Windows 上报总量为 0、Top 10 外误显示“未上榜”等问题
+- 社区报告迁移到 `community-data` 分支，页面改为清晰的同步状态、完整个人排名和“立即同步”操作
+- 发布前通过 Python 5 项单测、Go 单测、Windows 交叉编译、真实 GitCode POST/PUT、桌面及移动端浏览器验证

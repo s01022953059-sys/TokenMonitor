@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.3.71"
+var appVersion = "1.4.18"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1817,8 +1817,8 @@ func main() {
 		setCORSHeaders(w)
 		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
 		usage := getTodayUsage()
-		ok := reportCommunityStats(&usage)
-		writeJSON(w, 200, map[string]interface{}{"ok": ok})
+		result := reportCommunityStats(&usage)
+		writeJSON(w, 200, result)
 	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)
