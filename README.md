@@ -8,13 +8,14 @@
 
 ### 数据采集
 
-只读扫描三个数据源，不修改任何原始数据：
+只读扫描四个数据源，不修改任何原始数据：
 
 | 数据源 | 路径 | 说明 |
 |---|---|---|
 | cc-switch | `~/.cc-switch/cc-switch.db` | SQLite，记录所有经过代理的 API 请求 |
 | Antigravity (冰茶 AI) | `~/Library/Application Support/BingchaAI/usage_stats.json` | JSON，每日统计 (Antigravity 是 BingchaAI 客户端的旧品牌名) |
 | Hermes | `~/.hermes/state.db` | SQLite，会话级记录 |
+| WorkBuddy (腾讯 CodeBuddy) | `~/.workbuddy/workbuddy.db` | SQLite，会话级记录 (v1.4.14 接入) |
 
 三源数据合并后做**跨源去重**：同一时间窗口（2 秒）内 + 同模型 + 同 Token 量视为同一事件，只计一次。避免同一笔请求被多个数据源重复计入。
 
@@ -94,7 +95,7 @@ macOS 版有完整的原生体验：WKWebView 内嵌网页、状态栏菜单、D
 
 Windows 版用 Go 交叉编译产出单个 EXE，无需安装 Python 或任何运行时。双击 `启动TokenMonitor.bat` 启动，弹出控制台窗口并自动打开浏览器。
 
-**Go 版与 Python 版功能完全对齐**，包括：三源扫描、跨源去重、模型归一化、DeepSeek 余额语义匹配、check-update 端点、每次请求重读版本号。
+**Go 版与 Python 版功能完全对齐**，包括：四源扫描、跨源去重、模型归一化、DeepSeek 余额语义匹配、check-update 端点、每次请求重读版本号。
 
 ## Windows 平台限制
 

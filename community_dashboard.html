@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Token Monitor · 社区 Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=JetBrains+Mono:wght@400;700;800&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --bg-deep: #060810;
+        --bg-card: rgba(14, 17, 26, 0.85);
+        --bg-card-hover: rgba(20, 24, 36, 0.9);
+        --border: rgba(255, 255, 255, 0.06);
+        --border-glow: rgba(255, 215, 0, 0.15);
+        --gold: #ffd700;
+        --silver: #c0c0c0;
+        --bronze: #cd7f32;
+        --neon-green: #39d353;
+        --neon-blue: #58a6ff;
+        --neon-purple: #a855f7;
+        --neon-orange: #f59e0b;
+        --text-main: #f0f6fc;
+        --text-muted: #8b949e;
+        --text-dim: #484f58;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: var(--bg-deep);
+        color: var(--text-main);
+        font-family: 'Outfit', sans-serif;
+        min-height: 100vh;
+        overflow-x: hidden;
+        position: relative;
+    }
+    /* 背景极光 */
+    .aurora {
+        position: fixed; inset: 0; z-index: -1; overflow: hidden;
+    }
+    .aurora::before, .aurora::after {
+        content: ''; position: absolute; border-radius: 50%; filter: blur(80px);
+        animation: drift 20s infinite alternate ease-in-out;
+    }
+    .aurora::before {
+        width: 600px; height: 600px; top: -200px; left: -100px;
+        background: radial-gradient(circle, rgba(168, 85, 247, 0.08), transparent 70%);
+    }
+    .aurora::after {
+        width: 500px; height: 500px; bottom: -150px; right: -100px;
+        background: radial-gradient(circle, rgba(59, 130, 246, 0.06), transparent 70%);
+        animation-delay: -10s;
+    }
+    @keyframes drift {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(100px, 50px); }
+    }
+
+    /* 顶部实时滚动条 */
+    .ticker-bar {
+        background: linear-gradient(90deg, transparent, rgba(57, 211, 83, 0.05), transparent);
+        border-bottom: 1px solid rgba(57, 211, 83, 0.1);
+        padding: 6px 0; overflow: hidden; white-space: nowrap;
+        font-family: 'JetBrains Mono', monospace; font-size: 11px;
+        color: var(--neon-green);
+    }
+    .ticker-content {
+        display: inline-block; animation: ticker-scroll 60s linear infinite;
+    }
+    .ticker-content span { margin: 0 40px; }
+    .ticker-content .pulse { color: var(--gold); }
+    @keyframes ticker-scroll {
+        0% { transform: translateX(100vw); }
+        100% { transform: translateX(-100%); }
+    }
+
+    /* 主容器 */
+    .container {
+        max-width: 1200px; margin: 0 auto; padding: 24px 20px 60px;
+    }
+
+    /* 标题区 */
+    .hero {
+        text-align: center; margin-bottom: 40px; padding-top: 20px;
+    }
+    .hero h1 {
+        font-family: 'Bungee', sans-serif;
+        font-size: 42px; letter-spacing: 2px;
+        background: linear-gradient(135deg, var(--gold), var(--neon-orange), var(--neon-green));
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        text-transform: uppercase;
+        animation: shimmer 3s ease-in-out infinite alternate;
+    }
+    @keyframes shimmer {
+        0% { filter: brightness(1); }
+        100% { filter: brightness(1.3); }
+    }
+    .hero .subtitle {
+        font-size: 13px; color: var(--text-muted); margin-top: 8px;
+        letter-spacing: 4px; text-transform: uppercase;
+    }
+    .hero .live-dot {
+        display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+        background: var(--neon-green); margin-right: 6px;
+        animation: blink 1.5s ease-in-out infinite;
+    }
+    @keyframes blink {
+        0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--neon-green); }
+        50% { opacity: 0.3; box-shadow: none; }
+    }
+
+    /* 全社区总量 — 超大数字 */
+    .total-section {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;
+    }
+    .total-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 16px; padding: 24px; position: relative; overflow: hidden;
+        transition: border-color 0.3s, transform 0.2s;
+    }
+    .total-card:hover {
+        border-color: rgba(88, 166, 255, 0.2); transform: translateY(-2px);
+    }
+    .total-card::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: linear-gradient(90deg, var(--neon-blue), var(--neon-purple));
+    }
+    .total-card .label {
+        font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+        letter-spacing: 2px; margin-bottom: 8px;
+    }
+    .total-card .value {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 36px; font-weight: 800; color: var(--text-main);
+        line-height: 1.1;
+    }
+    .total-card .unit {
+        font-size: 14px; color: var(--text-muted); margin-left: 4px;
+    }
+    .total-card .delta {
+        font-size: 11px; margin-top: 6px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .total-card .delta.up { color: var(--neon-green); }
+    .total-card .delta.down { color: #f85149; }
+    .total-card .fun-fact {
+        font-size: 10px; color: var(--text-dim); margin-top: 8px;
+        font-style: italic; line-height: 1.5;
+    }
+
+    /* 用户数 + 速度 */
+    .stats-row {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 32px;
+    }
+    .stat-mini {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 16px; text-align: center;
+        transition: transform 0.2s, border-color 0.3s;
+    }
+    .stat-mini:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.12); }
+    .stat-mini .icon { font-size: 20px; margin-bottom: 6px; }
+    .stat-mini .num {
+        font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 800;
+    }
+    .stat-mini .desc { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+    /* 领奖台 */
+    .podium-section {
+        margin-bottom: 32px;
+    }
+    .section-title {
+        font-family: 'Bungee', sans-serif; font-size: 16px; letter-spacing: 1px;
+        color: var(--text-main); margin-bottom: 16px; text-transform: uppercase;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .line {
+        flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent);
+    }
+    .podium {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: end;
+    }
+    .podium-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 20px 16px; text-align: center;
+        position: relative; transition: transform 0.3s;
+    }
+    .podium-card:hover { transform: scale(1.03); }
+    .podium-card.gold { border-color: rgba(255, 215, 0, 0.25); }
+    .podium-card.gold::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: var(--gold); border-radius: 14px 14px 0 0;
+    }
+    .podium-card.silver { border-color: rgba(192, 192, 192, 0.2); }
+    .podium-card.silver::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: var(--silver); border-radius: 14px 14px 0 0;
+    }
+    .podium-card.bronze { border-color: rgba(205, 127, 50, 0.2); }
+    .podium-card.bronze::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+        background: var(--bronze); border-radius: 14px 14px 0 0;
+    }
+    .podium-card .medal { font-size: 32px; margin-bottom: 8px; }
+    .podium-card .rank { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+    .podium-card .name {
+        font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700;
+        margin: 6px 0; color: var(--text-main);
+    }
+    .podium-card .tokens {
+        font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 800;
+    }
+    .podium-card.gold .tokens { color: var(--gold); }
+    .podium-card.silver .tokens { color: var(--silver); }
+    .podium-card.bronze .tokens { color: var(--bronze); }
+    .podium-card .tool {
+        font-size: 10px; color: var(--text-muted); margin-top: 4px;
+    }
+    .podium-card .bar {
+        height: 60px; margin-top: 12px; border-radius: 4px;
+        background: linear-gradient(180deg, currentColor, transparent);
+        opacity: 0.15;
+    }
+    .podium-card.gold .bar { height: 80px; color: var(--gold); }
+    .podium-card.silver .bar { height: 60px; color: var(--silver); }
+    .podium-card.bronze .bar { height: 45px; color: var(--bronze); }
+
+    /* 时间维度切换 */
+    .time-tabs {
+        display: flex; gap: 4px; margin-bottom: 16px;
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 10px; padding: 4px; width: fit-content;
+    }
+    .time-tab {
+        padding: 6px 16px; border-radius: 7px; font-size: 12px; font-weight: 600;
+        color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+        border: none; background: none; font-family: inherit;
+    }
+    .time-tab.active {
+        background: var(--neon-blue); color: #fff;
+    }
+
+    /* 双列区 */
+    .dual-col {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;
+    }
+
+    /* 工具/模型占比 */
+    .distribution-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 20px;
+    }
+    .dist-item {
+        display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .dist-item:last-child { margin-bottom: 0; }
+    .dist-dot {
+        width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dist-name {
+        font-size: 12px; width: 80px; color: var(--text-main);
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .dist-bar {
+        flex: 1; height: 8px; background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px; overflow: hidden;
+    }
+    .dist-fill {
+        height: 100%; border-radius: 4px;
+        animation: fill-bar 1.5s ease-out;
+    }
+    @keyframes fill-bar {
+        from { width: 0; }
+    }
+    .dist-pct {
+        font-family: 'JetBrains Mono', monospace; font-size: 11px;
+        color: var(--text-muted); width: 40px; text-align: right;
+    }
+
+    /* 活跃时段 */
+    .heatmap-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 20px;
+    }
+    .heatmap-grid {
+        display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; margin-top: 12px;
+    }
+    .heatmap-cell {
+        height: 24px; border-radius: 2px;
+        background: rgba(57, 211, 83, 0.05);
+        transition: transform 0.15s;
+    }
+    .heatmap-cell:hover { transform: scale(1.4); z-index: 1; position: relative; }
+    .heatmap-labels {
+        display: flex; justify-content: space-between; margin-top: 6px;
+        font-size: 9px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace;
+    }
+    .heatmap-legend {
+        display: flex; align-items: center; gap: 6px; margin-top: 10px;
+        font-size: 10px; color: var(--text-muted);
+    }
+    .heatmap-legend .scale {
+        display: flex; gap: 2px;
+    }
+    .heatmap-legend .scale span {
+        width: 12px; height: 12px; border-radius: 2px;
+    }
+
+    /* 趣味统计 */
+    .fun-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 32px;
+    }
+    .fun-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 18px; text-align: center;
+        transition: transform 0.2s, border-color 0.3s;
+    }
+    .fun-card:hover { transform: translateY(-3px); border-color: rgba(255, 255, 255, 0.12); }
+    .fun-card .emoji { font-size: 28px; margin-bottom: 8px; }
+    .fun-card .fun-val {
+        font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 800;
+        color: var(--text-main);
+    }
+    .fun-card .fun-label {
+        font-size: 10px; color: var(--text-muted); margin-top: 4px;
+        line-height: 1.4;
+    }
+
+    /* 里程碑进度条 */
+    .milestone-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: 14px; padding: 20px; margin-bottom: 24px;
+    }
+    .milestone-row {
+        display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .milestone-row:last-child { margin-bottom: 0; }
+    .milestone-icon { font-size: 20px; width: 28px; text-align: center; }
+    .milestone-info { flex: 1; }
+    .milestone-name { font-size: 12px; color: var(--text-main); font-weight: 600; }
+    .milestone-bar {
+        height: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 3px;
+        overflow: hidden; margin-top: 4px;
+    }
+    .milestone-fill {
+        height: 100%; border-radius: 3px;
+        animation: fill-bar 2s ease-out;
+    }
+    .milestone-pct {
+        font-family: 'JetBrains Mono', monospace; font-size: 11px;
+        color: var(--text-muted); width: 50px; text-align: right;
+    }
+
+    /* 底部 */
+    .footer {
+        text-align: center; padding: 24px 0; font-size: 10px;
+        color: var(--text-dim); line-height: 1.8;
+    }
+    .footer .privacy {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 12px; border: 1px solid var(--border);
+        border-radius: 20px; margin-bottom: 8px;
+    }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+        .total-section, .dual-col { grid-template-columns: 1fr; }
+        .stats-row { grid-template-columns: repeat(2, 1fr); }
+        .podium { grid-template-columns: 1fr; }
+        .fun-grid { grid-template-columns: 1fr; }
+        .hero h1 { font-size: 28px; }
+        .heatmap-grid { grid-template-columns: repeat(12, 1fr); }
+    }
+</style>
+</head>
+<body>
+<div class="aurora"></div>
+
+<!-- 顶部实时滚动条 -->
+<div class="ticker-bar">
+    <div class="ticker-content">
+        <span class="pulse">● LIVE</span>
+        <span>社区实时速度: <b id="velocity">1,247,832</b> tokens/sec</span>
+        <span>在线用户: <b id="onlineUsers">342</b></span>
+        <span>今日累计: <b id="todayTotal">8.2B</b></span>
+        <span>最热模型: <b>gpt-5.5</b> (47%)</span>
+        <span class="pulse">🔥 新里程碑: 社区累计突破 1.2 万亿 Token</span>
+        <span>夜猫子占比: <b>43%</b></span>
+        <span>缓存省了: <b>$47,200</b></span>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 标题 -->
+    <div class="hero">
+        <h1>Token Olympics</h1>
+        <div class="subtitle"><span class="live-dot"></span>Token Monitor 社区 Dashboard · 实时数据</div>
+    </div>
+
+    <!-- 全社区总量 -->
+    <div class="total-section">
+        <div class="total-card">
+            <div class="label">社区今日总消耗</div>
+            <div class="value" id="todayCount">0<span class="unit">tokens</span></div>
+            <div class="delta up">↑ 12.3% vs 昨日</div>
+            <div class="fun-fact">≈ 读完《战争与和平》4,700 遍</div>
+        </div>
+        <div class="total-card">
+            <div class="label">社区累计总消耗</div>
+            <div class="value" id="totalCount">0<span class="unit">tokens</span></div>
+            <div class="delta up">↑ 持续增长中</div>
+            <div class="fun-fact">≈ 维基百科全部内容的 830 倍</div>
+        </div>
+    </div>
+
+    <!-- 小统计 -->
+    <div class="stats-row">
+        <div class="stat-mini">
+            <div class="icon">👥</div>
+            <div class="num" id="userCount">0</div>
+            <div class="desc">活跃用户</div>
+        </div>
+        <div class="stat-mini">
+            <div class="icon">⚡</div>
+            <div class="num" id="speed">0</div>
+            <div class="desc">tokens/sec</div>
+        </div>
+        <div class="stat-mini">
+            <div class="icon">💰</div>
+            <div class="num" id="saved">$0</div>
+            <div class="desc">缓存省 $</div>
+        </div>
+        <div class="stat-mini">
+            <div class="icon">🔥</div>
+            <div class="num" id="streak">0</div>
+            <div class="desc">最长连击天</div>
+        </div>
+    </div>
+
+    <!-- 时间维度切换 -->
+    <div class="time-tabs">
+        <button class="time-tab active" data-range="day">今日</button>
+        <button class="time-tab" data-range="week">本周</button>
+        <button class="time-tab" data-range="month">本月</button>
+        <button class="time-tab" data-range="year">本年</button>
+    </div>
+
+    <!-- 领奖台 -->
+    <div class="podium-section">
+        <div class="section-title">🏆 Token 冠军榜 <span class="line"></span></div>
+        <div class="podium">
+            <div class="podium-card silver">
+                <div class="medal">🥈</div>
+                <div class="rank">No.2</div>
+                <div class="name">User_K3M9X</div>
+                <div class="tokens">1.8B</div>
+                <div class="tool">Claude</div>
+                <div class="bar"></div>
+            </div>
+            <div class="podium-card gold">
+                <div class="medal">🥇</div>
+                <div class="rank">No.1</div>
+                <div class="name">User_A7X3K</div>
+                <div class="tokens">3.2B</div>
+                <div class="tool">Codex</div>
+                <div class="bar"></div>
+            </div>
+            <div class="podium-card bronze">
+                <div class="medal">🥉</div>
+                <div class="rank">No.3</div>
+                <div class="name">User_Z8P2Q</div>
+                <div class="tokens">1.2B</div>
+                <div class="tool">Codex</div>
+                <div class="bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 双列: 工具占比 + 活跃时段 -->
+    <div class="dual-col">
+        <div class="distribution-card">
+            <div class="section-title" style="font-size: 13px; margin-bottom: 14px;">🛠️ 工具占比 <span class="line"></span></div>
+            <div class="dist-item">
+                <div class="dist-dot" style="background: #3b82f6;"></div>
+                <div class="dist-name">Codex</div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 58%; background: #3b82f6;"></div></div>
+                <div class="dist-pct">58%</div>
+            </div>
+            <div class="dist-item">
+                <div class="dist-dot" style="background: #ec4899;"></div>
+                <div class="dist-name">Claude</div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 22%; background: #ec4899;"></div></div>
+                <div class="dist-pct">22%</div>
+            </div>
+            <div class="dist-item">
+                <div class="dist-dot" style="background: #10b981;"></div>
+                <div class="dist-name">Hermes</div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 12%; background: #10b981;"></div></div>
+                <div="dist-pct">12%</div>
+            </div>
+            <div class="dist-item">
+                <div class="dist-dot" style="background: #f59e0b;"></div>
+                <div class="dist-name">Other</div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 8%; background: #f59e0b;"></div></div>
+                <div class="dist-pct">8%</div>
+            </div>
+        </div>
+        <div class="heatmap-card">
+            <div class="section-title" style="font-size: 13px; margin-bottom: 6px;">🕐 社区活跃时段 <span class="line"></span></div>
+            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">AI 程序员们凌晨 2 点最肝</div>
+            <div class="heatmap-grid" id="heatmapGrid"></div>
+            <div class="heatmap-labels">
+                <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span>
+            </div>
+            <div class="heatmap-legend">
+                <span>少</span>
+                <div class="scale">
+                    <span style="background: rgba(57, 211, 83, 0.1);"></span>
+                    <span style="background: rgba(57, 211, 83, 0.3);"></span>
+                    <span style="background: rgba(57, 211, 83, 0.5);"></span>
+                    <span style="background: rgba(57, 211, 83, 0.7);"></span>
+                    <span style="background: rgba(57, 211, 83, 0.9);"></span>
+                </div>
+                <span>多</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 趣味统计 -->
+    <div class="section-title">✨ 趣味统计 <span class="line"></span></div>
+    <div class="fun-grid">
+        <div class="fun-card">
+            <div class="emoji">🦉</div>
+            <div class="fun-val">43%</div>
+            <div class="fun-label">夜猫子占比<br>(22:00-06:00)</div>
+        </div>
+        <div class="fun-card">
+            <div class="emoji">📚</div>
+            <div class="fun-val">47K</div>
+            <div class="fun-label">《战争与和平》<br>可读遍数</div>
+        </div>
+        <div class="fun-card">
+            <div class="emoji">🌳</div>
+            <div class="fun-val">2.1t</div>
+            <div class="fun-label">估算 CO₂ 排放<br>(社区合计)</div>
+        </div>
+        <div class="fun-card">
+            <div class="emoji">🌍</div>
+            <div class="fun-val">830x</div>
+            <div class="fun-label">维基百科内容<br>倍数</div>
+        </div>
+        <div class="fun-card">
+            <div class="emoji">💾</div>
+            <div class="fun-val">$47K</div>
+            <div class="fun-label">缓存命中<br>社区省 $</div>
+        </div>
+        <div class="fun-card">
+            <div class="emoji">🔥</div>
+            <div class="fun-val">89</div>
+            <div class="fun-label">最长连续<br>使用天数</div>
+        </div>
+    </div>
+
+    <!-- 里程碑 -->
+    <div class="section-title">🎯 社区里程碑 <span class="line"></span></div>
+    <div class="milestone-card">
+        <div class="milestone-row">
+            <div class="milestone-icon">🥉</div>
+            <div class="milestone-info">
+                <div class="milestone-name">1,000 亿 Token</div>
+                <div class="milestone-bar"><div class="milestone-fill" style="width: 100%; background: var(--bronze);"></div></div>
+            </div>
+            <div class="milestone-pct">✓ 已达成</div>
+        </div>
+        <div class="milestone-row">
+            <div class="milestone-icon">🥈</div>
+            <div class="milestone-info">
+                <div class="milestone-name">5,000 亿 Token</div>
+                <div class="milestone-bar"><div class="milestone-fill" style="width: 100%; background: var(--silver);"></div></div>
+            </div>
+            <div class="milestone-pct">✓ 已达成</div>
+        </div>
+        <div class="milestone-row">
+            <div class="milestone-icon">🥇</div>
+            <div class="milestone-info">
+                <div class="milestone-name">1 万亿 Token</div>
+                <div class="milestone-bar"><div class="milestone-fill" style="width: 78%; background: var(--gold);"></div></div>
+            </div>
+            <div class="milestone-pct">78%</div>
+        </div>
+        <div class="milestone-row">
+            <div class="milestone-icon">💎</div>
+            <div class="milestone-info">
+                <div class="milestone-name">10 万亿 Token</div>
+                <div class="milestone-bar"><div class="milestone-fill" style="width: 7.8%; background: var(--neon-purple);"></div></div>
+            </div>
+            <div class="milestone-pct">7.8%</div>
+        </div>
+    </div>
+
+    <!-- 底部 -->
+    <div class="footer">
+        <div class="privacy">🔒 所有用户数据均匿名化处理 · 仅显示聚合统计 · 不含任何个人信息</div>
+        <div>Token Monitor Community Dashboard · 数据每 5 分钟更新</div>
+    </div>
+</div>
+
+<script>
+// ===== 数字滚动动画 =====
+function animateCount(el, target, duration, formatter) {
+    var start = 0;
+    var startTime = performance.now();
+    function update(now) {
+        var elapsed = now - startTime;
+        var progress = Math.min(elapsed / duration, 1);
+        var eased = 1 - Math.pow(1 - progress, 3);
+        var current = Math.floor(start + (target - start) * eased);
+        el.firstChild.textContent = formatter ? formatter(current) : current.toLocaleString();
+        if (progress < 1) requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+}
+
+// 初始化大数字
+animateCount(document.getElementById('todayCount'), 8200000000, 2000, function(v) {
+    return (v / 1e9).toFixed(1) + 'B';
+});
+animateCount(document.getElementById('totalCount'), 1200000000000, 2500, function(v) {
+    return (v / 1e12).toFixed(2) + 'T';
+});
+animateCount(document.getElementById('userCount'), 1287, 1500);
+animateCount(document.getElementById('speed'), 1247832, 1800, function(v) {
+    return v.toLocaleString();
+});
+animateCount(document.getElementById('saved'), 47200, 2000, function(v) {
+    return '$' + (v / 1000).toFixed(1) + 'K';
+});
+animateCount(document.getElementById('streak'), 89, 1200);
+
+// 实时速度跳动 (模拟)
+setInterval(function() {
+    var el = document.getElementById('velocity');
+    var base = 1247832;
+    var jitter = Math.floor(Math.random() * 200000 - 100000);
+    el.textContent = (base + jitter).toLocaleString();
+}, 2000);
+
+// 在线用户微调
+setInterval(function() {
+    var el = document.getElementById('onlineUsers');
+    var base = 342;
+    var jitter = Math.floor(Math.random() * 20 - 10);
+    el.textContent = base + jitter;
+}, 5000);
+
+// ===== 热力图 24 小时 =====
+var heatmap = document.getElementById('heatmapGrid');
+// 模拟数据: 凌晨 1-3 点最活跃
+var hours = [0.2, 0.35, 0.5, 0.45, 0.3, 0.15, 0.1, 0.15, 0.3, 0.5, 0.6, 0.55,
+            0.5, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.6, 0.5, 0.4, 0.45, 0.55];
+for (var h = 0; h < 24; h++) {
+    var cell = document.createElement('div');
+    cell.className = 'heatmap-cell';
+    var intensity = hours[h];
+    cell.style.background = 'rgba(57, 211, 83, ' + (0.05 + intensity * 0.85) + ')';
+    cell.title = h + ':00 - 活跃度 ' + Math.round(intensity * 100) + '%';
+    heatmap.appendChild(cell);
+}
+
+// ===== 时间维度切换 =====
+document.querySelectorAll('.time-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.time-tab').forEach(function(t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        var range = tab.dataset.range;
+        // 模拟切换数据
+        var data = {
+            day:   { today: 8.2e9, total: 1.2e12 },
+            week:  { today: 47.3e9, total: 1.2e12 },
+            month: { today: 182e9, total: 1.2e12 },
+            year:  { today: 1.1e12, total: 1.2e12 }
+        };
+        var d = data[range];
+        animateCount(document.getElementById('todayCount'), d.today, 1000, function(v) {
+            if (v >= 1e12) return (v / 1e12).toFixed(2) + 'T';
+            if (v >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+            if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+            return v.toLocaleString();
+        });
+    });
+});
+</script>
+</body>
+</html>

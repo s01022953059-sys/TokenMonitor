@@ -150,10 +150,9 @@ def report_community_stats(today_usage):
     payload = {
         "message": "community: " + uid + " 上报统计",
         "content": content_b64,
-        "branch": "main"
+        "branch": "main",
+        "sha": sha or ""
     }
-    if sha:
-        payload["sha"] = sha
 
     result = _gitcode_api("PUT", file_path, payload, token)
     return result and "error" not in (result if isinstance(result, dict) else {})
