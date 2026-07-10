@@ -431,7 +431,8 @@
         .history-btn { right: 25px; }
         .heatmap-btn { right: 75px; }
         .community-btn { right: 125px; }
-        .theme-btn { right: 175px; }
+        .userid-btn { right: 175px; }
+        .theme-btn { right: 225px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -1156,6 +1157,12 @@
                 <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
         </button>
+        <button id="userIdOpenBtn" class="header-action-btn userid-btn" title="我的匿名 ID">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+        </button>
         <button id="aboutOpenBtn" class="header-action-btn about-btn" title="关于 Token Monitor">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -1329,6 +1336,24 @@
     </div>
 
     <!-- 关于弹窗 -->
+    <div id="userIdModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3>我的匿名 ID</h3>
+                <button id="userIdCloseBtn" class="close-btn">&times;</button>
+            </div>
+            <div style="padding: 20px 24px 24px; font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
+                <p style="margin: 0 0 8px; color: var(--text-muted); font-size: 11px;">用于社区 Dashboard 上报 + GitCode 报告文件名映射, 不会上传对话内容或个人信息.</p>
+                <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: var(--bg-subtle); border: 1px solid var(--border-card); border-radius: 10px; margin: 12px 0;">
+                    <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--modal-line-color); user-select: all;" id="userIdValue">--</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted);">
+                    <span>当前排名:</span>
+                    <span id="userIdRank" style="font-family: 'JetBrains Mono', monospace; color: var(--neon-green);">未上榜</span>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="aboutModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 520px;">
             <div class="modal-header">
@@ -2814,6 +2839,35 @@
         document.getElementById('communityModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('communityModal')) {
                 document.getElementById('communityModal').classList.remove('active');
+            }
+        });
+
+        // ===== 用户 ID 弹窗 (只读, v1.4.16) =====
+        async function loadUserId() {
+            const idEl = document.getElementById('userIdValue');
+            const rankEl = document.getElementById('userIdRank');
+            if (!idEl || !rankEl) return;
+            try {
+                const res = await fetch(API_BASE + '/api/community', { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                idEl.innerText = data.my_id || '--';
+                rankEl.innerText = data.my_rank ? `No.${data.my_rank}` : '未上榜';
+            } catch (e) {
+                idEl.innerText = '读取失败';
+                rankEl.innerText = '--';
+            }
+        }
+        document.getElementById('userIdOpenBtn').addEventListener('click', () => {
+            document.getElementById('userIdModal').classList.add('active');
+            loadUserId();
+        });
+        document.getElementById('userIdCloseBtn').addEventListener('click', () => {
+            document.getElementById('userIdModal').classList.remove('active');
+        });
+        document.getElementById('userIdModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('userIdModal')) {
+                document.getElementById('userIdModal').classList.remove('active');
             }
         });
 
