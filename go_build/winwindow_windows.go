@@ -8,27 +8,27 @@ import (
 )
 
 var (
-	pUser32                       = syscall.NewLazyDLL("user32.dll")
-	pSetWindowLongPtrW            = pUser32.NewProc("SetWindowLongPtrW")
-	pGetWindowLongPtrW            = pUser32.NewProc("GetWindowLongPtrW")
-	pCallWindowProcW              = pUser32.NewProc("CallWindowProcW")
-	pShowWindow                   = pUser32.NewProc("ShowWindow")
-	pSetForegroundWindow          = pUser32.NewProc("SetForegroundWindow")
-	pPostMessageW                 = pUser32.NewProc("PostMessageW")
-	pIsWindowVisible              = pUser32.NewProc("IsWindowVisible")
-	pGetSystemMetrics             = pUser32.NewProc("GetSystemMetrics")
-	pMoveWindow                   = pUser32.NewProc("MoveWindow")
+	pUser32              = syscall.NewLazyDLL("user32.dll")
+	pSetWindowLongPtrW   = pUser32.NewProc("SetWindowLongPtrW")
+	pGetWindowLongPtrW   = pUser32.NewProc("GetWindowLongPtrW")
+	pCallWindowProcW     = pUser32.NewProc("CallWindowProcW")
+	pShowWindow          = pUser32.NewProc("ShowWindow")
+	pSetForegroundWindow = pUser32.NewProc("SetForegroundWindow")
+	pPostMessageW        = pUser32.NewProc("PostMessageW")
+	pIsWindowVisible     = pUser32.NewProc("IsWindowVisible")
+	pGetSystemMetrics    = pUser32.NewProc("GetSystemMetrics")
+	pMoveWindow          = pUser32.NewProc("MoveWindow")
 )
 
 const (
-	GWLP_WNDPROC      = ^uintptr(3) // -4 as uintptr
-	WM_CLOSE          = 0x0010
-	WM_USER_SHOW      = 0x0401       // 自定义消息: 显示窗口
-	SW_HIDE           = 0
-	SW_SHOW           = 5
-	SW_RESTORE        = 9
-	SM_CXSCREEN       = 0            // 屏幕宽
-	SM_CYSCREEN       = 1            // 屏幕高
+	GWLP_WNDPROC = ^uintptr(3) // -4 as uintptr
+	WM_CLOSE     = 0x0010
+	WM_USER_SHOW = 0x0401 // 自定义消息: 显示窗口
+	SW_HIDE      = 0
+	SW_SHOW      = 5
+	SW_RESTORE   = 9
+	SM_CXSCREEN  = 0 // 屏幕宽
+	SM_CYSCREEN  = 1 // 屏幕高
 )
 
 var (
@@ -84,6 +84,15 @@ func showHiddenWindow() bool {
 	}
 	// 发 WM_USER_SHOW 让窗口过程处理
 	pPostMessageW.Call(hiddenHwnd, uintptr(WM_USER_SHOW), 0, 0)
+	return true
+}
+
+// hideMainWindow 在开机自启时只保留托盘，不打扰用户桌面。
+func hideMainWindow() bool {
+	if hiddenHwnd == 0 {
+		return false
+	}
+	pShowWindow.Call(hiddenHwnd, uintptr(SW_HIDE))
 	return true
 }
 

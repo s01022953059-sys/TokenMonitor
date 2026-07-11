@@ -8,211 +8,137 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sys/windows/registry"
-	ole "github.com/go-ole/go-ole"
-	"github.com/go-ole/go-ole/oleutil"
 )
 
 const autoStartRegKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
 const autoStartValueName = "TokenMonitor"
 const startupApprovedKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
 
-// 防止 enable/disable 并发调用导致 COM 状态混乱
 var autoStartMu sync.Mutex
 
-// isAutoStartEnabled 检查注册表 Run 里有没有 TokenMonitor 条目
-func isAutoStartEnabled() bool {
+func readAutoStartCommand() (string, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.QUERY_VALUE)
+	if err != nil {
+		return "", err
+	}
+	defer k.Close()
+	value, _, err := k.GetStringValue(autoStartValueName)
+	return value, err
+}
+
+func startupApprovedDisabled() bool {
+	k, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedKey, registry.QUERY_VALUE)
 	if err != nil {
 		return false
 	}
 	defer k.Close()
-	_, _, err = k.GetStringValue(autoStartValueName)
-	return err == nil
+	value, _, err := k.GetBinaryValue(autoStartValueName)
+	return err == nil && len(value) > 0 && value[0] == 0x03
 }
 
-// enableAutoStart 写注册表 Run + StartupApproved + Startup 文件夹快捷方式
-func enableAutoStart() {
+// isAutoStartEnabled 只认可当前 EXE 的规范 Run 命令，并尊重任务管理器里的禁用状态。
+func isAutoStartEnabled() bool {
+	exePath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	command, err := readAutoStartCommand()
+	if err != nil || !isExpectedAutoStartCommand(command, exePath) {
+		return false
+	}
+	return !startupApprovedDisabled()
+}
+
+// migrateLegacyAutoStart 将旧版只有 EXE 路径的 Run 项迁移为单入口后台启动。
+func migrateLegacyAutoStart() {
+	exePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	command, err := readAutoStartCommand()
+	if err != nil || !isLegacyAutoStartCommand(command, exePath) {
+		return
+	}
+	guiLog("migrateLegacyAutoStart: 检测到旧自启配置, 开始迁移")
+	if err := enableAutoStart(); err != nil {
+		guiLog("migrateLegacyAutoStart: 迁移失败: %v", err)
+	}
+}
+
+// enableAutoStart 使用 HKCU Run 作为唯一自启入口，不需要管理员权限。
+func enableAutoStart() error {
 	autoStartMu.Lock()
 	defer autoStartMu.Unlock()
-
-	// panic recovery, 防止 COM 调用崩溃杀掉整个进程
-	defer func() {
-		if r := recover(); r != nil {
-			guiLog("enableAutoStart PANIC: %v", r)
-		}
-	}()
 
 	exePath, err := os.Executable()
 	if err != nil {
-		guiLog("enableAutoStart: os.Executable failed: %v", err)
-		return
+		return fmt.Errorf("读取 EXE 路径失败: %w", err)
 	}
 	guiLog("enableAutoStart: exePath=%s", exePath)
 
-	// 1. 写 Run 注册表项
-	k, _, err := registry.CreateKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE)
+	// 清理旧版额外入口，避免登录时同时启动多个实例。
+	cleanupLegacyAutoStartArtifacts()
+	removeStartupApprovedValue()
+
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE|registry.QUERY_VALUE)
 	if err != nil {
-		guiLog("enableAutoStart: CreateKey Run failed: %v", err)
-		return
+		return fmt.Errorf("打开 Run 注册表失败: %w", err)
 	}
-	if err := k.SetStringValue(autoStartValueName, `"`+exePath+`"`); err != nil {
-		guiLog("enableAutoStart: SetStringValue failed: %v", err)
-		k.Close()
-		return
-	}
-	k.Close()
-	guiLog("enableAutoStart: Run 项写入成功")
+	defer k.Close()
 
-	// 2. 写 StartupApproved
-	saKey, _, err := registry.CreateKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
-	if err == nil {
-		enabled := []byte{0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		if err := saKey.SetBinaryValue(autoStartValueName, enabled); err != nil {
-			guiLog("enableAutoStart: SetBinaryValue StartupApproved failed: %v", err)
-		} else {
-			guiLog("enableAutoStart: StartupApproved 写入成功 (03=启用)")
-		}
-		saKey.Close()
+	command := buildAutoStartCommand(exePath)
+	if err := k.SetStringValue(autoStartValueName, command); err != nil {
+		return fmt.Errorf("写入 Run 注册表失败: %w", err)
 	}
-
-	// 3. 创建 Startup 文件夹快捷方式
-	startupDir := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
-	if err := createShortcut(lnkPath, exePath); err != nil {
-		guiLog("enableAutoStart: 创建快捷方式失败: %v", err)
-	} else {
-		guiLog("enableAutoStart: Startup 快捷方式创建成功: %s", lnkPath)
+	actual, _, err := k.GetStringValue(autoStartValueName)
+	if err != nil || !isExpectedAutoStartCommand(actual, exePath) {
+		return fmt.Errorf("Run 注册表写入后校验失败")
 	}
-
-	// 4. v1.4.11: 创建 Task Scheduler 任务 (Win11 最可靠, 不受 SmartScreen 拦截)
-	// schtasks /create /tn "TokenMonitor" /tr "\"exe_path\"" /sc ONLOGON /rl LIMITED /f
-	taskCmd := exec.Command("schtasks", "/create",
-		"/tn", "TokenMonitor",
-		"/tr", `"`+exePath+`"`,
-		"/sc", "ONLOGON",
-		"/rl", "LIMITED",
-		"/f")
-	if output, err := taskCmd.CombinedOutput(); err != nil {
-		guiLog("enableAutoStart: Task Scheduler 创建失败: %v, output=%s", err, string(output))
-	} else {
-		guiLog("enableAutoStart: Task Scheduler 创建成功")
-	}
-
-	// 4. 读回验证
-	k2, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.QUERY_VALUE)
-	if err == nil {
-		val, _, err := k2.GetStringValue(autoStartValueName)
-		k2.Close()
-		if err == nil {
-			guiLog("enableAutoStart: 验证读回值=%s", val)
-		}
-	}
-
-	fmt.Printf("[autostart] 已启用开机自启: %s\n", exePath)
+	guiLog("enableAutoStart: 已写入并验证 %s", command)
+	return nil
 }
 
-// disableAutoStart 删除所有自启痕迹
-func disableAutoStart() {
+func disableAutoStart() error {
 	autoStartMu.Lock()
 	defer autoStartMu.Unlock()
 
-	defer func() {
-		if r := recover(); r != nil {
-			guiLog("disableAutoStart PANIC: %v", r)
-		}
-	}()
-
-	// 1. 删 Run 项
+	var firstErr error
 	k, err := registry.OpenKey(registry.CURRENT_USER, autoStartRegKey, registry.SET_VALUE)
 	if err == nil {
-		k.DeleteValue(autoStartValueName)
+		if err := k.DeleteValue(autoStartValueName); err != nil && err != registry.ErrNotExist {
+			firstErr = err
+		}
 		k.Close()
-		guiLog("disableAutoStart: Run 项已删除")
 	}
-
-	// 2. 删 StartupApproved
-	saKey, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
-	if err == nil {
-		saKey.DeleteValue(autoStartValueName)
-		saKey.Close()
-		guiLog("disableAutoStart: StartupApproved 已删除")
-	}
-
-	// 3. 删 Startup 快捷方式
-	startupDir := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-	lnkPath := filepath.Join(startupDir, "TokenMonitor.lnk")
-	if err := os.Remove(lnkPath); err == nil {
-		guiLog("disableAutoStart: Startup 快捷方式已删除")
-	}
-
-	// 4. 删 Task Scheduler 任务
-	delTask := exec.Command("schtasks", "/delete", "/tn", "TokenMonitor", "/f")
-	if output, err := delTask.CombinedOutput(); err != nil {
-		guiLog("disableAutoStart: Task Scheduler 删除失败 (可能不存在): %v", err)
-	} else {
-		guiLog("disableAutoStart: Task Scheduler 已删除, output=%s", string(output))
-	}
-
-	fmt.Printf("[autostart] 已取消开机自启\n")
+	removeStartupApprovedValue()
+	cleanupLegacyAutoStartArtifacts()
+	guiLog("disableAutoStart: 已清理全部自启入口")
+	return firstErr
 }
 
-// createShortcut 创建 .lnk 快捷方式
-// v1.4.07: 修复快速切换崩溃
-// - 不用 MustCallMethod (会 panic), 改用 CallMethod + 错误检查
-// - COM 初始化用 RPC_E_CHANGED_MODE 容忍 (已初始化时不报错)
-// - 不调 CoUninitialize (避免重复反初始化导致后续 COM 调用崩溃)
-func createShortcut(lnkPath, targetPath string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("COM panic: %v", r)
+func removeStartupApprovedValue() {
+	k, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedKey, registry.SET_VALUE)
+	if err != nil {
+		return
+	}
+	defer k.Close()
+	_ = k.DeleteValue(autoStartValueName)
+}
+
+func cleanupLegacyAutoStartArtifacts() {
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		shortcut := filepath.Join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "TokenMonitor.lnk")
+		if err := os.Remove(shortcut); err == nil {
+			guiLog("cleanupLegacyAutoStart: 已删除旧 Startup 快捷方式")
 		}
-	}()
-
-	// CoInitializeEx 容忍已初始化的情况 (返回 S_FALSE 不算错误)
-	// 不调 CoUninitialize — 避免快速切换时重复反初始化崩溃
-	hr := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED)
-	// S_OK(0) = 首次初始化成功, S_FALSE(1) = 已初始化, RPC_E_CHANGED_MODE = 线程模式冲突
-	_ = hr // 忽略返回值, 不影响后续调用
-
-	clsid, err := ole.CLSIDFromProgID("WScript.Shell")
-	if err != nil {
-		return fmt.Errorf("CLSIDFromProgID: %w", err)
-	}
-	unknown, err := ole.CreateInstance(clsid, nil)
-	if err != nil {
-		return fmt.Errorf("CreateInstance: %w", err)
-	}
-	defer unknown.Release()
-
-	dispatch, err := unknown.QueryInterface(ole.IID_IDispatch)
-	if err != nil {
-		return fmt.Errorf("QueryInterface: %w", err)
-	}
-	defer dispatch.Release()
-
-	// 用 CallMethod (返回 error) 而不是 MustCallMethod (会 panic)
-	ds, err := oleutil.CallMethod(dispatch, "CreateShortcut", lnkPath)
-	if err != nil {
-		return fmt.Errorf("CreateShortcut: %w", err)
-	}
-	shortcut := ds.ToIDispatch()
-	defer shortcut.Release()
-
-	if _, err := oleutil.CallMethod(shortcut, "Item", "TargetPath", targetPath); err != nil {
-		return fmt.Errorf("Item TargetPath: %w", err)
-	}
-	workDir := filepath.Dir(targetPath)
-	if _, err := oleutil.CallMethod(shortcut, "Item", "WorkingDirectory", workDir); err != nil {
-		return fmt.Errorf("Item WorkingDirectory: %w", err)
-	}
-	if _, err := oleutil.CallMethod(shortcut, "Item", "WindowStyle", 1); err != nil {
-		return fmt.Errorf("Item WindowStyle: %w", err)
-	}
-	if _, err := oleutil.CallMethod(shortcut, "Save"); err != nil {
-		return fmt.Errorf("Save: %w", err)
 	}
 
-	return nil
+	cmd := exec.Command("schtasks", "/delete", "/tn", "TokenMonitor", "/f")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if output, err := cmd.CombinedOutput(); err == nil {
+		guiLog("cleanupLegacyAutoStart: 已删除旧计划任务: %s", string(output))
+	}
 }

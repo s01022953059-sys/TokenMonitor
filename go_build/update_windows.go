@@ -1,11 +1,9 @@
 //go:build windows
 
-// Token Monitor Windows 自更新引擎
-// v1.4.09: HEAD 测连通 + 下载卡死检测 + 自动切代理
 package main
 
 import (
-	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,228 +12,226 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/getlantern/systray"
 )
 
-const winReleaseURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor-win.zip"
+const winReleaseEXEURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor.exe"
 
+var selfUpdateMu sync.Mutex
 var selfUpdateInProgress bool
 
 func trySelfUpdate(port int) bool {
 	return trySelfUpdateWithProgress(port)
 }
 
-// trySelfUpdateWithProgress 检查更新 + 下载(卡死检测+自动切代理) + 替换 + 重启
+// trySelfUpdateWithProgress 直接下载并校验新的 PE 文件，再交给独立脚本替换。
+// ZIP 仍作为手动安装包发布，但不再参与应用内更新。
 func trySelfUpdateWithProgress(port int) bool {
+	selfUpdateMu.Lock()
 	if selfUpdateInProgress {
+		selfUpdateMu.Unlock()
+		injectUpdateStatus("更新正在进行中", "progress")
 		return false
 	}
+	selfUpdateInProgress = true
+	selfUpdateMu.Unlock()
+	defer func() {
+		selfUpdateMu.Lock()
+		selfUpdateInProgress = false
+		selfUpdateMu.Unlock()
+	}()
 
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/check-update", port))
 	if err != nil {
-		return false
+		return failWindowsUpdate("无法连接本地更新服务: " + err.Error())
 	}
 	defer resp.Body.Close()
 	var data struct {
 		OK              bool   `json:"ok"`
 		LatestVersion   string `json:"latest_version"`
 		UpdateAvailable bool   `json:"update_available"`
+		DownloadURL     string `json:"download_url"`
+		Error           string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return failWindowsUpdate("更新信息解析失败: " + err.Error())
+	}
+	if !data.OK {
+		return failWindowsUpdate("检查更新失败: " + data.Error)
+	}
+	if !data.UpdateAvailable {
+		injectUpdateStatus("当前已是最新版本", "success")
 		return false
 	}
-	if !data.OK || !data.UpdateAvailable {
-		return false
+
+	downloadURL := strings.TrimSpace(data.DownloadURL)
+	if !strings.Contains(strings.ToLower(downloadURL), ".exe") {
+		downloadURL = fmt.Sprintf(winReleaseEXEURLTemplate, data.LatestVersion)
 	}
+	guiLog("trySelfUpdate: v%s url=%s", data.LatestVersion, downloadURL)
+	injectProgress(0, "准备下载 v"+data.LatestVersion)
+	systray.SetTooltip("Token Monitor - 正在下载 v" + data.LatestVersion)
 
-	selfUpdateInProgress = true
-	defer func() { selfUpdateInProgress = false }()
-	guiLog("trySelfUpdate: v%s", data.LatestVersion)
+	tmpExe := filepath.Join(os.TempDir(), "TokenMonitor-update-"+data.LatestVersion+".exe")
+	_ = os.Remove(tmpExe)
+	if _, err := downloadWithFallback(downloadURL, tmpExe); err != nil {
+		_ = os.Remove(tmpExe)
+		return failWindowsUpdate("下载失败: " + err.Error())
+	}
+	if err := validateWindowsExecutable(tmpExe); err != nil {
+		_ = os.Remove(tmpExe)
+		return failWindowsUpdate("下载文件校验失败: " + err.Error())
+	}
+	injectProgress(100, "下载完成，正在准备安装")
 
-	zipURL := fmt.Sprintf(winReleaseURLTemplate, data.LatestVersion)
-	tmpZip := filepath.Join(os.TempDir(), "tm_update.zip")
-
-	// 下载: 先试直连, 卡死自动切代理
-	injectToast("正在下载更新包...", "#f59e0b")
-	systray.SetTooltip("Token Monitor - 正在下载更新...")
-
-	totalSize, err := downloadWithFallback(zipURL, tmpZip, data.LatestVersion)
+	currentExe, err := os.Executable()
 	if err != nil {
-		guiLog("trySelfUpdate: 下载最终失败: %v", err)
-		injectToast("下载失败: "+err.Error(), "#f85149")
-		systray.SetTooltip("Token Monitor - 下载失败")
-		return false
+		return failWindowsUpdate("无法读取当前程序路径: " + err.Error())
 	}
-	guiLog("trySelfUpdate: 下载完成 %d bytes", totalSize)
-	injectToast("下载完成, 正在解压...", "#f59e0b")
-	systray.SetTooltip("Token Monitor - 解压中...")
-
-	// 解压
-	tmpDir := filepath.Join(os.TempDir(), "tm_update")
-	os.RemoveAll(tmpDir)
-	if err := unzipTo(tmpZip, tmpDir); err != nil {
-		guiLog("trySelfUpdate: 解压失败: %v", err)
-		return false
+	currentExe, _ = filepath.Abs(currentExe)
+	stagedExe := currentExe + ".new"
+	_ = os.Remove(stagedExe)
+	if err := copyFile(tmpExe, stagedExe); err != nil {
+		return failWindowsUpdate("无法写入安装目录: " + err.Error())
 	}
-	newExe := findFile(tmpDir, "TokenMonitor.exe")
-	if newExe == "" {
-		guiLog("trySelfUpdate: 解压后找不到 TokenMonitor.exe")
-		return false
+	_ = os.Remove(tmpExe)
+	if err := validateWindowsExecutable(stagedExe); err != nil {
+		_ = os.Remove(stagedExe)
+		return failWindowsUpdate("安装前校验失败: " + err.Error())
 	}
 
-	// 替换 exe
-	injectToast("正在安装...", "#f59e0b")
-	systray.SetTooltip("Token Monitor - 安装中...")
-	currentExe, _ := os.Executable()
-	currentDir := filepath.Dir(currentExe)
-	newExePath := filepath.Join(currentDir, "TokenMonitor.exe.new")
-	if err := copyFile(newExe, newExePath); err != nil {
-		guiLog("trySelfUpdate: 拷新 exe 失败: %v", err)
-		return false
+	scriptPath := filepath.Join(os.TempDir(), "TokenMonitor-update-"+data.LatestVersion+".cmd")
+	versionFile := filepath.Join(filepath.Dir(currentExe), "version.txt")
+	script := buildWindowsUpdateScript(currentExe, stagedExe, versionFile)
+	if err := os.WriteFile(scriptPath, []byte(script), 0600); err != nil {
+		return failWindowsUpdate("无法创建更新脚本: " + err.Error())
 	}
 
-	// update.bat
-	batPath := filepath.Join(currentDir, "update.bat")
-	batContent := fmt.Sprintf(`@echo off
-timeout /t 2 /nobreak >nul
-del "%s.old" 2>nul
-ren "%s" "TokenMonitor.exe.old"
-ren "%s" "TokenMonitor.exe"
-start "" "%s"
-del "%s.old" 2>nul
-del "%s" 2>nul
-`, currentExe, currentExe, newExePath, currentExe, currentExe, batPath)
-	if err := os.WriteFile(batPath, []byte(batContent), 0644); err != nil {
-		return false
+	cmd := exec.Command("cmd.exe", "/C", scriptPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	if err := cmd.Start(); err != nil {
+		return failWindowsUpdate("无法启动安装程序: " + err.Error())
 	}
-
-	guiLog("trySelfUpdate: 启动 update.bat, 退出")
-	cmd := exec.Command("cmd", "/c", "start", "/min", batPath)
-	cmd.Start()
+	guiLog("trySelfUpdate: helper started pid=%d", cmd.Process.Pid)
+	injectProgress(100, "安装中，应用即将重启")
+	systray.SetTooltip("Token Monitor - 正在安装更新")
 	return true
 }
 
-// downloadWithFallback 先试直连, 10 秒无数据自动切代理
-func downloadWithFallback(url, destPath, version string) (int64, error) {
-	// 1. 先试直连 (HEAD 测连通, 不下载 body)
-	guiLog("downloadWithFallback: 测速直连 HEAD...")
-	directOK := testConnectivity(url, false)
-	if directOK {
-		guiLog("downloadWithFallback: 直连 HEAD OK, 尝试直连下载")
-		n, err := downloadWithStallDetection(url, destPath, false, version)
-		if err == nil {
-			return n, nil
-		}
-		guiLog("downloadWithFallback: 直连下载失败/卡死: %v, 切代理", err)
-		injectToast("直连下载失败, 切换到代理...", "#f59e0b")
-	} else {
-		guiLog("downloadWithFallback: 直连 HEAD 失败, 直接用代理")
-	}
-
-	// 2. 代理下载
-	n, err := downloadWithStallDetection(url, destPath, true, version)
-	if err != nil {
-		return 0, fmt.Errorf("代理下载也失败: %w", err)
-	}
-	return n, nil
+func failWindowsUpdate(message string) bool {
+	guiLog("windows update failed: %s", message)
+	injectUpdateStatus(message, "error")
+	systray.SetTooltip("Token Monitor - 更新失败")
+	return false
 }
 
-// testConnectivity HEAD 请求测连通性 (不下载 body)
-func testConnectivity(url string, useProxy bool) bool {
-	var client *http.Client
-	if useProxy {
-		client = newProxyHTTPClient(5)
-	} else {
-		client = &http.Client{Timeout: 5 * time.Second}
+// downloadWithFallback 先直连，失败后使用项目已有的代理客户端。
+func downloadWithFallback(url, destPath string) (int64, error) {
+	n, err := downloadWithIdleTimeout(url, destPath, false)
+	if err == nil {
+		return n, nil
 	}
-	req, err := http.NewRequest("HEAD", url, nil)
+	guiLog("direct update download failed: %v; retry with proxy", err)
+	injectUpdateStatus("直连失败，正在切换代理重试", "progress")
+	_ = os.Remove(destPath)
+	return downloadWithIdleTimeout(url, destPath, true)
+}
+
+func downloadWithIdleTimeout(url, destPath string, useProxy bool) (int64, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false
+		return 0, err
 	}
-	req.Header.Set("User-Agent", "TokenMonitor-update-check")
+	req.Header.Set("User-Agent", "TokenMonitor-updater")
+
+	client := &http.Client{Timeout: 10 * time.Minute}
+	if useProxy {
+		client = newProxyHTTPClient(600)
+	}
 	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return resp.StatusCode == 200
-}
-
-// downloadWithStallDetection 下载文件, 10 秒无新数据则判定卡死
-func downloadWithStallDetection(url, destPath string, useProxy bool, version string) (int64, error) {
-	var client *http.Client
-	if useProxy {
-		client = newProxyHTTPClient(300)
-		guiLog("downloadWithStallDetection: 用代理下载")
-	} else {
-		client = &http.Client{Timeout: 5 * time.Minute}
-		guiLog("downloadWithStallDetection: 用直连下载")
-	}
-
-	resp, err := client.Get(url)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	totalSize := resp.ContentLength
 	out, err := os.Create(destPath)
 	if err != nil {
 		return 0, err
 	}
+	defer out.Close()
 
-	var downloaded int64
-	buf := make([]byte, 32*1024)
-	lastDataTime := time.Now()
-	lastReport := time.Now()
-
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			out.Write(buf[:n])
-			downloaded += int64(n)
-			lastDataTime = time.Now()
-
-			// 每 2 秒报告进度
-			if time.Since(lastReport) > 2*time.Second {
-				pct := 0
-				if totalSize > 0 {
-					pct = int(downloaded * 100 / totalSize)
+	var lastProgress atomic.Int64
+	lastProgress.Store(time.Now().UnixNano())
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				last := time.Unix(0, lastProgress.Load())
+				if time.Since(last) > 15*time.Second {
+					cancel()
+					return
 				}
-				progressText := fmt.Sprintf("下载中... %d%% (%s / %s)",
-					pct, formatBytes(downloaded), formatBytes(totalSize))
-				injectToast(progressText, "#f59e0b")
-				systray.SetTooltip(fmt.Sprintf("Token Monitor - 下载更新 %d%%", pct))
-				// v1.4.10: 同时更新 About 页面进度条
-				injectProgress(pct, progressText)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	total := resp.ContentLength
+	var downloaded int64
+	buf := make([]byte, 64*1024)
+	lastReport := time.Time{}
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, err := out.Write(buf[:n]); err != nil {
+				return downloaded, err
+			}
+			downloaded += int64(n)
+			lastProgress.Store(time.Now().UnixNano())
+			if time.Since(lastReport) >= 500*time.Millisecond {
+				pct := 0
+				if total > 0 {
+					pct = int(downloaded * 100 / total)
+				}
+				injectProgress(pct, fmt.Sprintf("下载中 %d%% (%s / %s)", pct, formatBytes(downloaded), formatBytes(total)))
 				lastReport = time.Now()
 			}
 		}
-		if err == io.EOF {
+		if readErr == io.EOF {
 			break
 		}
-		if err != nil {
-			out.Close()
-			return 0, err
-		}
-		// 卡死检测: 10 秒无新数据 → 中断
-		if time.Since(lastDataTime) > 10*time.Second {
-			out.Close()
-			guiLog("downloadWithStallDetection: 10 秒无数据, 判定卡死 (downloaded=%d)", downloaded)
-			return 0, fmt.Errorf("下载卡死 (10s 无数据, 已下载 %s)", formatBytes(downloaded))
+		if readErr != nil {
+			if ctx.Err() != nil {
+				return downloaded, fmt.Errorf("15 秒未收到数据")
+			}
+			return downloaded, readErr
 		}
 	}
-	out.Close()
-	guiLog("downloadWithStallDetection: 下载完成 %d bytes", downloaded)
+	if downloaded == 0 {
+		return 0, fmt.Errorf("下载内容为空")
+	}
 	return downloaded, nil
 }
 
 func formatBytes(b int64) string {
+	if b < 0 {
+		return "未知"
+	}
 	if b >= 1024*1024 {
 		return fmt.Sprintf("%.1fMB", float64(b)/1024/1024)
 	}
@@ -245,60 +241,19 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%dB", b)
 }
 
-func unzipTo(zipPath, destDir string) error {
-	r, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-	for _, f := range r.File {
-		path := filepath.Join(destDir, f.Name)
-		if strings.Contains(f.Name, "..") {
-			continue
-		}
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(path, 0755)
-			continue
-		}
-		os.MkdirAll(filepath.Dir(path), 0755)
-		out, err := os.Create(path)
-		if err != nil {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			out.Close()
-			continue
-		}
-		io.Copy(out, rc)
-		rc.Close()
-		out.Close()
-	}
-	return nil
-}
-
-func findFile(dir, name string) string {
-	var found string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.Name() == name {
-			found = path
-		}
-		return nil
-	})
-	return found
-}
-
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }

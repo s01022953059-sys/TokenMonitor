@@ -26,6 +26,11 @@ echo "  Token Monitor v${APP_VERSION} 统一发布"
 echo "  Tag: ${TAG}"
 echo "============================================"
 
+# 任何 tag / Release 操作之前先执行基础验证，失败立即阻断发布。
+echo ""
+echo "=== 发布前基础验证 ==="
+bash verify_release.sh
+
 # ─── 0. 清理 build/ 目录 ───
 echo ""
 echo "=== [0/3] 清理旧构建产物 ==="
@@ -200,10 +205,17 @@ else
     echo "[release] 非 macOS, 跳过 DMG 构建"
 fi
 
-# ─── 2. Windows ZIP (Go 交叉编译, 任何平台都能跑) ───
+# ─── 2. Windows EXE + ZIP (Go 交叉编译, 任何平台都能跑) ───
 echo ""
-echo "=== [2/3] Windows ZIP ==="
+echo "=== [2/3] Windows EXE + ZIP ==="
 bash build_windows.sh
+
+EXE_PATH="$SOURCE_ROOT/build/TokenMonitor.exe"
+if [[ -f "$EXE_PATH" ]]; then
+    upload_asset "$EXE_PATH" "TokenMonitor.exe"
+else
+    echo "[release] ✘ Windows EXE 没生成" >&2
+fi
 
 ZIP_PATH="$SOURCE_ROOT/build/TokenMonitor-${APP_VERSION}-win.zip"
 if [[ -f "$ZIP_PATH" ]]; then

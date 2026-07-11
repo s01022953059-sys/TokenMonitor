@@ -18,9 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-
 
 	_ "modernc.org/sqlite"
 )
@@ -33,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.18"
+var appVersion = "1.4.19"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -102,11 +100,11 @@ type SessionEntry struct {
 }
 
 type SessionListResponse struct {
-	Sessions   []SessionEntry      `json:"sessions"`
-	Total      int                 `json:"total"`
-	Page       int                 `json:"page"`
-	PageSize   int                 `json:"page_size"`
-	TotalPages int                 `json:"total_pages"`
+	Sessions   []SessionEntry         `json:"sessions"`
+	Total      int                    `json:"total"`
+	Page       int                    `json:"page"`
+	PageSize   int                    `json:"page_size"`
+	TotalPages int                    `json:"total_pages"`
 	Summary    map[string]interface{} `json:"summary,omitempty"`
 }
 
@@ -194,8 +192,8 @@ func normalizeModelName(rawModel string) string {
 		// 注: gpt-5.4 和 gpt-5.4-mini 是两个真不同模型 (mini 是轻量版), 不折叠
 		"minimax-m2.7":           "minimax-m2.7",
 		"minimax-m2.7-highspeed": "minimax-m2.7",
-		"minimax-m3":            "minimax-m3",
-		"minimax-m3-free":       "minimax-m3",
+		"minimax-m3":             "minimax-m3",
+		"minimax-m3-free":        "minimax-m3",
 	}
 	if v, ok := aliases[s]; ok {
 		return v
@@ -396,13 +394,13 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	return logs
 }
 
-// 2. 冰茶 AI 客户端 (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
-//    不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
-//    v1.3.90 降级为纯数据源: 冰茶 AI 是 IDE/代理配置入口, 调 LLM 都经 cc-switch
-//    Codex 代理. usage_stats.json 是 BingchaAI 客户端本地累计, 跟 cc-switch
-//    代理记录**同一批请求** (双计). scanner 不再产出 events, 流量归到真实
-//    调用工具 (Codex / Claude / Other). 用户完全没装 cc-switch 时冰茶 AI
-//    流量丢失, 但这种情况极罕见, 用户可在 BingchaAI 客户端配 cc-switch provider.
+//  2. 冰茶 AI 客户端 (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
+//     不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
+//     v1.3.90 降级为纯数据源: 冰茶 AI 是 IDE/代理配置入口, 调 LLM 都经 cc-switch
+//     Codex 代理. usage_stats.json 是 BingchaAI 客户端本地累计, 跟 cc-switch
+//     代理记录**同一批请求** (双计). scanner 不再产出 events, 流量归到真实
+//     调用工具 (Codex / Claude / Other). 用户完全没装 cc-switch 时冰茶 AI
+//     流量丢失, 但这种情况极罕见, 用户可在 BingchaAI 客户端配 cc-switch provider.
 func scanAntigravityTokens() []LogEntry {
 	return nil
 }
@@ -637,17 +635,17 @@ func getTodayUsage() UsageResponse {
 
 	return UsageResponse{
 		Summary: map[string]interface{}{
-			"total_tokens":         totalTokens,
-			"input_tokens":         inputTokens,
-			"output_tokens":        outputTokens,
-			"input_cached":         inputCached,
-			"input_uncached":       inputUncached,
-			"date":                 time.Now().Format("2006-01-02"),
-			"deepseek_balance":     dsBalance.Balance,
-			"deepseek_currency":    dsBalance.Currency,
-			"deepseek_status":      dsBalance.Status,
-			"events_after_dedup":   len(allLogs),
-			"events_before_dedup":  eventsBeforeDedup,
+			"total_tokens":        totalTokens,
+			"input_tokens":        inputTokens,
+			"output_tokens":       outputTokens,
+			"input_cached":        inputCached,
+			"input_uncached":      inputUncached,
+			"date":                time.Now().Format("2006-01-02"),
+			"deepseek_balance":    dsBalance.Balance,
+			"deepseek_currency":   dsBalance.Currency,
+			"deepseek_status":     dsBalance.Status,
+			"events_after_dedup":  len(allLogs),
+			"events_before_dedup": eventsBeforeDedup,
 		},
 		ByTool:       byTool,
 		ByModel:      byModel,
@@ -962,6 +960,10 @@ func compareVersions(latest, current string) int {
 }
 
 func pickAssetURL(payload map[string]interface{}) string {
+	return pickAssetURLForOS(payload, runtime.GOOS)
+}
+
+func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 	var assetList []interface{}
 	// 优先 assets, 回退 files
 	if a, ok := payload["assets"].([]interface{}); ok {
@@ -972,8 +974,12 @@ func pickAssetURL(payload map[string]interface{}) string {
 	if len(assetList) == 0 {
 		return ""
 	}
-	// 两轮: 先找 .dmg/.zip, 再退到第一个
+	// 应用内更新必须选当前平台的可安装资产。Windows 优先直装 EXE，
+	// ZIP 只作为旧 release 的兼容回退；macOS 仍优先 DMG。
 	suffixes := []string{".dmg", ".zip"}
+	if targetOS == "windows" {
+		suffixes = []string{"tokenmonitor.exe", ".exe", "tokenmonitor-win.zip", ".zip"}
+	}
 	for _, suffix := range suffixes {
 		for _, a := range assetList {
 			if asset, ok := a.(map[string]interface{}); ok {
@@ -1025,8 +1031,8 @@ func extractReleaseInfo(payload map[string]interface{}) (version, title, notes, 
 	} else if n, ok := payload["body"]; ok {
 		notes = fmt.Sprintf("%v", n)
 	}
-	// download_url
-	for _, key := range []string{"download_url", "downloadUrl", "html_url", "htmlUrl"} {
+	// html_url 是 Release 页面，不能在存在 assets 时抢先当成安装包。
+	for _, key := range []string{"download_url", "downloadUrl"} {
 		if v, ok := payload[key].(string); ok && v != "" {
 			downloadURL = v
 			break
@@ -1034,6 +1040,14 @@ func extractReleaseInfo(payload map[string]interface{}) (version, title, notes, 
 	}
 	if downloadURL == "" {
 		downloadURL = pickAssetURL(payload)
+	}
+	if downloadURL == "" {
+		for _, key := range []string{"html_url", "htmlUrl"} {
+			if v, ok := payload[key].(string); ok && v != "" {
+				downloadURL = v
+				break
+			}
+		}
 	}
 	return version, title, notes, downloadURL, true
 }
@@ -1043,16 +1057,16 @@ func checkUpdateRemote() map[string]interface{} {
 	currentVer := readAppVersion()
 
 	result := map[string]interface{}{
-		"ok":              false,
-		"current_version": currentVer,
-		"latest_version":  nil,
+		"ok":               false,
+		"current_version":  currentVer,
+		"latest_version":   nil,
 		"update_available": false,
-		"feed_url":        feedURL,
-		"http_status":     nil,
-		"error":           nil,
-		"raw_excerpt":     nil,
-		"title":           nil,
-		"download_url":    nil,
+		"feed_url":         feedURL,
+		"http_status":      nil,
+		"error":            nil,
+		"raw_excerpt":      nil,
+		"title":            nil,
+		"download_url":     nil,
 	}
 
 	// 未配置更新源时直接返回错误 (对齐 Python 版)
@@ -1128,7 +1142,12 @@ func checkUpdateRemote() map[string]interface{} {
 // ───── 版本号读取 (对齐 server.py _read_app_version) ─────
 
 func readAppVersion() string {
-	// Go 版: 优先从同目录 version.txt 读 (打包时写入)
+	// Windows 正式包通过 -X 注入版本。必须优先于外置 version.txt，避免
+	// 自更新只替换 EXE 后仍被旧文件误报为旧版本。
+	if runtime.GOOS == "windows" && strings.TrimSpace(appVersion) != "" {
+		return strings.TrimSpace(appVersion)
+	}
+	// 开发模式和旧包兼容: 从同目录 version.txt 读取。
 	exePath, err := os.Executable()
 	if err == nil {
 		dir := filepath.Dir(exePath)
@@ -1196,19 +1215,6 @@ func readVersionFromPlist(path string) string {
 
 // ───── 单实例锁 (跨平台) ─────
 
-
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal(0) 仅探测进程是否存在, 不发实际信号
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return false
-	}
-	return true
-}
-
 var singletonLockFile *os.File
 
 func acquireSingletonLock() bool {
@@ -1217,17 +1223,9 @@ func acquireSingletonLock() bool {
 		lockPath = filepath.Join(os.TempDir(), "token_monitor_server.lock")
 	}
 
-	// 先检查锁文件里记录的 PID 是否还活着; 如果已死, 删除残留锁文件再重试。
-	if data, err := os.ReadFile(lockPath); err == nil {
-		var stalePid int
-		if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &stalePid); err == nil && stalePid > 0 {
-			if !processAlive(stalePid) {
-				os.Remove(lockPath)
-			}
-		}
-	}
-
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	// 文件可以永久保留；真正的存活状态由内核锁判断。必须先加锁再截断写 PID，
+	// 否则第二个进程会在确认锁失败前破坏第一个进程记录的内容。
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		fmt.Printf("[server] 无法打开单实例锁文件 %s: %v\n", lockPath, err)
 		return false
@@ -1239,6 +1237,11 @@ func acquireSingletonLock() bool {
 		return false
 	}
 
+	if err := f.Truncate(0); err != nil {
+		f.Close()
+		return false
+	}
+	_, _ = f.Seek(0, 0)
 	f.WriteString(fmt.Sprintf("%d\n", os.Getpid()))
 	f.Sync()
 	singletonLockFile = f
@@ -1659,6 +1662,7 @@ func main() {
 	// 解析命令行参数 (feedURL 是包级变量, checkUpdateRemote 会用到)
 	port := defaultPort
 	serverOnly := false
+	autoStarted := false
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
@@ -1672,6 +1676,9 @@ func main() {
 		if args[i] == "--server-only" {
 			// CI/后台模式: 只跑 HTTP server 不开 GUI (不需要桌面环境)
 			serverOnly = true
+		}
+		if args[i] == autoStartFlag {
+			autoStarted = true
 		}
 	}
 
@@ -1799,12 +1806,18 @@ func main() {
 	// 社区 Dashboard API
 	http.HandleFunc("/api/community", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
-		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
 		writeJSON(w, 200, getCommunityStats())
 	})
 	http.HandleFunc("/api/community/optin", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
-		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
 		enabled := r.URL.Query().Get("enabled") != "false"
 		setOptIn(enabled)
 		if enabled {
@@ -1815,7 +1828,10 @@ func main() {
 	})
 	http.HandleFunc("/api/community/report", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
-		if r.Method == "OPTIONS" { w.WriteHeader(200); return }
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
 		usage := getTodayUsage()
 		result := reportCommunityStats(&usage)
 		writeJSON(w, 200, result)
@@ -1902,5 +1918,5 @@ func main() {
 	time.Sleep(500 * time.Millisecond)
 
 	// 启动 GUI (Windows: WebView2 内嵌, 其他平台: 阻塞)
-	startGUI(port, feedURL)
+	startGUI(port, feedURL, autoStarted)
 }

@@ -17,20 +17,20 @@ import (
 	"time"
 	"unsafe"
 
-	webview "github.com/jchv/go-webview2"
 	"github.com/getlantern/systray"
+	webview "github.com/jchv/go-webview2"
 )
 
 //go:embed icon.ico
 var trayIconBytes []byte
 
 var (
-	exitChan  = make(chan struct{})
-	guiWg     sync.WaitGroup
-	currentWv webview.WebView
+	exitChan    = make(chan struct{})
+	guiWg       sync.WaitGroup
+	currentWv   webview.WebView
 	windowReady bool
-	windowMu  sync.Mutex
-	guiPort   int
+	windowMu    sync.Mutex
+	guiPort     int
 )
 
 func guiLog(format string, args ...interface{}) {
@@ -42,11 +42,11 @@ func guiLog(format string, args ...interface{}) {
 	}
 }
 
-func startGUI(port int, feedURL string) {
+func startGUI(port int, feedURL string, autoStarted bool) {
 	guiPort = port
 	guiLog("startGUI port=%d", port)
 	systray.Run(func() {
-		onTrayReady(port, feedURL)
+		onTrayReady(port, feedURL, autoStarted)
 	}, func() {
 		guiLog("onTrayExit, forceCloseWindow")
 		forceCloseWindow()
@@ -54,7 +54,7 @@ func startGUI(port int, feedURL string) {
 	})
 }
 
-func onTrayReady(port int, feedURL string) {
+func onTrayReady(port int, feedURL string, autoStarted bool) {
 	guiLog("onTrayReady")
 	systray.SetIcon(trayIconBytes)
 	systray.SetTitle("")
@@ -63,7 +63,8 @@ func onTrayReady(port int, feedURL string) {
 	mShow := systray.AddMenuItem("显示仪表盘", "打开 Token Monitor 窗口")
 	systray.AddSeparator()
 	mCheckUpdate := systray.AddMenuItem("检查更新", "检查是否有新版本")
-	mAutoStart := systray.AddMenuItem("开机自启", "开机时自动启动")
+	mAutoStart := systray.AddMenuItem("开机自启", "登录 Windows 后在托盘中启动")
+	migrateLegacyAutoStart()
 	if isAutoStartEnabled() {
 		mAutoStart.Check()
 	}
@@ -127,6 +128,10 @@ func onTrayReady(port int, feedURL string) {
 
 		// 安装 WM_CLOSE 拦截 (关窗口按钮 → 隐藏)
 		setupWindowHide(w.Window())
+		if autoStarted {
+			hideMainWindow()
+			guiLog("autostart: main window hidden before navigation, tray remains active")
+		}
 
 		// loading 页
 		w.SetHtml(`<!html><body style="background:#0e1116;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#58a6ff;"><div>Token Monitor 加载中...</div></body></html>`)
@@ -181,16 +186,23 @@ func onTrayReady(port int, feedURL string) {
 				}
 			case <-mCheckUpdate.ClickedCh:
 				guiLog("menu: 检查更新 clicked")
-				go doTrayCheckUpdate(port)
+				openAboutForUpdate(true)
 			case <-mAutoStart.ClickedCh:
 				if isAutoStartEnabled() {
-					disableAutoStart()
-					mAutoStart.Uncheck()
-					injectToast("已取消开机自启", "#6b7280")
+					if err := disableAutoStart(); err != nil {
+						injectToast("取消开机自启失败: "+err.Error(), "#f85149")
+					} else {
+						mAutoStart.Uncheck()
+						injectToast("已取消开机自启", "#6b7280")
+					}
 				} else {
-					enableAutoStart()
-					mAutoStart.Check()
-					injectToast("✓ 已设置开机自启", "#3fb950")
+					if err := enableAutoStart(); err != nil {
+						mAutoStart.Uncheck()
+						injectToast("设置开机自启失败: "+err.Error(), "#f85149")
+					} else {
+						mAutoStart.Check()
+						injectToast("已设置开机自启", "#3fb950")
+					}
 				}
 			case <-mQuit.ClickedCh:
 				guiLog("menu: 退出 clicked")
@@ -207,8 +219,7 @@ func onTrayReady(port int, feedURL string) {
 // snoozedVersion 记录用户"稍后"跳过的版本, 该版本不再重复提醒
 var snoozedVersion string
 
-// startUpdateCheckLoop 后台定时检查, 有新版只弹 toast 通知 (不自动下载/重启)
-// 用户必须手动点"立即更新"或托盘"检查更新"才会触发下载
+// startUpdateCheckLoop 后台只刷新版本徽章，不弹通知、不自动打开窗口。
 func startUpdateCheckLoop(w webview.WebView, port int) {
 	time.Sleep(10 * time.Second)
 	notifyUpdateIfAvailable(w, port)
@@ -224,8 +235,7 @@ func startUpdateCheckLoop(w webview.WebView, port int) {
 	}
 }
 
-// notifyUpdateIfAvailable 检查更新, 有新版且未被 snooze → 弹 toast
-// 不调 trySelfUpdate, 不阻塞, 不重启
+// notifyUpdateIfAvailable 检查更新并把结果推给 About/版本徽章。
 func notifyUpdateIfAvailable(w webview.WebView, port int) {
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/check-update", port))
 	if err != nil {
@@ -243,14 +253,15 @@ func notifyUpdateIfAvailable(w webview.WebView, port int) {
 	if !data.OK || !data.UpdateAvailable {
 		return
 	}
-	// 用户已 snooze 这个版本, 不再提醒
+	// 用户已 snooze 这个版本, 不再刷新提醒标记。
 	if snoozedVersion == data.LatestVersion {
 		guiLog("notifyUpdate: v%s 已被 snooze, 跳过", data.LatestVersion)
 		return
 	}
-	// 只弹 toast 通知, 不自动下载
-	injectToast("🔥 有新版本 v"+data.LatestVersion+", 点击 About → 立即更新", "#f59e0b")
-	guiLog("notifyUpdate: 发现 v%s, 已弹 toast (不自动下载)", data.LatestVersion)
+	versionJSON, _ := json.Marshal(data.LatestVersion)
+	js := fmt.Sprintf(`window.__tokenMonitorOnUpdateAvailable && window.__tokenMonitorOnUpdateAvailable({version:%s});`, versionJSON)
+	w.Dispatch(func() { w.Eval(js) })
+	guiLog("notifyUpdate: 发现 v%s, 已更新 About 状态", data.LatestVersion)
 }
 
 func checkAndUpdateTray(port int, mCheckUpdate *systray.MenuItem) {
@@ -282,7 +293,7 @@ func doTrayCheckUpdate(port int) {
 	if err != nil {
 		guiLog("doTrayCheckUpdate: http.Get failed: %v", err)
 		systray.SetTooltip("Token Monitor - 检查更新失败: 无法连接服务")
-		injectToast("检查更新失败: 无法连接本地服务", "#f85149")
+		injectUpdateStatus("检查更新失败: 无法连接本地服务", "error")
 		return
 	}
 	defer resp.Body.Close()
@@ -294,33 +305,41 @@ func doTrayCheckUpdate(port int) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		systray.SetTooltip("Token Monitor - 检查更新失败: 解析错误")
-		injectToast("检查更新失败: 解析响应失败", "#f85149")
+		injectUpdateStatus("检查更新失败: 解析响应失败", "error")
 		return
 	}
 	guiLog("doTrayCheckUpdate: ok=%v updateAvailable=%v error=%s", data.OK, data.UpdateAvailable, data.Error)
 	if !data.OK {
 		msg := "检查更新失败: " + data.Error
 		systray.SetTooltip("Token Monitor - " + msg)
-		injectToast(msg, "#f85149")
+		injectUpdateStatus(msg, "error")
 		return
 	}
 	if !data.UpdateAvailable {
 		systray.SetTooltip("Token Monitor - 已是最新版本 v" + data.LatestVersion)
-		injectToast("✓ 已是最新版本 (v"+data.LatestVersion+")", "#3fb950")
+		injectUpdateStatus("已是最新版本 (v"+data.LatestVersion+")", "success")
 		return
 	}
-	injectToast("发现新版本 v"+data.LatestVersion+", 正在下载...", "#f59e0b")
+	injectUpdateStatus("发现新版本 v"+data.LatestVersion+"，正在下载", "progress")
 	systray.SetTooltip("Token Monitor - 正在下载 v" + data.LatestVersion + "...")
 
 	if trySelfUpdateWithProgress(port) {
-		injectToast("下载完成, 正在安装...", "#f59e0b")
 		systray.SetTooltip("Token Monitor - 安装中...")
-		time.Sleep(2 * time.Second)
 		systray.Quit()
-	} else {
-		injectToast("下载失败, 请检查网络或稍后重试", "#f85149")
-		systray.SetTooltip("Token Monitor - 下载失败, 请稍后重试")
 	}
+}
+
+// openAboutForUpdate 是托盘“检查更新”等原生入口的唯一落点。
+func openAboutForUpdate(recheck bool) {
+	showHiddenWindow()
+	windowMu.Lock()
+	wv := currentWv
+	windowMu.Unlock()
+	if wv == nil {
+		return
+	}
+	js := fmt.Sprintf(`window.__tmOpenAboutForUpdate && window.__tmOpenAboutForUpdate(%t);`, recheck)
+	wv.Dispatch(func() { wv.Eval(js) })
 }
 
 // injectProgress 更新 About 页面的进度条 (Mac Swift + Win Go 共用 __tmSetUpdateProgress)
@@ -331,11 +350,24 @@ func injectProgress(pct int, text string) {
 	if wv == nil {
 		return
 	}
-	safeText := strings.ReplaceAll(text, `'`, `\'`)
-	js := fmt.Sprintf(`window.__tmSetUpdateProgress && window.__tmSetUpdateProgress(%d, '%s');`, pct, safeText)
+	textJSON, _ := json.Marshal(text)
+	js := fmt.Sprintf(`window.__tmSetUpdateProgress && window.__tmSetUpdateProgress(%d, %s);`, pct, textJSON)
 	wv.Dispatch(func() {
 		wv.Eval(js)
 	})
+}
+
+func injectUpdateStatus(text, kind string) {
+	windowMu.Lock()
+	wv := currentWv
+	windowMu.Unlock()
+	if wv == nil {
+		return
+	}
+	textJSON, _ := json.Marshal(text)
+	kindJSON, _ := json.Marshal(kind)
+	js := fmt.Sprintf(`window.__tmSetUpdateStatus && window.__tmSetUpdateStatus(%s, %s);`, textJSON, kindJSON)
+	wv.Dispatch(func() { wv.Eval(js) })
 }
 
 func injectToast(msg string, color string) {

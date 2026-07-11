@@ -205,13 +205,13 @@ def _extract_release_info(payload):
     download_url = (
         payload.get("download_url")
         or payload.get("downloadUrl")
-        or payload.get("html_url")
-        or payload.get("htmlUrl")
         or ""
     )
-    # GitCode/GitHub 把安装包放在 assets 数组里,顶层没有 download_url 时回退到 assets。
+    # Release 的 html_url 是详情页，不是安装包。优先从 assets 选当前平台安装包。
     if not download_url:
         download_url = _pick_asset_url(payload)
+    if not download_url:
+        download_url = payload.get("html_url") or payload.get("htmlUrl") or ""
     return {
         "version": version,
         "title": title,

@@ -223,7 +223,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     }
 
     @objc func checkForUpdatesFromMenu() {
-        checkForUpdates(silent: false)
+        openAboutForUpdate(recheck: true)
+        checkForUpdates(silent: true)
+    }
+
+    private func openAboutForUpdate(recheck: Bool) {
+        showMainWindow()
+        let js = "window.__tmOpenAboutForUpdate && window.__tmOpenAboutForUpdate(\(recheck ? "true" : "false"));"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
     }
     
     func startTokenUpdateTimer() {
@@ -373,10 +380,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         guard !updateCheckInProgress else { return }
         guard let feedURL = configuredUpdateFeedURL() else {
             if !silent {
-                showAlert(
-                    title: "未配置更新源",
-                    message: "请先在 Info.plist 的 TokenMonitorUpdateFeedURL 中填入更新 JSON 或 GitHub Releases latest API 地址。"
-                )
+                openAboutForUpdate(recheck: false)
+                notifyFrontendUpdateStatus("未配置更新源", kind: "error")
             }
             return
         }
@@ -400,7 +405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             if let error = error {
                 if !silent {
                     DispatchQueue.main.async {
-                        self.showAlert(title: "检查更新失败", message: error.localizedDescription)
+                        self.notifyFrontendUpdateStatus("检查更新失败: \(error.localizedDescription)", kind: "error")
                     }
                 }
                 return
@@ -411,7 +416,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                   let data = data else {
                 if !silent {
                     DispatchQueue.main.async {
-                        self.showAlert(title: "检查更新失败", message: "更新源没有返回有效响应。")
+                        self.notifyFrontendUpdateStatus("检查更新失败: 更新源没有返回有效响应", kind: "error")
                     }
                 }
                 return
@@ -420,7 +425,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             guard let update = self.parseUpdateInfo(from: data, fallbackURL: feedURL) else {
                 if !silent {
                     DispatchQueue.main.async {
-                        self.showAlert(title: "检查更新失败", message: "更新源 JSON 格式不符合预期。")
+                        self.notifyFrontendUpdateStatus("检查更新失败: 更新信息格式不正确", kind: "error")
                     }
                 }
                 return
@@ -434,13 +439,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                     // 缓存 update, 等前端通过 message handler 触发自更新时直接用
                     self.pendingUpdate = update
                     self.pendingCurrentVersion = currentVersion
-                    self.showUpdateAvailable(update: update, currentVersion: currentVersion)
                     // 通知前端"有新版本", 让 About 弹窗和首页徽章反映状态
                     self.notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion)
+                    if !silent {
+                        self.openAboutForUpdate(recheck: false)
+                    }
                 } else if !silent {
                     self.pendingUpdate = nil
                     self.notifyFrontendNoUpdate(currentVersion: currentVersion)
-                    self.showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。")
+                    self.notifyFrontendUpdateStatus("已是最新版本 (v\(currentVersion))", kind: "success")
                 }
             }
         }.resume()
@@ -488,7 +495,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             return
         }
         guard let feedURL = configuredUpdateFeedURL() else {
-            showAlert(title: "未配置更新源", message: "请先在 Info.plist 配置 TokenMonitorUpdateFeedURL。")
+            notifyFrontendUpdateStatus("未配置更新源", kind: "error")
             return
         }
         updateCheckInProgress = true
@@ -499,7 +506,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             defer { self.updateCheckInProgress = false }
             if let error = error {
                 DispatchQueue.main.async {
-                    self.showAlert(title: "检查更新失败", message: error.localizedDescription)
+                    self.notifyFrontendUpdateStatus("检查更新失败: \(error.localizedDescription)", kind: "error")
                 }
                 return
             }
@@ -507,13 +514,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                   200..<300 ~= httpResponse.statusCode,
                   let data = data else {
                 DispatchQueue.main.async {
-                    self.showAlert(title: "检查更新失败", message: "更新源没有返回有效响应。")
+                    self.notifyFrontendUpdateStatus("检查更新失败: 更新源没有返回有效响应", kind: "error")
                 }
                 return
             }
             guard let update = self.parseUpdateInfo(from: data, fallbackURL: feedURL) else {
                 DispatchQueue.main.async {
-                    self.showAlert(title: "检查更新失败", message: "更新源 JSON 格式不符合预期。")
+                    self.notifyFrontendUpdateStatus("检查更新失败: 更新信息格式不正确", kind: "error")
                 }
                 return
             }
@@ -525,7 +532,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                     self.pendingCurrentVersion = currentVersion
                     self.performAutoUpdate(update: update)
                 } else {
-                    self.showAlert(title: "已是最新版本", message: "当前版本 \(currentVersion) 已是最新。")
+                    self.notifyFrontendUpdateStatus("已是最新版本 (v\(currentVersion))", kind: "success")
                 }
             }
         }.resume()
@@ -540,6 +547,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
     private func notifyFrontendNoUpdate(currentVersion: String) {
         let js = "window.__tokenMonitorOnNoUpdate && window.__tokenMonitorOnNoUpdate({currentVersion: '\(currentVersion)'});"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func notifyFrontendUpdateStatus(_ text: String, kind: String) {
+        let escaped = text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: " ")
+        let js = "window.__tmSetUpdateStatus && window.__tmSetUpdateStatus('\(escaped)', '\(kind)');"
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
@@ -562,7 +578,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let title = (json["title"] as? String) ?? (json["name"] as? String) ?? "Token Monitor \(version)"
         let notes = (json["notes"] as? String) ?? (json["body"] as? String) ?? ""
 
-        var downloadString = (json["download_url"] as? String) ?? (json["downloadUrl"] as? String) ?? (json["html_url"] as? String)
+        var downloadString = (json["download_url"] as? String) ?? (json["downloadUrl"] as? String)
         let assetList = (json["assets"] as? [[String: Any]]) ?? (json["files"] as? [[String: Any]])
         if downloadString == nil, let assets = assetList {
             let preferredAsset = assets.first { asset in
@@ -575,6 +591,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 (preferredAsset?["downloadUrl"] as? String) ??
                 (preferredAsset?["url"] as? String) ??
                 (preferredAsset?["html_url"] as? String)
+        }
+        if downloadString == nil {
+            downloadString = (json["html_url"] as? String) ?? (json["htmlUrl"] as? String)
         }
 
         guard let rawDownloadURL = downloadString,
@@ -607,27 +626,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     }
 
     func showUpdateAvailable(update: UpdateInfo, currentVersion: String) {
-        let alert = NSAlert()
-        alert.messageText = "发现新版本 \(update.version)"
-        let notesSummary = summarizedReleaseNotes(update.notes)
-        let noteText = notesSummary.isEmpty ? "" : "\n\n更新说明：\n\(notesSummary)"
-        alert.informativeText = "当前版本：\(currentVersion)\n最新版本：\(update.version)\(noteText)"
-        // 极简 NSAlert: 只留 立即更新 + 稍后 两个按钮。
-        // 下载 zip / 查看说明 移除 (用户要求), 想要手动装的走 About 弹窗里紫色按钮。
-        alert.addButton(withTitle: "立即更新")
-        alert.addButton(withTitle: "稍后")
-        if let closeButton = alert.buttons.last {
-            closeButton.keyEquivalent = "\u{1b}"
-        }
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            debugLog("NSAlert first button (立即更新) clicked")
-            performAutoUpdate(update: update)
-        default:
-            // 稍后 / ESC / 关闭按钮: 不动作
-            debugLog("NSAlert 稍后/关闭, 不更新")
-            break
-        }
+        pendingUpdate = update
+        pendingCurrentVersion = currentVersion
+        notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion)
+        openAboutForUpdate(recheck: false)
     }
 
     // MARK: - 应用内自动更新
@@ -643,8 +645,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     // 工作目录: 优先用 .app 内 Resources/ 的 build_macos.sh, 找不到就
     // 退到 /Applications/Token Monitor.app/Contents/Resources/, 再不行
     // 就放弃自更新走浏览器兜底。
-
-    private var inProgressUpdateWindow: NSWindow?
 
     // 临时 debug log 路径, 用于排查 v1.3.17 "立即更新" 按钮没反应。
     // 写到 /tmp/tm_debug.log, NSLog 也会进 Console.app。
@@ -684,13 +684,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         try? fm.createDirectory(atPath: "/tmp/TokenMonitor", withIntermediateDirectories: true)
         debugLog("staged dir prepared: \(updateDir)")
 
-        // 弹非模态进度窗口, 用户能看到当前阶段。
-        // RegardlessVisibility + makeKey 一起, 确保窗口在所有空间前置显示,
-        // 即便主窗口 WebView 在全屏 + 焦点态, 进度窗也会盖在前面。
-        let progressWindow = makeUpdateProgressWindow(version: update.version)
-        self.inProgressUpdateWindow = progressWindow
-        progressWindow.orderFrontRegardless()
-        debugLog("progress window created, ordering front")
+        openAboutForUpdate(recheck: false)
         updateProgress(stage: "下载更新包 (\(update.version))")
 
         // 1. 下载, 显式 30s timeout, 走 URLSessionConfiguration 而不是默认全局
@@ -823,9 +817,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         var lastReportedBytes: Int64 = 0
         let task = session.downloadTask(with: request) { [weak self] tempURL, response, error in
             guard let self = self else { return }
-            if let error = nil as Error? {
-                // placeholder, real check below
-            }
             if let http = response as? HTTPURLResponse {
                 debugLog("retry \(attempt) HTTP \(http.statusCode), content-length=\(http.expectedContentLength)")
             }
@@ -1012,59 +1003,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     private func failAutoUpdate(update: UpdateInfo, message: String) {
         DispatchQueue.main.async {
             self.updateCheckInProgress = false
-            self.inProgressUpdateWindow?.orderOut(nil)
-            self.inProgressUpdateWindow = nil
-            self.showAlert(
-                title: "自动更新失败",
-                message: "\(message)\n\n你可以选择手动下载 zip 后替换 /Applications/Token Monitor.app, 或打开浏览器下载页面。"
-            )
-            // 兜底: 直接打开浏览器, 用户至少能下载到文件
-            NSWorkspace.shared.open(update.downloadURL)
+            self.notifyFrontendUpdateStatus("自动更新失败: \(message)", kind: "error")
         }
     }
 
-    private func makeUpdateProgressWindow(version: String) -> NSWindow {
-        // 不要 .closable: 自更新流程一旦启动就不能中断,
-        // 用户关掉进度窗会导致 UI 状态混乱。让用户只能等待完成。
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 180),
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "正在更新到 \(version)"
-        window.isReleasedWhenClosed = false
-        // 进度窗置顶 modalPanel 层级, 盖在主窗口 WebView 上面, 不会被遮住。
-        // 用户要点过"立即更新"会期望看到反馈, 而不是面对一片漆黑主窗口发呆。
-        window.level = .modalPanel
-        window.hidesOnDeactivate = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let label = NSTextField(labelWithString: "准备中...")
-        label.frame = NSRect(x: 30, y: 100, width: 400, height: 30)
-        label.font = NSFont.systemFont(ofSize: 14, weight: .medium)
-        label.tag = 9001  // 用 tag 找回来更新文案
-        let detail = NSTextField(labelWithString: "更新过程中请勿关闭 app。")
-        detail.frame = NSRect(x: 30, y: 60, width: 400, height: 20)
-        detail.font = NSFont.systemFont(ofSize: 11)
-        detail.textColor = NSColor.secondaryLabelColor
-        let spinner = NSProgressIndicator()
-        spinner.frame = NSRect(x: 30, y: 30, width: 20, height: 20)
-        spinner.style = .spinning
-        spinner.startAnimation(nil)
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 180))
-        container.addSubview(label)
-        container.addSubview(detail)
-        container.addSubview(spinner)
-        window.contentView = container
-        window.center()
-        return window
-    }
-
     private func updateProgress(stage: String) {
-        guard let window = inProgressUpdateWindow,
-              let label = window.contentView?.viewWithTag(9001) as? NSTextField else { return }
-        label.stringValue = stage
-        // v1.4.10: 同时推进度到 About 页面的 WebView 进度条
+        // 更新进度只展示在 About 页面的 WebView 进度条。
         // 从 stage 里提取百分比 (如 "下载更新包 (45%, 2300KB / 5100KB)" → 45)
         var pct = -1
         if let r = stage.range(of: "\\((\\d+)%", options: .regularExpression) {
