@@ -249,6 +249,21 @@ for a in d.get('assets', []):
 "
 
 echo ""
+echo "=== 验证附件可真实下载 ==="
+VERIFY_DIR=$(mktemp -d)
+DOWNLOAD_BASE="https://gitcode.com/baggiopeng/TokenMonitor/releases/download/$TAG"
+curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor.exe" "$DOWNLOAD_BASE/TokenMonitor.exe"
+curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor-win.zip" "$DOWNLOAD_BASE/TokenMonitor-win.zip"
+file "$VERIFY_DIR/TokenMonitor.exe" | grep -q "PE32+ executable (GUI)"
+unzip -t "$VERIFY_DIR/TokenMonitor-win.zip" >/dev/null
+if [[ "$(uname)" == "Darwin" ]]; then
+    curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/Token-Monitor.dmg" "$DOWNLOAD_BASE/Token%20Monitor.dmg"
+    hdiutil verify "$VERIFY_DIR/Token-Monitor.dmg" >/dev/null
+fi
+rm -rf "$VERIFY_DIR"
+echo "[release] ✔ DMG / EXE / ZIP 下载与文件校验通过"
+
+echo ""
 echo "============================================"
 echo "  ✔ 发布完成: v${APP_VERSION}"
 echo "============================================"

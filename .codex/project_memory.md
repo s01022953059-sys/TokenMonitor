@@ -28,6 +28,7 @@
    - Playwright 实际验证 About 更新状态/进度/错误，至少覆盖桌面和移动端
    - 涉及 Windows 自启或自替换时，发布前在真实 Windows 机器做一次登录自启、关闭窗口驻留、更新替换重启验收
    - 自动化部分统一执行 `bash verify_release.sh`；`release_all.sh` 必须在任何 tag/Release 操作前调用它，验证失败立即中止
+   - 上传后必须从 `gitcode.com/.../releases/download/...` 重新下载并校验 DMG、PE EXE 和 ZIP；不能只相信 Release API 的附件列表
 
 ## 架构
 
@@ -83,6 +84,9 @@
 - release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
+
+### v1.4.20 (2026-07-11)
+- GitCode Release API 返回的附件链接域名 `api.gitcode.com` 实际下载为 404；统一归一化为可下载的 `gitcode.com`，并加入真实下载回归测试
 
 ### v1.4.19 (2026-07-11)
 - Windows 开机自启收敛为 HKCU Run 单入口，补强 LockFileEx 单实例锁，登录后静默驻留托盘

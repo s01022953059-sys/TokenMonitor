@@ -31,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.19"
+var appVersion = "1.4.20"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1000,10 +1000,19 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 func getAssetURL(asset map[string]interface{}) string {
 	for _, key := range []string{"browser_download_url", "download_url", "downloadUrl", "url", "html_url"} {
 		if v, ok := asset[key].(string); ok && v != "" {
-			return v
+			return normalizeReleaseDownloadURL(v)
 		}
 	}
 	return ""
+}
+
+func normalizeReleaseDownloadURL(value string) string {
+	value = strings.TrimSpace(value)
+	const apiPrefix = "https://api.gitcode.com/"
+	if strings.HasPrefix(value, apiPrefix) && strings.Contains(value, "/releases/download/") {
+		return "https://gitcode.com/" + strings.TrimPrefix(value, apiPrefix)
+	}
+	return value
 }
 
 func extractReleaseInfo(payload map[string]interface{}) (version, title, notes, downloadURL string, ok bool) {
@@ -1049,7 +1058,7 @@ func extractReleaseInfo(payload map[string]interface{}) (version, title, notes, 
 			}
 		}
 	}
-	return version, title, notes, downloadURL, true
+	return version, title, notes, normalizeReleaseDownloadURL(downloadURL), true
 }
 
 func checkUpdateRemote() map[string]interface{} {

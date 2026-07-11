@@ -20,7 +20,7 @@ import (
 	"github.com/getlantern/systray"
 )
 
-const winReleaseEXEURLTemplate = "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor.exe"
+const winReleaseEXEURLTemplate = "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor.exe"
 
 var selfUpdateMu sync.Mutex
 var selfUpdateInProgress bool

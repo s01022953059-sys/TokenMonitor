@@ -161,6 +161,15 @@ def _compare_versions(latest: str, current: str) -> int:
     return 1 if a > b else -1
 
 
+def _normalize_release_download_url(url):
+    """GitCode API 会返回不可下载的 api.gitcode.com 附件地址。"""
+    value = str(url or "").strip()
+    api_prefix = "https://api.gitcode.com/"
+    if value.startswith(api_prefix) and "/releases/download/" in value:
+        return "https://gitcode.com/" + value[len(api_prefix):]
+    return value
+
+
 def _pick_asset_url(payload):
     """从 assets/files 数组里挑出安装包下载地址,优先 .dmg/.zip。"""
     asset_list = payload.get("assets") or payload.get("files") or []
@@ -182,7 +191,7 @@ def _pick_asset_url(payload):
         preferred = asset_list[0] if isinstance(asset_list[0], dict) else None
     if not preferred:
         return ""
-    return (
+    return _normalize_release_download_url(
         preferred.get("browser_download_url")
         or preferred.get("download_url")
         or preferred.get("downloadUrl")
@@ -212,6 +221,7 @@ def _extract_release_info(payload):
         download_url = _pick_asset_url(payload)
     if not download_url:
         download_url = payload.get("html_url") or payload.get("htmlUrl") or ""
+    download_url = _normalize_release_download_url(download_url)
     return {
         "version": version,
         "title": title,

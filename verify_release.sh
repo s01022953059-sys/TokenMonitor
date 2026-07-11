@@ -76,6 +76,7 @@ sessions = get("/api/sessions?days=7&page=1&page_size=20")
 assert sessions["page"] == 1 and sessions["page_size"] == 20, "会话分页异常"
 update = get("/api/check-update")
 assert update["ok"] and update["download_url"], "更新检查或安装包选择失败"
+assert not update["download_url"].startswith("https://api.gitcode.com/"), "附件仍使用不可下载的 API 域名"
 print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=90, sessions={len(sessions['sessions'])}")
 PY
 kill "$SERVER_PID" 2>/dev/null || true

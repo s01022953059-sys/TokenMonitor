@@ -596,8 +596,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             downloadString = (json["html_url"] as? String) ?? (json["htmlUrl"] as? String)
         }
 
-        guard let rawDownloadURL = downloadString,
-              let downloadURL = URL(string: rawDownloadURL, relativeTo: fallbackURL)?.absoluteURL else {
+        guard var rawDownloadURL = downloadString else {
+            return nil
+        }
+        if rawDownloadURL.hasPrefix("https://api.gitcode.com/"), rawDownloadURL.contains("/releases/download/") {
+            rawDownloadURL = rawDownloadURL.replacingOccurrences(
+                of: "https://api.gitcode.com/",
+                with: "https://gitcode.com/",
+                options: [.anchored]
+            )
+        }
+        guard let downloadURL = URL(string: rawDownloadURL, relativeTo: fallbackURL)?.absoluteURL else {
             return nil
         }
 

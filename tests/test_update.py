@@ -31,6 +31,22 @@ class UpdateFeedTests(unittest.TestCase):
 
         self.assertEqual(info["download_url"], payload["html_url"])
 
+    def test_gitcode_api_attachment_url_is_normalized(self):
+        payload = {
+            "tag_name": "v9.9.9",
+            "assets": [{
+                "name": "Token Monitor.dmg",
+                "browser_download_url": "https://api.gitcode.com/acme/app/releases/download/v9.9.9/Token Monitor.dmg",
+            }],
+        }
+
+        info = server._extract_release_info(payload)
+
+        self.assertEqual(
+            info["download_url"],
+            "https://gitcode.com/acme/app/releases/download/v9.9.9/Token Monitor.dmg",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

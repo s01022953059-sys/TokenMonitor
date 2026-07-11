@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.19**。
+当前发布版本：**v1.4.20**。
 
 ## 功能
 
@@ -194,7 +194,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.19/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.20/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -216,7 +216,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载 ZIP
 curl -L -o TokenMonitor-win.zip \
-  "https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.19/TokenMonitor-win.zip"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.20/TokenMonitor-win.zip"
 ```
 
 解压后双击 `TokenMonitor.exe`：
@@ -337,11 +337,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.19](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.19)
+最新版本：[v1.4.20](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.20)
 
-- macOS: [Token Monitor.dmg](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.19/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.19/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://api.gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.19/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.20/Token%20Monitor.dmg)
+- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.20/TokenMonitor.exe)
+- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.20/TokenMonitor-win.zip)
 
 ## 发布与验证规则
 
@@ -350,9 +350,13 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 启动本地服务验证今日总数、90 天热力图、会话分页、`/api/check-update` 的平台资产选择
 - 使用浏览器实际打开 About 页，验证更新检查、进度、错误状态以及桌面/移动端布局
 - Windows 注册表自启、退出替换和重启属于系统行为，正式发布前仍需在真实 Windows 机器完成一次验收
-- `bash verify_release.sh` 封装上述自动化基础检查；`release_all.sh` 会在创建 tag 或 Release 前强制执行，任一项失败就终止发布
+- `bash verify_release.sh` 封装上述自动化基础检查；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG、EXE、ZIP，任一项失败就终止发布
 
 ## 最近更新
+
+### v1.4.20 (2026-07-11)
+
+- 修正 GitCode Release API 返回的错误附件域名，确保 macOS DMG、Windows EXE 和 ZIP 可以真实下载
 
 ### v1.4.19 (2026-07-11)
 
