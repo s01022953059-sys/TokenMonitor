@@ -4,13 +4,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,9 +21,10 @@ import (
 )
 
 const (
-	gitcodeCommunityAPI  = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
-	communityReportsPath = "community/reports"
-	communityDataBranch  = "community-data"
+	gitcodeCommunityAPI   = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
+	communityReportsPath  = "community/reports"
+	communityDataBranch   = "community-data"
+	communityRelayDefault = "https://new.taqi.cc/token-monitor-community/v1/report"
 )
 
 var (
@@ -40,11 +42,35 @@ type CommunityReportResult struct {
 	ReportedAt string `json:"reported_at,omitempty"`
 }
 
+type communityCredential struct {
+	ID           string `json:"id"`
+	DeviceSecret string `json:"device_secret"`
+}
+
+type communityRelayResponse struct {
+	OK         bool   `json:"ok"`
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+	ReportedAt string `json:"reported_at"`
+}
+
 func getCommunityDir() string {
 	return filepath.Join(homeDir(), ".token_monitor")
 }
 
-// getUserID 获取或生成匿名用户 ID (User_XXXXX)
+func newCommunityID() string {
+	random := make([]byte, 5)
+	if _, err := rand.Read(random); err != nil {
+		fallback := strings.ToUpper(strconv.FormatInt(time.Now().UnixNano(), 36))
+		if len(fallback) > 10 {
+			fallback = fallback[len(fallback)-10:]
+		}
+		return "User_" + fallback
+	}
+	return "User_" + strings.ToUpper(hex.EncodeToString(random))
+}
+
+// getUserID 获取或生成匿名用户 ID
 func getUserID() string {
 	communityDir := getCommunityDir()
 	idFile := filepath.Join(communityDir, "community_id.txt")
@@ -54,17 +80,61 @@ func getUserID() string {
 			return uid
 		}
 	}
-	// 生成新 ID
 	os.MkdirAll(communityDir, 0755)
-	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	suffix := make([]byte, 5)
-	for i := range suffix {
-		suffix[i] = chars[time.Now().UnixNano()%int64(len(chars))]
-		time.Sleep(1 * time.Nanosecond)
-	}
-	uid := "User_" + string(suffix)
+	uid := newCommunityID()
 	os.WriteFile(idFile, []byte(uid), 0644)
 	return uid
+}
+
+func writeCommunityCredential(credential communityCredential) error {
+	communityDir := getCommunityDir()
+	if err := os.MkdirAll(communityDir, 0755); err != nil {
+		return err
+	}
+	body, _ := json.Marshal(credential)
+	tmp := filepath.Join(communityDir, "community_credential.json.tmp")
+	path := filepath.Join(communityDir, "community_credential.json")
+	if err := os.WriteFile(tmp, body, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func getCommunityCredential() communityCredential {
+	uid := getUserID()
+	path := filepath.Join(getCommunityDir(), "community_credential.json")
+	if body, err := os.ReadFile(path); err == nil {
+		var credential communityCredential
+		if json.Unmarshal(body, &credential) == nil {
+			decoded, decodeErr := base64.RawURLEncoding.DecodeString(credential.DeviceSecret)
+			if credential.ID == uid && decodeErr == nil && len(decoded) == 32 {
+				return credential
+			}
+		}
+	}
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	credential := communityCredential{ID: uid, DeviceSecret: base64.RawURLEncoding.EncodeToString(secret)}
+	_ = writeCommunityCredential(credential)
+	return credential
+}
+
+func rotateCommunityIdentity() communityCredential {
+	uid := newCommunityID()
+	_ = os.MkdirAll(getCommunityDir(), 0755)
+	_ = os.WriteFile(filepath.Join(getCommunityDir(), "community_id.txt"), []byte(uid), 0644)
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	credential := communityCredential{ID: uid, DeviceSecret: base64.RawURLEncoding.EncodeToString(secret)}
+	_ = writeCommunityCredential(credential)
+	return credential
+}
+
+func communityRelayURL() string {
+	if value := strings.TrimSpace(os.Getenv("TOKEN_MONITOR_COMMUNITY_RELAY_URL")); value != "" {
+		return value
+	}
+	return communityRelayDefault
 }
 
 // isOptedIn 检查 opt-in 状态 (v1.4.12: 默认开启, 用户量小先自动收集)
@@ -89,23 +159,6 @@ func setOptIn(enabled bool) {
 	invalidateCommunityCache()
 }
 
-// getGitcodeToken 从 git credential 获取 GitCode token
-func getGitcodeToken() string {
-	cmd := exec.Command("git", "credential", "fill")
-	cmd.Stdin = strings.NewReader("protocol=https\nhost=gitcode.com\n\n")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(out.String(), "\n") {
-		if strings.HasPrefix(line, "password=") {
-			return strings.TrimPrefix(line, "password=")
-		}
-	}
-	return ""
-}
-
 func communityInt64(value interface{}) int64 {
 	switch v := value.(type) {
 	case int:
@@ -122,13 +175,6 @@ func communityInt64(value interface{}) int64 {
 	}
 }
 
-func communityWriteMethod(sha string) string {
-	if sha == "" {
-		return http.MethodPost
-	}
-	return http.MethodPut
-}
-
 func invalidateCommunityCache() {
 	communityCacheMu.Lock()
 	communityCache = make(map[string]interface{})
@@ -136,16 +182,44 @@ func invalidateCommunityCache() {
 	communityCacheMu.Unlock()
 }
 
-// reportCommunityStats 上报当前用户统计到 GitCode
+func sendCommunityRelay(report map[string]interface{}) communityRelayResponse {
+	body, _ := json.Marshal(report)
+	req, err := http.NewRequest(http.MethodPost, communityRelayURL(), bytes.NewReader(body))
+	if err != nil {
+		return communityRelayResponse{Status: "relay_unavailable", Message: "社区中继地址无效"}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return communityRelayResponse{Status: "relay_unavailable", Message: "社区中继暂时不可用：" + err.Error()}
+	}
+	defer resp.Body.Close()
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	var result communityRelayResponse
+	if json.Unmarshal(responseBody, &result) != nil {
+		return communityRelayResponse{Status: "relay_invalid_response", Message: "社区中继返回格式异常"}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.OK = false
+		if result.Status == "" {
+			result.Status = "relay_http_error"
+		}
+		if result.Message == "" {
+			result.Message = "社区中继请求失败"
+		}
+	}
+	return result
+}
+
+// reportCommunityStats 通过 VPS 中继上报匿名统计
 func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
 	if !isOptedIn() {
 		return CommunityReportResult{OK: false, Status: "disabled", Message: "社区数据上报未开启"}
 	}
-	token := getGitcodeToken()
-	if token == "" {
-		return CommunityReportResult{OK: false, Status: "credential_missing", Message: "本机未配置 GitCode 凭据，无法提交匿名统计"}
-	}
-	uid := getUserID()
+	credential := getCommunityCredential()
 
 	// 构建上报数据
 	byTool := make(map[string]int64)
@@ -160,52 +234,27 @@ func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
 			reportDate = v
 		}
 	}
-	reportedAt := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	report := map[string]interface{}{
-		"id":           uid,
-		"updated_at":   reportedAt,
-		"report_date":  reportDate,
-		"today_tokens": totalTokens,
-		"by_tool":      byTool,
-		"tool_count":   len(byTool),
-		"version":      appVersion,
+		"id":            credential.ID,
+		"device_secret": credential.DeviceSecret,
+		"report_date":   reportDate,
+		"today_tokens":  totalTokens,
+		"by_tool":       byTool,
+		"version":       appVersion,
 	}
-	content, _ := json.Marshal(report)
-	contentB64 := base64.StdEncoding.EncodeToString(content)
-	filePath := communityReportsPath + "/" + uid + ".json"
-
-	// 先 GET 看文件是否存在 (拿 sha)
-	sha := ""
-	existing := gitcodeGet(filePath, token)
-	if m, ok := existing.(map[string]interface{}); ok {
-		if s, ok := m["sha"].(string); ok {
-			sha = s
-		}
+	result := sendCommunityRelay(report)
+	if result.Status == "identity_upgrade_required" {
+		credential = rotateCommunityIdentity()
+		report["id"] = credential.ID
+		report["device_secret"] = credential.DeviceSecret
+		result = sendCommunityRelay(report)
 	}
-
-	// PUT 上传
-	payload := map[string]interface{}{
-		"message": "community: " + uid + " report",
-		"content": contentB64,
-		"branch":  communityDataBranch,
-	}
-	if sha != "" {
-		payload["sha"] = sha
-	}
-	method := communityWriteMethod(sha)
-	_, statusCode, err := gitcodeWrite(method, filePath, payload, token)
-	if err != nil || statusCode < 200 || statusCode >= 300 {
-		message := "匿名统计提交失败"
-		if err != nil {
-			message += "：" + err.Error()
-		} else {
-			message += ": HTTP " + http.StatusText(statusCode)
-		}
-		return CommunityReportResult{OK: false, Status: "upload_failed", Message: message}
+	if !result.OK {
+		return CommunityReportResult{OK: false, Status: result.Status, Message: result.Message}
 	}
 
 	invalidateCommunityCache()
-	return CommunityReportResult{OK: true, Status: "synced", Message: "匿名统计已同步", ReportedAt: reportedAt}
+	return CommunityReportResult{OK: true, Status: "synced", Message: result.Message, ReportedAt: result.ReportedAt}
 }
 
 // getCommunityStats 获取社区聚合统计 (带缓存)
@@ -229,7 +278,7 @@ func getCommunityStats() map[string]interface{} {
 	}
 	communityCacheMu.Unlock()
 
-	token := getGitcodeToken()
+	token := ""
 
 	// 公开仓库读取不要求每位用户都配置 GitCode 凭据。
 	listing, statusCode, err := gitcodeGetDetailed(communityReportsPath, token)
@@ -242,7 +291,7 @@ func getCommunityStats() map[string]interface{} {
 		}
 		return map[string]interface{}{
 			"error": message, "data_status": "load_failed",
-			"opted_in": isOptedIn(), "can_report": token != "", "my_id": getUserID(),
+			"opted_in": isOptedIn(), "can_report": communityRelayURL() != "", "my_id": getUserID(),
 			"total_users": 0, "total_tokens_today": 0,
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
@@ -252,7 +301,7 @@ func getCommunityStats() map[string]interface{} {
 	if json.Unmarshal(body, &files) != nil {
 		return map[string]interface{}{
 			"error": "社区数据读取失败：目录响应格式异常", "data_status": "load_failed",
-			"opted_in": isOptedIn(), "can_report": token != "", "my_id": getUserID(),
+			"opted_in": isOptedIn(), "can_report": communityRelayURL() != "", "my_id": getUserID(),
 			"total_users": 0, "total_tokens_today": 0,
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
@@ -422,8 +471,6 @@ func getCommunityStats() map[string]interface{} {
 	} else if mySyncedToday {
 		rankStatus = "outside_top10"
 		rankMessage = "已同步，当前第 " + strconv.Itoa(myRank) + " 名（榜单展示前 " + strconv.Itoa(communityLeaderboardLimit) + "）"
-	} else if token == "" {
-		rankStatus, rankMessage = "credential_missing", "仅可查看：本机未配置 GitCode 上报凭据"
 	}
 
 	dataStatus := "empty"
@@ -454,7 +501,7 @@ func getCommunityStats() map[string]interface{} {
 		"rank_message":         rankMessage,
 		"rank_total":           len(reportsToday),
 		"leaderboard_limit":    communityLeaderboardLimit,
-		"can_report":           token != "",
+		"can_report":           communityRelayURL() != "",
 		"data_status":          dataStatus,
 		"data_warning":         dataWarning,
 		"fun_facts":            funFacts,

@@ -2847,7 +2847,7 @@
                 ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid var(--border-card);background:var(--bg-subtle);border-radius:8px;">' +
                     '<div style="font-size:12px;color:var(--text-main);font-weight:600;margin-bottom:4px;">今天还没有有效的社区上报</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);">' +
-                        (canReport ? '你的本地统计尚未同步成功，可以点击“立即同步”重试。' : '当前设备可以查看公开数据，但未配置提交匿名统计所需的 GitCode 凭据。') +
+                        (canReport ? '应用会自动同步；如果刚启动或网络中断，可以点击“立即同步”重试。' : '社区中继暂时不可用，请稍后重试。') +
                     '</div></div>'
                 : '';
 
@@ -2882,7 +2882,7 @@
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
-                    '仅提交匿名 ID、Token 数量和工具汇总，不提交对话、模型名称或个人信息。自动上报每小时一次，页面数据最多缓存 5 分钟。' +
+                    '通过社区中继自动提交匿名 ID、Token 数量和工具汇总，不提交对话、模型名称或个人信息，也不需要 GitCode 凭据。每小时自动同步一次。' +
                 '</div>';
 
             const reportBtn = document.getElementById('communityReportNowBtn');

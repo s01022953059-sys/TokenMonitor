@@ -14,6 +14,7 @@
    - 打开热力图弹窗, 确认有数据渲染
    - 打开会话详情, 确认有数据且分页正常
    - 社区功能变更时, 验证 `/api/community/report` 真实成功并能从 `community-data` 分支读回报告
+   - VPS 社区中继变更时, 必须用两个独立本地身份验证新建、更新、错误凭据拒绝和公开聚合读回
    - 确认 `/api/community` 能区分等待同步、完整排名、Top 10 和读取失败
    - 前端 JS 无语法错误 (`node -e` 校验)
 8. **单实例锁健壮性**: 锁文件允许残留，进程存活状态只以内核独占锁为准；成功加锁后才截断并写 PID，避免 Windows 不支持 Unix `Signal(0)` 时误删活锁或产生竞态
@@ -29,20 +30,42 @@
    - 涉及 Windows 自启或自替换时，发布前在真实 Windows 机器做一次登录自启、关闭窗口驻留、更新替换重启验收
    - 自动化部分统一执行 `bash verify_release.sh`；`release_all.sh` 必须在任何 tag/Release 操作前调用它，验证失败立即中止
    - 上传后必须从 `gitcode.com/.../releases/download/...` 重新下载并校验 DMG、PE EXE 和 ZIP；不能只相信 Release API 的附件列表
+11. **统计口径不确定时优先参考 AgentsView**: 遇到新 Agent、字段语义、缓存口径、重复事件或会话格式不明确时，先查 [kenn-io/agentsview](https://github.com/kenn-io/agentsview) 对应 parser 和测试，再结合本机原始日志验证；禁止仅凭字段名猜测。
 
 ## 架构
 
 - **macOS**: Swift 壳 (app_wrapper.swift) + Python 后端 (scanner.py / server.py) + HTML 前端 (index.html / chart.js)
 - **Windows**: Go 单体 (go_build/main.go), 嵌入前端, 系统托盘, 交叉编译 `GOOS=windows GOARCH=amd64`
-- **两版功能完全对齐**: 四源扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
+- **两版功能完全对齐**: Codex 官方日志 + cc-switch / Antigravity / Hermes / WorkBuddy 扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
 - **前端同一份** index.html + chart.js, go_build/static/ 是同步副本
 
 ## 数据源
 
 - cc-switch: `~/.cc-switch/cc-switch.db` (SQLite)
+- Codex 官方日志: `~/.codex/logs_2.sqlite` 与 `~/.codex/sessions/`、`~/.codex/archived_sessions/` rollout JSONL 始终合并去重
 - Antigravity: `~/Library/Application Support/BingchaAI/usage_stats.json` (macOS 专属, Windows 跳过)
 - Hermes: `~/.hermes/state.db` (SQLite)
-- WorkBuddy: `~/.workbuddy/workbuddy.db` (SQLite, v1.4.14 接入)
+- WorkBuddy: `~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage` (逐请求准确数据，按 AgentsView 口径); 旧版本没有 projects 时才回退 `~/.workbuddy/workbuddy.db` 的会话占用近似值
+
+## 2026-07-11 Codex 漏统修复 (v1.4.21)
+
+- 根因: 旧实现只通过 cc-switch 的 `proxy_request_logs` 间接统计 Codex，README 虽写了 `~/.codex/logs_2.sqlite`，代码并未读取；未安装或未同步 cc-switch 的官方 Codex App 用户因此显示为 0。
+- 修复: Python 与 Windows Go 两端合并读取 `logs_2.sqlite` 的 `response.completed` 与 rollout JSONL 的 `token_count.last_token_usage`。
+- 数据源优先级: cc-switch 在前、Codex 官方日志在后。相差不超过 2 秒且 Token 总量相同即合并，优先保留 cc-switch 的第三方 Provider 真实模型名。
+- 覆盖范围: 今日首页、历史趋势、会话列表、活动热力图及热力图下钻详情。
+- 固定回归: 发版前必须验证“无 cc-switch 仍可统计 Codex”“SQLite 缺失可回退 rollout”“cc-switch + 官方日志不重复计数”；对应 Python/Go 自动化测试已加入仓库。
+
+## 2026-07-12 统计准确性举一反三审计 (v1.4.21)
+
+- 参考实现: `kenn-io/agentsview`。Codex 以 rollout `last_token_usage` 为逐次用量，WorkBuddy 以项目 JSONL `providerData.usage` 为逐请求用量，缓存 Token 单独归一化。
+- Codex 的 `logs_2.sqlite` 只可能覆盖当前进程的一部分，必须始终与 sessions/archived_sessions rollout 合并，不能“SQLite 有数据就停止回退”。
+- Codex rollout 的重复 `token_count` 可能累计 usage 完全不变但 last total 非零；按每个文件的累计 usage 签名过滤，否则会多算。
+- WorkBuddy `session_usage.used` 是当前上下文占用，不是实际累计消耗；主数据源改为 `~/.workbuddy/projects/**/*.jsonl` 的逐请求 usage，数据库仅作旧版兼容回退。
+- cc-switch 同时包含 OpenAI 与 Anthropic 协议：OpenAI input 已含 cached，Anthropic input 不含 cache read/create。必须按协议语义计算，不能统一 cap；旧口径会严重漏算 Claude 缓存输入。
+- Python 历史趋势、首页、热力图、会话列表和热力图下钻必须使用同一事件集合；已移除历史趋势对冰茶 JSON 的重复累加，并补齐 WorkBuddy。
+- Hermes 总输入应包含 `input_tokens + cache_read_tokens + cache_write_tokens`，用量日期优先采用 `ended_at`（AgentsView 同口径），避免跨天会话归错日期；Python/Go 两端均已对齐。
+- 本地 Agent SQLite 可能在 WAL 写入或原子替换瞬间短暂无法打开；Python 统一通过只读连接 + busy timeout + 3 次短重试，禁止单次失败直接把该工具统计成 0。
+- 回归门禁新增: Codex 累计重复事件、WorkBuddy providerData usage、OpenAI/Anthropic 缓存语义、历史与热力图同源一致性。
 
 ## Windows 限制 (README 中需维护)
 
@@ -51,7 +74,7 @@
 - Antigravity 数据源不存在
 - 无代码签名 (SmartScreen 拦截)
 - 开机自启使用 HKCU Run + `--autostart`，启动后只驻留托盘
-- 社区公开排行可读取, 但提交匿名统计要求本机安装 Git 并配置 GitCode 凭据
+- 社区上报通过 `https://new.taqi.cc/token-monitor-community/v1/report` 中继；客户端不安装 Git、不持有 GitCode token，每台设备只在本地保存匿名 ID 与 32 字节随机凭据
 
 ## 已废弃 (不要恢复)
 
@@ -84,6 +107,10 @@
 - release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
+
+### v1.4.21 (2026-07-12)
+- 对齐 AgentsView 与本机原始日志，修复 Codex、WorkBuddy、Hermes、缓存 Token 和跨源去重的统计口径
+- 上线 VPS 社区中继，客户端不再依赖 Git/GitCode 凭据；完成多用户鉴权、读回、清理和双平台发版门禁验证
 
 ### v1.4.20 (2026-07-11)
 - GitCode Release API 返回的附件链接域名 `api.gitcode.com` 实际下载为 404；统一归一化为可下载的 `gitcode.com`，并加入真实下载回归测试
@@ -176,7 +203,14 @@
 
 ### 社区数据架构 (2026-07-10)
 - 报告写入独立 `community-data` 分支的 `community/reports/User_XXXXX.json`, 不再污染 main 代码历史
-- 公开仓库报告无需 token 即可读取；写入仍依赖本机 GitCode 凭据, 这是当前明确限制
+
+### VPS 社区中继 (2026-07-12, v1.4.21)
+- macOS/Python 与 Windows/Go 客户端统一向 `https://new.taqi.cc/token-monitor-community/v1/report` 提交匿名数字统计；GitCode token 只保存在 VPS 的 root-only systemd 环境文件中，不进入客户端、仓库或公开接口。
+- 每台设备生成 `User_XXXXXXXX` 和 32 字节随机设备凭据；GitCode 报告只保存凭据 SHA-256。相同凭据可更新，错误凭据返回 403，旧版无凭据报告会自动换新匿名 ID。
+- Nginx 只公开固定的 HTTPS 中继路径，Go 服务仅监听 `127.0.0.1:18190`；客户端仍从公开 `community-data` 分支读取社区聚合。
+- 发版门禁: 中继单测、Python/Go 客户端单测、VPS `/health`、两个独立身份的创建和更新、错误凭据拒绝、GitCode 报告读回及临时测试数据清理全部通过。
+- 2026-07-12 实测结果: 两个独立客户端均同步成功，同一身份更新成功，错误凭据返回 HTTP 403，GitCode 数值与上报一致，明文设备凭据未入库，两份测试报告均清理成功。
+- 公开仓库报告无需 token 即可读取；写入仅由 VPS 中继持有 GitCode 凭据完成，客户端不接触该凭据
 - 新文件用 POST, 已有文件用 PUT + sha；成功后立即清除 5 分钟聚合缓存
 - 报告增加 `report_date`, 聚合只统计今天的报告, 防止离线用户昨天的数据混进今天
 - 完整排名在所有今日报告中计算, Top 10 只用于榜单展示

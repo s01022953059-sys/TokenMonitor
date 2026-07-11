@@ -6,6 +6,7 @@ import datetime
 import urllib.request
 import re
 import glob
+import time
 
 # 数据源路径
 # 注: 历史上还设过 ANTIGRAVITY_BRAIN_DIR = ~/.gemini/antigravity/brain,
@@ -17,12 +18,31 @@ ANTIGRAVITY_STATS_PATH = os.path.expanduser(
 )
 HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
 WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
+WORKBUDDY_PROJECTS_DIR = os.path.expanduser("~/.workbuddy/projects")
+CODEX_LOG_DB_PATH = os.path.expanduser("~/.codex/logs_2.sqlite")
+CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
+CODEX_ARCHIVED_SESSIONS_DIR = os.path.expanduser("~/.codex/archived_sessions")
 
-# 三源去重的"时间窗口", 单位秒。
-# 同一时间窗口内 + 同模型 + 同 token 量视为同一事件, 只计一次。
+# 跨数据源去重的时间窗口, 单位秒。
+# 同一时间窗口内 + 同 token 量视为同一事件, 只计一次。
 # 2 秒足够覆盖"客户端 → 代理 → 数据库落盘"的端到端抖动,
 # 又不至于把两次独立的相邻请求合并掉。
 DEDUP_WINDOW_SECONDS = 2
+
+
+def _open_sqlite_readonly(path, attempts=3):
+    """只读打开可能正被 Agent 原子替换/WAL 写入的数据库，短暂失败时重试。"""
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+            conn.execute("PRAGMA busy_timeout=2000")
+            return conn
+        except sqlite3.OperationalError as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(0.05 * (attempt + 1))
+    raise last_error
 
 def get_today_midnight_timestamp():
     """获取今天本地时间零点的时间戳"""
@@ -56,7 +76,7 @@ def get_deepseek_balance():
         return {"balance": "0.00", "currency": "CNY", "status": "Offline"}
 
     try:
-        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
         # 三种常见的字段命名都试一遍: provider_type / name / app_type,
         # 任一字段含 deepseek (大小写不敏感) 即视为 DeepSeek provider。
@@ -111,6 +131,28 @@ def get_deepseek_balance():
 
     return {"balance": "0.00", "currency": "CNY", "status": "Unknown"}
 
+def _cc_token_breakdown(app_type, input_tokens, output_tokens, cache_read, cache_creation):
+    """按协议语义拆分 cc-switch usage，并返回输入/输出/总量/缓存。"""
+    input_tokens = int(input_tokens or 0)
+    output_tokens = int(output_tokens or 0)
+    cache_read = int(cache_read or 0)
+    cache_creation = int(cache_creation or 0)
+    app = str(app_type or "").lower()
+    # Anthropic usage 的 input_tokens 不含 cache read/create；OpenAI usage 的
+    # input_tokens 已含 cached_tokens。cc-switch 没有统一协议列，结合客户端和
+    # 字段关系判断，避免 Claude 大量缓存被漏算。
+    separate_cache = "claude" in app or cache_read > input_tokens or cache_creation > 0
+    if separate_cache:
+        input_cached = cache_read
+        input_uncached = input_tokens + cache_creation
+        total_input = input_uncached + input_cached
+    else:
+        input_cached = min(input_tokens, max(0, cache_read))
+        input_uncached = max(0, input_tokens - input_cached)
+        total_input = input_tokens
+    return total_input, output_tokens, total_input + output_tokens, input_cached, input_uncached
+
+
 def scan_cc_switch_logs(today_start):
     """只读扫描 cc-switch 数据库中今天的 API 请求记录，提取包含缓存细节的高精度 Token 消耗。
 
@@ -124,12 +166,12 @@ def scan_cc_switch_logs(today_start):
         return logs_data
 
     try:
-        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
 
         query = """
             SELECT created_at, app_type, model, input_tokens, output_tokens,
-                   cache_read_tokens, provider_id, data_source
+                   cache_read_tokens, cache_creation_tokens, provider_id, data_source
             FROM proxy_request_logs
             WHERE created_at >= ? AND status_code = 200
             ORDER BY created_at ASC
@@ -140,20 +182,11 @@ def scan_cc_switch_logs(today_start):
 
         provider_model_map, active_model_by_app = _load_provider_model_map()
 
-        for created_at, app_type, model, input_t, output_t, cache_read_t, provider_id, data_source in rows:
+        for created_at, app_type, model, input_t, output_t, cache_read_t, cache_creation_t, provider_id, data_source in rows:
             local_time = datetime.datetime.fromtimestamp(created_at).strftime("%H:%M:%S")
-            # 修复: 不同协议对 cache 字段语义不同
-            # - Anthropic 协议: input_t = uncached + cache_creation, cache_read 不在 input_t 里
-            # - OpenAI 兼容协议: input_t 已含 cache 命中部分, cache_read 是额外报告(双计)
-            # 当 cache_read > input_t 时上游是 OpenAI 协议, 把整段 input 视为 cached
-            cache_hits = cache_read_t or 0
-            if cache_hits > (input_t or 0):
-                input_cached = input_t or 0
-                input_uncached = 0
-            else:
-                input_cached = cache_hits
-                input_uncached = max(0, (input_t or 0) - cache_hits)
-            total_t = (input_t or 0) + (output_t or 0)
+            total_input, output_t, total_t, input_cached, input_uncached = _cc_token_breakdown(
+                app_type, input_t, output_t, cache_read_t, cache_creation_t
+            )
 
             # 模型修正: codex_session 来源的 model 是声明名, 不可信
             actual_model = model
@@ -170,7 +203,7 @@ def scan_cc_switch_logs(today_start):
                 # 跟详情/会话列表的 tool 归一化保持一致, 避免首页和列表显示不同名
                 "tool": _normalize_app_type(app_type),
                 "model": normalize_model_name(actual_model),
-                "input_tokens": input_t,
+                "input_tokens": total_input,
                 "output_tokens": output_t,
                 "total_tokens": total_t,
                 "input_cached": input_cached,
@@ -180,6 +213,155 @@ def scan_cc_switch_logs(today_start):
         print(f"[-] 扫描 cc-switch 数据库出错: {e}")
 
     return logs_data
+
+
+def _codex_log_entry(timestamp, model, usage, session_id=""):
+    """把 Codex Responses API / rollout 的 usage 转成统一事件。"""
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = int(usage.get("input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    total_tokens = int(usage.get("total_tokens") or (input_tokens + output_tokens))
+    details = usage.get("input_tokens_details") or {}
+    cached_tokens = int(
+        details.get("cached_tokens")
+        or usage.get("cached_input_tokens")
+        or 0
+    )
+    cached_tokens = min(input_tokens, max(0, cached_tokens))
+    if total_tokens <= 0:
+        return None
+    timestamp = int(timestamp)
+    return {
+        "time": datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S"),
+        "timestamp": timestamp,
+        "tool": "Codex",
+        "model": normalize_model_name(model or "Unknown"),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "input_cached": cached_tokens,
+        "input_uncached": max(0, input_tokens - cached_tokens),
+        "latency_ms": 0,
+        "session_id": session_id or "",
+    }
+
+
+def _parse_codex_timestamp(value):
+    if not value:
+        return 0
+    try:
+        return int(datetime.datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        ).timestamp())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _scan_codex_rollouts(start_timestamp):
+    """旧版/精简版 Codex 没有 logs_2.sqlite 时，从 rollout JSONL 回退读取。"""
+    files = []
+    for root in (CODEX_SESSIONS_DIR, CODEX_ARCHIVED_SESSIONS_DIR):
+        if not os.path.isdir(root):
+            continue
+        for path in glob.iglob(os.path.join(root, "**", "*.jsonl"), recursive=True):
+            try:
+                if os.path.getmtime(path) >= start_timestamp - 86400:
+                    files.append(path)
+            except OSError:
+                continue
+
+    events = []
+    uuid_pattern = re.compile(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    )
+    for path in files:
+        ids = uuid_pattern.findall(os.path.basename(path))
+        session_id = ids[-1] if ids else ""
+        current_model = "Unknown"
+        previous_cumulative = None
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                for line in stream:
+                    try:
+                        item = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    payload = item.get("payload") or {}
+                    if item.get("type") == "turn_context":
+                        current_model = payload.get("model") or "Unknown"
+                        continue
+                    if item.get("type") != "event_msg" or payload.get("type") != "token_count":
+                        continue
+                    info = payload.get("info") or {}
+                    cumulative = info.get("total_token_usage") or {}
+                    if cumulative:
+                        cumulative_signature = tuple(
+                            int(cumulative.get(key) or 0)
+                            for key in (
+                                "input_tokens", "cached_input_tokens", "output_tokens",
+                                "reasoning_output_tokens", "total_tokens",
+                            )
+                        )
+                        if cumulative_signature == previous_cumulative:
+                            continue
+                        previous_cumulative = cumulative_signature
+                    usage = info.get("last_token_usage")
+                    timestamp = _parse_codex_timestamp(item.get("timestamp"))
+                    if timestamp < start_timestamp:
+                        continue
+                    event = _codex_log_entry(timestamp, current_model, usage, session_id)
+                    if event:
+                        events.append(event)
+        except OSError:
+            continue
+    return _dedup_events(events)
+
+
+def scan_codex_tokens(start_timestamp):
+    """直接读取官方 Codex App 日志，不要求用户安装或启用 cc-switch。"""
+    events = []
+    seen_response_ids = set()
+    if os.path.exists(CODEX_LOG_DB_PATH):
+        try:
+            conn = _open_sqlite_readonly(CODEX_LOG_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ts, feedback_log_body, thread_id
+                FROM logs
+                WHERE ts >= ?
+                  AND target = 'codex_api::sse::responses'
+                  AND feedback_log_body LIKE '%response.completed%'
+                ORDER BY ts ASC, ts_nanos ASC
+            """, (start_timestamp,))
+            for ts, body, thread_id in cursor.fetchall():
+                if not body or not body.startswith("SSE event: "):
+                    continue
+                try:
+                    envelope = json.loads(body[len("SSE event: "):])
+                except (TypeError, ValueError):
+                    continue
+                if envelope.get("type") != "response.completed":
+                    continue
+                response = envelope.get("response") or {}
+                response_id = response.get("id")
+                if response_id and response_id in seen_response_ids:
+                    continue
+                if response_id:
+                    seen_response_ids.add(response_id)
+                timestamp = int(response.get("completed_at") or ts)
+                event = _codex_log_entry(
+                    timestamp, response.get("model"), response.get("usage"), thread_id or ""
+                )
+                if event:
+                    events.append(event)
+            conn.close()
+        except Exception as e:
+            print(f"[-] 扫描 Codex 日志数据库出错: {e}")
+
+    # logs_2.sqlite 可能只保留当前 Codex 进程的一小段日志，不能把 rollout
+    # 仅当成“数据库完全没有数据”时的回退。两者始终合并后去重，才能覆盖重启前记录。
+    return _dedup_events(events + _scan_codex_rollouts(start_timestamp))
 
 def normalize_model_name(raw_model):
     """归一化 model 字符串, 合并 cc-switch 噪声变体。
@@ -263,7 +445,7 @@ def _load_provider_model_map():
         return provider_model_map, active_model_by_app
 
     try:
-        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT id, app_type, settings_config, is_current FROM providers")
         rows = cursor.fetchall()
@@ -302,7 +484,7 @@ def _get_ccswitch_today_models():
         return set()
     try:
         today_start = get_today_midnight_timestamp()
-        conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+        conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("""
             SELECT DISTINCT model FROM proxy_request_logs
@@ -343,55 +525,130 @@ def scan_hermes_tokens(today_start):
         return logs_data
 
     try:
-        conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+        conn = _open_sqlite_readonly(HERMES_DB_PATH)
         cursor = conn.cursor()
         
         # 筛选今天生成的成功会话 (started_at >= today_start)
         query = """
-            SELECT started_at, model, input_tokens, output_tokens, cache_read_tokens 
+            SELECT id, COALESCE(NULLIF(ended_at, 0), started_at) AS occurred_at,
+                   model, input_tokens, output_tokens,
+                   cache_read_tokens, cache_write_tokens
             FROM sessions 
-            WHERE started_at >= ?
-            ORDER BY started_at ASC
+            WHERE COALESCE(NULLIF(ended_at, 0), started_at) >= ?
+            ORDER BY occurred_at ASC
         """
         cursor.execute(query, (today_start,))
         rows = cursor.fetchall()
         conn.close()
         
-        for started_at, model, input_t, output_t, cache_read_t in rows:
-            local_time = datetime.datetime.fromtimestamp(started_at).strftime("%H:%M:%S")
+        for session_id, occurred_at, model, input_t, output_t, cache_read_t, cache_write_t in rows:
+            local_time = datetime.datetime.fromtimestamp(occurred_at).strftime("%H:%M:%S")
             
             # Hermes 数据库中：
             # input_t: 累积未缓存 (或者最新的输入 context 大小)
             # cache_read_t: 累积已缓存
             input_cached = cache_read_t if cache_read_t else 0
-            input_uncached = input_t if input_t else 0
+            input_uncached = (input_t or 0) + (cache_write_t or 0)
             total_input = input_uncached + input_cached
             output_tokens = output_t if output_t else 0
             total_t = total_input + output_tokens
             
             logs_data.append({
                 "time": local_time,
-                "timestamp": int(started_at),
+                "timestamp": int(occurred_at),
                 "tool": "Hermes",
                 "model": normalize_model_name(model) if model else "Unknown",
                 "input_tokens": total_input,
                 "output_tokens": output_tokens,
                 "total_tokens": total_t,
                 "input_cached": input_cached,
-                "input_uncached": input_uncached
+                "input_uncached": input_uncached,
+                "latency_ms": 0,
+                "session_id": session_id or "",
             })
     except Exception as e:
         print(f"[-] 扫描 Hermes 数据库出错: {e}")
         
     return logs_data
 
-def scan_workbuddy_tokens(today_start):
-    """只读扫描 WorkBuddy (腾讯 CodeBuddy) 数据库中今天的会话记录"""
+def _workbuddy_usage_value(usage, *keys):
+    for key in keys:
+        value = usage.get(key)
+        if value is not None:
+            return int(value or 0)
+    return 0
+
+
+def _scan_workbuddy_projects(start_timestamp):
+    """按 AgentsView 口径读取 WorkBuddy 会话 JSONL 中的逐请求 usage。"""
+    if not os.path.isdir(WORKBUDDY_PROJECTS_DIR):
+        return []
+    events = []
+    for path in glob.iglob(os.path.join(WORKBUDDY_PROJECTS_DIR, "**", "*.jsonl"), recursive=True):
+        try:
+            if os.path.getmtime(path) < start_timestamp - 86400:
+                continue
+            with open(path, "r", encoding="utf-8") as stream:
+                for line in stream:
+                    try:
+                        item = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    provider = item.get("providerData") or {}
+                    usage = provider.get("usage") or provider.get("rawUsage")
+                    if not isinstance(usage, dict):
+                        continue
+                    timestamp_ms = int(item.get("timestamp") or 0)
+                    timestamp = timestamp_ms // 1000
+                    if timestamp < start_timestamp:
+                        continue
+                    input_tokens = _workbuddy_usage_value(
+                        usage, "inputTokens", "input_tokens", "prompt_tokens"
+                    )
+                    output_tokens = _workbuddy_usage_value(
+                        usage, "outputTokens", "output_tokens", "completion_tokens"
+                    )
+                    total_tokens = _workbuddy_usage_value(usage, "totalTokens", "total_tokens")
+                    if total_tokens <= 0:
+                        total_tokens = input_tokens + output_tokens
+                    if total_tokens <= 0:
+                        continue
+                    cached_tokens = 0
+                    details = usage.get("inputTokensDetails") or []
+                    if isinstance(details, list):
+                        cached_tokens = sum(
+                            int(detail.get("cached_tokens") or 0)
+                            for detail in details if isinstance(detail, dict)
+                        )
+                    if not cached_tokens:
+                        prompt_details = usage.get("prompt_tokens_details") or {}
+                        cached_tokens = int(prompt_details.get("cached_tokens") or 0)
+                    cached_tokens = min(input_tokens, max(0, cached_tokens))
+                    events.append({
+                        "time": datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S"),
+                        "timestamp": timestamp,
+                        "tool": "WorkBuddy",
+                        "model": normalize_model_name(provider.get("model") or "Other"),
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                        "input_cached": cached_tokens,
+                        "input_uncached": max(0, input_tokens - cached_tokens),
+                        "latency_ms": 0,
+                        "session_id": os.path.splitext(os.path.basename(path))[0],
+                    })
+        except OSError:
+            continue
+    return _dedup_events(events)
+
+
+def _scan_workbuddy_session_usage(today_start):
+    """兼容旧版 WorkBuddy：没有项目 JSONL 时用上下文占用量作近似值。"""
     logs_data = []
     if not os.path.exists(WORKBUDDY_DB_PATH):
         return logs_data
     try:
-        conn = sqlite3.connect(WORKBUDDY_DB_PATH)
+        conn = _open_sqlite_readonly(WORKBUDDY_DB_PATH)
         cursor = conn.cursor()
         # sessions + session_usage 联查, created_at/updated_at 是毫秒时间戳
         today_start_ms = int(today_start) * 1000
@@ -428,6 +685,13 @@ def scan_workbuddy_tokens(today_start):
         print(f"[-] 扫描 WorkBuddy 数据库出错: {e}")
     return logs_data
 
+
+def scan_workbuddy_tokens(today_start):
+    """优先读取 WorkBuddy 项目 JSONL，旧版本缺失时才回退会话占用量。"""
+    if os.path.isdir(WORKBUDDY_PROJECTS_DIR):
+        return _scan_workbuddy_projects(today_start)
+    return _scan_workbuddy_session_usage(today_start)
+
 def _dedup_events(events):
     """跨数据源去重: 把同一笔请求在多源里都被记录的事件合并为一条。
 
@@ -441,18 +705,19 @@ def _dedup_events(events):
     """
     if not events:
         return []
-    # 按时间升序, 保证 group key 相同时保留最早的
-    ordered = sorted(events, key=lambda x: x["timestamp"])
-    seen_keys = set()
+    # 按传入顺序决定来源优先级。调用方把 cc-switch 放在 Codex 官方日志前面，
+    # 因为 cc-switch 能给出第三方 provider 的真实模型名。
+    recent_by_tokens = {}
     deduped = []
-    for ev in ordered:
-        bucket = ev["timestamp"] // DEDUP_WINDOW_SECONDS
-        key = (bucket, ev.get("total_tokens", 0))
-        if key in seen_keys:
+    for ev in events:
+        timestamp = int(ev.get("timestamp", 0))
+        total_tokens = int(ev.get("total_tokens", 0))
+        recent = recent_by_tokens.setdefault(total_tokens, [])
+        if any(abs(timestamp - seen_ts) <= DEDUP_WINDOW_SECONDS for seen_ts in recent):
             continue
-        seen_keys.add(key)
+        recent.append(timestamp)
         deduped.append(ev)
-    return deduped
+    return sorted(deduped, key=lambda x: x["timestamp"])
 
 
 def get_today_usage():
@@ -463,14 +728,17 @@ def get_today_usage():
     """
     today_start = get_today_midnight_timestamp()
 
-    # 1. 扫描三个独立的数据源
+    # 1. cc-switch 优先，官方 Codex 日志用于补全未安装 cc-switch 的用户。
     cc_logs = scan_cc_switch_logs(today_start)
+    codex_logs = scan_codex_tokens(today_start)
     antigravity_logs = scan_antigravity_tokens(today_start)
     hermes_logs = scan_hermes_tokens(today_start)
     workbuddy_logs = scan_workbuddy_tokens(today_start)
 
     # 2. 合并去重 + 按时间戳排序
-    all_logs = _dedup_events(cc_logs + antigravity_logs + hermes_logs + workbuddy_logs)
+    all_logs = _dedup_events(
+        cc_logs + codex_logs + antigravity_logs + hermes_logs + workbuddy_logs
+    )
 
     # 3. 统计汇总
     total_tokens = 0
@@ -524,7 +792,7 @@ def get_today_usage():
             "deepseek_status": ds_balance.get("status", "Offline"),
             # 去重后的事件条数, 给前端做"是否发生跨源重复"的提示
             "events_after_dedup": len(all_logs),
-            "events_before_dedup": len(cc_logs) + len(antigravity_logs) + len(hermes_logs) + len(workbuddy_logs),
+            "events_before_dedup": len(cc_logs) + len(codex_logs) + len(antigravity_logs) + len(hermes_logs) + len(workbuddy_logs),
         },
         "by_tool": by_tool,
         "by_model": by_model,
@@ -532,7 +800,7 @@ def get_today_usage():
         "recent_events": all_logs[-30:]
     }
 
-def get_historical_usage(days=30):
+def _get_historical_usage_legacy(days=30):
     """获取过去 days 天内每天的 Token 消耗数据，支持工具和模型两个维度细分统计。
 
     使用 provider_id -> 实际配置模型的映射, 确保统计的是真实使用的模型,
@@ -579,7 +847,7 @@ def get_historical_usage(days=30):
     cc_rows = []
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT created_at, input_tokens, output_tokens, app_type, model, provider_id, data_source
@@ -597,7 +865,7 @@ def get_historical_usage(days=30):
     hermes_rows = []
     if os.path.exists(HERMES_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(HERMES_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT started_at, input_tokens, output_tokens, cache_read_tokens, model
@@ -610,6 +878,12 @@ def get_historical_usage(days=30):
                 all_model_names.add(normalize_model_name(model))
         except Exception as e:
             print(f"[-] 历史扫描 Hermes 出错: {e}")
+
+    # 官方 Codex App 直连日志。cc-switch 仍然排在前面，后续跨源去重时优先
+    # 保留其 provider 实际模型名。
+    codex_logs = scan_codex_tokens(start_timestamp)
+    for event in codex_logs:
+        all_model_names.add(event["model"])
 
     # Antigravity 固定使用 gemini 3.5 flash
     all_model_names.add("gemini 3.5 flash")
@@ -655,6 +929,25 @@ def get_historical_usage(days=30):
             m_norm = resolve_model(provider_id, model, data_source, app_type)
             if m_norm not in model_data:
                 m_norm = "Other"
+            model_data[m_norm][d_str] += tokens
+
+    # --- 填充 Codex 官方日志；与 cc-switch 相同请求只算一次 ---
+    cc_timestamps_by_tokens = {}
+    for created_at, input_t, output_t, *_ in cc_rows_deduped:
+        cc_timestamps_by_tokens.setdefault((input_t or 0) + (output_t or 0), []).append(created_at)
+    accepted_codex = []
+    for event in codex_logs:
+        timestamps = cc_timestamps_by_tokens.get(event["total_tokens"], [])
+        if any(abs(event["timestamp"] - ts) <= DEDUP_WINDOW_SECONDS for ts in timestamps):
+            continue
+        accepted_codex.append(event)
+    for event in _dedup_events(accepted_codex):
+        d_str = datetime.datetime.fromtimestamp(event["timestamp"]).strftime("%Y-%m-%d")
+        if d_str in daily_totals:
+            tokens = event["total_tokens"]
+            daily_totals[d_str] += tokens
+            tool_data["Codex"][d_str] += tokens
+            m_norm = event["model"] if event["model"] in model_data else "Other"
             model_data[m_norm][d_str] += tokens
 
     # --- 填充 Hermes 数据 ---
@@ -709,6 +1002,53 @@ def get_historical_usage(days=30):
         "by_model": res_model
     }
 
+
+def get_historical_usage(days=30):
+    """使用与首页、热力图相同的事件集合生成历史趋势。"""
+    days = max(1, int(days))
+    now = datetime.datetime.now()
+    start_date = now - datetime.timedelta(days=days - 1)
+    start_midnight = datetime.datetime(
+        start_date.year, start_date.month, start_date.day, 0, 0, 0
+    )
+    start_timestamp = int(start_midnight.timestamp())
+    date_list = [
+        (start_midnight + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
+        for i in range(days)
+    ]
+    events = _dedup_events(
+        scan_cc_switch_logs(start_timestamp)
+        + scan_codex_tokens(start_timestamp)
+        + scan_antigravity_tokens(start_timestamp)
+        + scan_hermes_tokens(start_timestamp)
+        + scan_workbuddy_tokens(start_timestamp)
+    )
+
+    default_tools = ["Hermes", "Codex", "Claude", "OpenCode", "WorkBuddy", "Other"]
+    tools = default_tools + sorted({event["tool"] for event in events} - set(default_tools))
+    model_names = sorted({event["model"] for event in events if event["model"] != "Other"})
+    models = model_names + ["Other"]
+    tool_data = {tool: {date: 0 for date in date_list} for tool in tools}
+    model_data = {model: {date: 0 for date in date_list} for model in models}
+    daily_totals = {date: 0 for date in date_list}
+
+    for event in events:
+        date = datetime.datetime.fromtimestamp(event["timestamp"]).strftime("%Y-%m-%d")
+        if date not in daily_totals:
+            continue
+        tokens = event["total_tokens"]
+        daily_totals[date] += tokens
+        tool_data[event["tool"]][date] += tokens
+        model = event["model"] if event["model"] in model_data else "Other"
+        model_data[model][date] += tokens
+
+    return {
+        "labels": date_list,
+        "values": [daily_totals[date] for date in date_list],
+        "by_tool": {tool: [tool_data[tool][date] for date in date_list] for tool in tools},
+        "by_model": {model: [model_data[model][date] for date in date_list] for model in models},
+    }
+
 if __name__ == "__main__":
     print(json.dumps(get_today_usage(), indent=2))
 
@@ -733,7 +1073,7 @@ def get_session_list(days=1, page=1, page_size=50):
     provider_model_map, active_model_by_app = _load_provider_model_map()
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
@@ -760,17 +1100,9 @@ def get_session_list(days=1, page=1, page_size=50):
                 # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)
                 tool = _normalize_app_type(app_type)
 
-                i_cached_raw = (cache_read or 0) + (cache_creation or 0)
-                # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
-                # 保证 i_cached <= input_t (input_t 在 OpenAI 协议下已经含 cache 部分)
-                if i_cached_raw > (input_t or 0):
-                    i_cached = input_t or 0
-                    i_uncached = 0
-                else:
-                    i_cached = i_cached_raw
-                    i_uncached = max(0, (input_t or 0) - i_cached)
-                total_input = input_t or 0
-                total_t = total_input + (output_t or 0)
+                total_input, output_t, total_t, i_cached, i_uncached = _cc_token_breakdown(
+                    app_type, input_t, output_t, cache_read, cache_creation
+                )
 
                 events.append({
                     "timestamp": created_at,
@@ -778,7 +1110,7 @@ def get_session_list(days=1, page=1, page_size=50):
                     "tool": tool,
                     "model": actual_model,
                     "input_tokens": total_input,
-                    "output_tokens": output_t or 0,
+                    "output_tokens": output_t,
                     "total_tokens": total_t,
                     "input_cached": i_cached,
                     "input_uncached": i_uncached,
@@ -789,26 +1121,31 @@ def get_session_list(days=1, page=1, page_size=50):
         except Exception as e:
             print(f"[-] session list cc-switch 出错: {e}")
 
+    # --- 官方 Codex App ---
+    events.extend(scan_codex_tokens(start_timestamp))
+
     # --- Hermes ---
     if os.path.exists(HERMES_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(HERMES_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT started_at, model, input_tokens, output_tokens, cache_read_tokens
+                SELECT id, COALESCE(NULLIF(ended_at, 0), started_at) AS occurred_at,
+                       model, input_tokens, output_tokens,
+                       cache_read_tokens, cache_write_tokens
                 FROM sessions
-                WHERE started_at >= ?
-                ORDER BY started_at ASC
+                WHERE COALESCE(NULLIF(ended_at, 0), started_at) >= ?
+                ORDER BY occurred_at ASC
             """, (start_timestamp,))
-            for started_at, model, input_t, output_t, cache_read_t in cursor.fetchall():
+            for session_id, occurred_at, model, input_t, output_t, cache_read_t, cache_write_t in cursor.fetchall():
                 input_cached = cache_read_t if cache_read_t else 0
-                input_uncached = input_t if input_t else 0
+                input_uncached = (input_t or 0) + (cache_write_t or 0)
                 total_input = input_uncached + input_cached
                 output_tokens = output_t if output_t else 0
                 total_t = total_input + output_tokens
                 events.append({
-                    "timestamp": started_at,
-                    "time": datetime.datetime.fromtimestamp(started_at).strftime("%H:%M:%S"),
+                    "timestamp": occurred_at,
+                    "time": datetime.datetime.fromtimestamp(occurred_at).strftime("%H:%M:%S"),
                     "tool": "Hermes",
                     "model": normalize_model_name(model) if model else "Unknown",
                     "input_tokens": total_input,
@@ -817,11 +1154,14 @@ def get_session_list(days=1, page=1, page_size=50):
                     "input_cached": input_cached,
                     "input_uncached": input_uncached,
                     "latency_ms": 0,
-                    "session_id": "",
+                    "session_id": session_id or "",
                 })
             conn.close()
         except Exception as e:
             print(f"[-] session list Hermes 出错: {e}")
+
+    # --- WorkBuddy ---
+    events.extend(scan_workbuddy_tokens(start_timestamp))
 
     # --- Antigravity (按天粒度, 无逐条事件, 跳过) ---
 
@@ -865,70 +1205,15 @@ def get_heatmap_data(days=30):
     # 按天聚合: date_str -> tokens
     daily_tokens = {}
 
-    # --- cc-switch ---
-    seen_dedup = set()
-    if os.path.exists(CC_SWITCH_DB_PATH):
-        try:
-            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT created_at, input_tokens, output_tokens
-                FROM proxy_request_logs
-                WHERE created_at >= ? AND status_code = 200
-            """, (start_timestamp,))
-            for created_at, input_t, output_t in cursor.fetchall():
-                tokens = (input_t or 0) + (output_t or 0)
-                bucket = created_at // DEDUP_WINDOW_SECONDS
-                dkey = (bucket, tokens)
-                if dkey in seen_dedup:
-                    continue
-                seen_dedup.add(dkey)
-                dt = datetime.datetime.fromtimestamp(created_at)
-                d_str = dt.strftime("%Y-%m-%d")
-                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
-            conn.close()
-        except Exception as e:
-            print(f"[-] heatmap cc-switch 出错: {e}")
-
-    # --- Hermes ---
-    if os.path.exists(HERMES_DB_PATH):
-        try:
-            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT started_at, input_tokens, output_tokens, cache_read_tokens
-                FROM sessions
-                WHERE started_at >= ?
-            """, (start_timestamp,))
-            for started_at, input_t, output_t, cache_read_t in cursor.fetchall():
-                tokens = (input_t or 0) + (cache_read_t or 0) + (output_t or 0)
-                bucket = started_at // DEDUP_WINDOW_SECONDS
-                dkey = (bucket, tokens)
-                if dkey in seen_dedup:
-                    continue
-                seen_dedup.add(dkey)
-                dt = datetime.datetime.fromtimestamp(started_at)
-                d_str = dt.strftime("%Y-%m-%d")
-                daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
-            conn.close()
-        except Exception as e:
-            print(f"[-] heatmap Hermes 出错: {e}")
-
-    # --- Antigravity (按天 JSON) ---
-    if os.path.exists(ANTIGRAVITY_STATS_PATH):
-        try:
-            with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
-                stats = json.load(f)
-            records = stats.get("records", {})
-            for i in range(days):
-                d = start_midnight + datetime.timedelta(days=i)
-                d_str = d.strftime("%Y-%m-%d")
-                record = records.get(d_str)
-                if record:
-                    tokens = record.get("inputTokens", 0) + record.get("outputTokens", 0)
-                    daily_tokens[d_str] = daily_tokens.get(d_str, 0) + tokens
-        except Exception as e:
-            print(f"[-] heatmap Antigravity 出错: {e}")
+    events = _dedup_events(
+        scan_cc_switch_logs(start_timestamp)
+        + scan_codex_tokens(start_timestamp)
+        + scan_hermes_tokens(start_timestamp)
+        + scan_workbuddy_tokens(start_timestamp)
+    )
+    for event in events:
+        d_str = datetime.datetime.fromtimestamp(event["timestamp"]).strftime("%Y-%m-%d")
+        daily_tokens[d_str] = daily_tokens.get(d_str, 0) + event["total_tokens"]
 
     # 构建按天列表
     day_list = []
@@ -1097,7 +1382,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
     provider_model_map, active_model_by_app = _load_provider_model_map()
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{CC_SWITCH_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
@@ -1131,17 +1416,9 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                 # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)
                 tool = _normalize_app_type(app_type)
 
-                i_cached_raw = (cache_read or 0) + (cache_creation or 0)
-                # 修复: 上游 OpenAI 兼容协议会把 cache 命中 token 重复算, 这里 cap
-                # 保证 i_cached <= input_t (input_t 在 OpenAI 协议下已经含 cache 部分)
-                if i_cached_raw > (input_t or 0):
-                    i_cached = input_t or 0
-                    i_uncached = 0
-                else:
-                    i_cached = i_cached_raw
-                    i_uncached = max(0, (input_t or 0) - i_cached)
-                total_input = input_t or 0
-                total_t = total_input + (output_t or 0)
+                total_input, output_t, total_t, i_cached, i_uncached = _cc_token_breakdown(
+                    app_type, input_t, output_t, cache_read, cache_creation
+                )
 
                 events.append({
                     "timestamp": created_at,
@@ -1149,7 +1426,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                     "tool": tool,
                     "model": actual_model,
                     "input_tokens": total_input,
-                    "output_tokens": output_t or 0,
+                    "output_tokens": output_t,
                     "total_tokens": total_t,
                     "input_cached": i_cached,
                     "input_uncached": i_uncached,
@@ -1160,34 +1437,48 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         except Exception as e:
             print(f"[-] heatmap_detail cc-switch 出错: {e}")
 
+    # --- 官方 Codex App ---
+    for event in scan_codex_tokens(start_timestamp):
+        dt = datetime.datetime.fromtimestamp(event["timestamp"])
+        if date_start_ts is not None:
+            if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
+                continue
+        elif weekday is not None and (dt.weekday() != weekday or dt.hour != hour):
+            continue
+        event = dict(event)
+        event["time"] = dt.strftime("%m-%d %H:%M:%S")
+        events.append(event)
+
     # --- Hermes ---
     if os.path.exists(HERMES_DB_PATH):
         try:
-            conn = sqlite3.connect(f"file:{HERMES_DB_PATH}?mode=ro", uri=True)
+            conn = _open_sqlite_readonly(HERMES_DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT started_at, model, input_tokens, output_tokens, cache_read_tokens
+                SELECT id, COALESCE(NULLIF(ended_at, 0), started_at) AS occurred_at,
+                       model, input_tokens, output_tokens,
+                       cache_read_tokens, cache_write_tokens
                 FROM sessions
-                WHERE started_at >= ?
-                ORDER BY started_at ASC
+                WHERE COALESCE(NULLIF(ended_at, 0), started_at) >= ?
+                ORDER BY occurred_at ASC
             """, (start_timestamp,))
-            for started_at, model, input_t, output_t, cache_read_t in cursor.fetchall():
-                dt = datetime.datetime.fromtimestamp(started_at)
+            for session_id, occurred_at, model, input_t, output_t, cache_read_t, cache_write_t in cursor.fetchall():
+                dt = datetime.datetime.fromtimestamp(occurred_at)
                 if date_start_ts is not None:
-                    if started_at < date_start_ts or started_at >= date_end_ts:
+                    if occurred_at < date_start_ts or occurred_at >= date_end_ts:
                         continue
                 elif weekday is not None:
                     if dt.weekday() != weekday or dt.hour != hour:
                         continue
 
                 input_cached = cache_read_t if cache_read_t else 0
-                input_uncached = input_t if input_t else 0
+                input_uncached = (input_t or 0) + (cache_write_t or 0)
                 total_input = input_uncached + input_cached
                 output_tokens = output_t if output_t else 0
                 total_t = total_input + output_tokens
 
                 events.append({
-                    "timestamp": started_at,
+                    "timestamp": occurred_at,
                     "time": dt.strftime("%m-%d %H:%M:%S"),
                     "tool": "Hermes",
                     "model": normalize_model_name(model) if model else "Unknown",
@@ -1197,11 +1488,23 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                     "input_cached": input_cached,
                     "input_uncached": input_uncached,
                     "latency_ms": 0,
-                    "session_id": "",
+                    "session_id": session_id or "",
                 })
             conn.close()
         except Exception as e:
             print(f"[-] heatmap_detail Hermes 出错: {e}")
+
+    # --- WorkBuddy ---
+    for event in scan_workbuddy_tokens(start_timestamp):
+        dt = datetime.datetime.fromtimestamp(event["timestamp"])
+        if date_start_ts is not None:
+            if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
+                continue
+        elif weekday is not None and (dt.weekday() != weekday or dt.hour != hour):
+            continue
+        event = dict(event)
+        event["time"] = dt.strftime("%m-%d %H:%M:%S")
+        events.append(event)
 
     # 去重
     events = _dedup_events(events)

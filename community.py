@@ -15,9 +15,9 @@
 """
 import os
 import json
-import random
 import string
-import subprocess
+import secrets
+import base64
 import urllib.request
 import urllib.error
 import datetime
@@ -27,9 +27,14 @@ import time
 COMMUNITY_DIR = os.path.expanduser("~/.token_monitor")
 USER_ID_FILE = os.path.join(COMMUNITY_DIR, "community_id.txt")
 OPTIN_FILE = os.path.join(COMMUNITY_DIR, "community_optin.txt")
+CREDENTIAL_FILE = os.path.join(COMMUNITY_DIR, "community_credential.json")
 GITCODE_API = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
 REPORTS_PATH = "community/reports"
 COMMUNITY_BRANCH = os.environ.get("TOKEN_MONITOR_COMMUNITY_BRANCH", "community-data")
+COMMUNITY_RELAY_URL = os.environ.get(
+    "TOKEN_MONITOR_COMMUNITY_RELAY_URL",
+    "https://new.taqi.cc/token-monitor-community/v1/report",
+)
 # 聚合缓存 (5 分钟 TTL)
 _aggregate_cache = {"data": None, "ts": 0}
 AGGREGATE_TTL = 300  # 5 分钟
@@ -56,21 +61,60 @@ def _read_app_version():
     return ""
 
 
+def _new_user_id():
+    chars = string.ascii_uppercase + string.digits
+    return "User_" + ''.join(secrets.choice(chars) for _ in range(8))
+
+
 def get_user_id():
-    """获取或生成匿名用户 ID (User_XXXXX)"""
+    """获取或生成匿名用户 ID。"""
     _ensure_dir()
     if os.path.exists(USER_ID_FILE):
         with open(USER_ID_FILE, "r") as f:
             uid = f.read().strip()
         if uid:
             return uid
-    # 生成新 ID
-    chars = string.ascii_uppercase + string.digits
-    suffix = ''.join(random.choices(chars, k=5))
-    uid = "User_" + suffix
+    uid = _new_user_id()
     with open(USER_ID_FILE, "w") as f:
         f.write(uid)
     return uid
+
+
+def _write_credential(uid, device_secret):
+    _ensure_dir()
+    tmp_path = CREDENTIAL_FILE + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as stream:
+        json.dump({"id": uid, "device_secret": device_secret}, stream)
+    os.chmod(tmp_path, 0o600)
+    os.replace(tmp_path, CREDENTIAL_FILE)
+
+
+def _get_community_credential():
+    """读取或生成只保存在本机的匿名设备凭据。"""
+    uid = get_user_id()
+    try:
+        with open(CREDENTIAL_FILE, "r", encoding="utf-8") as stream:
+            credential = json.load(stream)
+        secret = str(credential.get("device_secret") or "")
+        decoded = base64.urlsafe_b64decode(secret + "=" * (-len(secret) % 4))
+        if credential.get("id") == uid and len(decoded) == 32:
+            return {"id": uid, "device_secret": secret}
+    except (OSError, ValueError, TypeError):
+        pass
+    secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+    _write_credential(uid, secret)
+    return {"id": uid, "device_secret": secret}
+
+
+def _rotate_community_identity():
+    """旧匿名 ID 无法证明归属时生成新 ID，防止覆盖其他用户报告。"""
+    uid = _new_user_id()
+    _ensure_dir()
+    with open(USER_ID_FILE, "w", encoding="utf-8") as stream:
+        stream.write(uid)
+    secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+    _write_credential(uid, secret)
+    return {"id": uid, "device_secret": secret}
 
 
 def is_opted_in():
@@ -90,26 +134,8 @@ def set_optin(enabled):
     _aggregate_cache["ts"] = 0
 
 
-def _get_gitcode_token():
-    """从 git credential 获取 GitCode token"""
-    try:
-        result = subprocess.run(
-            ["git", "credential", "fill"],
-            input=b"protocol=https\nhost=gitcode.com\n\n",
-            capture_output=True, timeout=5
-        )
-        for line in result.stdout.decode().split("\n"):
-            if line.startswith("password="):
-                return line.split("=", 1)[1]
-    except Exception:
-        pass
-    return None
-
-
 def _gitcode_api(method, path, data=None, token=None, require_auth=True):
     """调用 GitCode API"""
-    if token is None:
-        token = _get_gitcode_token()
     if require_auth and not token:
         return {"error": "credential_missing", "body": "本机未配置 GitCode 凭据"}
     url = GITCODE_API + "/contents/" + path
@@ -155,8 +181,34 @@ def _report_result(ok, status, message, reported_at=None):
     return result
 
 
+def _relay_request(report):
+    """通过鹏帅的 VPS 中继提交匿名报告，不向客户端分发 GitCode token。"""
+    body = json.dumps(report, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        COMMUNITY_RELAY_URL,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown"),
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read())
+        except (ValueError, TypeError):
+            payload = {"ok": False, "status": "relay_http_error", "message": f"中继服务 HTTP {exc.code}"}
+        return payload
+    except Exception as exc:
+        return {"ok": False, "status": "relay_unavailable", "message": f"社区中继暂时不可用：{exc}"}
+
+
 def report_community_stats(today_usage):
-    """上报当前用户的统计到 GitCode
+    """通过 VPS 中继上报当前用户的匿名统计。
 
     Args:
         today_usage: get_today_usage() 的返回值
@@ -166,56 +218,39 @@ def report_community_stats(today_usage):
     """
     if not is_opted_in():
         return _report_result(False, "disabled", "社区数据上报未开启")
-    uid = get_user_id()
-    token = _get_gitcode_token()
-    if not token:
-        return _report_result(False, "credential_missing", "本机未配置 GitCode 凭据，无法提交匿名统计")
+    credential = _get_community_credential()
 
     # 构建上报数据 (只含数字, 不含隐私信息)
     summary = today_usage.get("summary", {})
     by_tool = today_usage.get("by_tool", {})
-    reported_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     report_date = str(summary.get("date") or datetime.date.today().isoformat())
     report = {
-        "id": uid,
-        "updated_at": reported_at,
+        "id": credential["id"],
+        "device_secret": credential["device_secret"],
         "report_date": report_date,
         "today_tokens": summary.get("total_tokens", 0),
         "by_tool": {k: v.get("total_tokens", 0) for k, v in by_tool.items()},
-        "tool_count": len(by_tool),
         "version": _read_app_version(),
     }
-
-    file_path = REPORTS_PATH + "/" + uid + ".json"
-    content = json.dumps(report, ensure_ascii=False, indent=2)
-    import base64
-    content_b64 = base64.b64encode(content.encode()).decode()
-
-    # 先 GET 看文件是否存在 (拿 sha)
-    existing = _gitcode_api("GET", file_path, token=token)
-    sha = None
-    if existing and isinstance(existing, dict) and existing.get("sha"):
-        sha = existing["sha"]
-
-    payload = {
-        "message": "community: " + uid + " 上报统计",
-        "content": content_b64,
-        "branch": COMMUNITY_BRANCH,
-    }
-    # GitCode 创建新文件时不能传空 sha；仅更新已有文件时携带真实 sha。
-    if sha:
-        payload["sha"] = sha
-
-    method = "PUT" if sha else "POST"
-    result = _gitcode_api(method, file_path, payload, token)
-    if not result or (isinstance(result, dict) and result.get("error")):
-        detail = result.get("body", "GitCode 未返回结果") if isinstance(result, dict) else "GitCode 未返回结果"
-        return _report_result(False, "upload_failed", f"匿名统计提交失败：{detail}")
+    result = _relay_request(report)
+    if result.get("status") == "identity_upgrade_required":
+        credential = _rotate_community_identity()
+        report["id"] = credential["id"]
+        report["device_secret"] = credential["device_secret"]
+        result = _relay_request(report)
+    if not result.get("ok"):
+        return _report_result(
+            False,
+            str(result.get("status") or "upload_failed"),
+            str(result.get("message") or "匿名统计提交失败"),
+        )
 
     # 上报成功后立即清缓存，避免页面继续显示上报前的 0 数据。
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
-    return _report_result(True, "synced", "匿名统计已同步", reported_at)
+    return _report_result(
+        True, "synced", str(result.get("message") or "匿名统计已同步"), result.get("reported_at")
+    )
 
 
 def get_community_stats():
@@ -242,7 +277,7 @@ def get_community_stats():
         data["my_id"] = get_user_id()
         return data
 
-    token = _get_gitcode_token()
+    token = None
 
     # GET reports 目录列表
     files = _gitcode_api("GET", REPORTS_PATH, token=token, require_auth=False)
@@ -252,7 +287,7 @@ def get_community_stats():
             "error": "社区数据读取失败：" + detail,
             "data_status": "load_failed",
             "opted_in": is_opted_in(),
-            "can_report": bool(token),
+            "can_report": bool(COMMUNITY_RELAY_URL),
             "my_id": get_user_id(),
             "total_users": 0,
             "total_tokens_today": 0,
@@ -286,7 +321,7 @@ def get_community_stats():
             "error": "社区报告存在，但本次全部读取失败，请稍后重试",
             "data_status": "load_failed",
             "opted_in": is_opted_in(),
-            "can_report": bool(token),
+            "can_report": bool(COMMUNITY_RELAY_URL),
             "my_id": get_user_id(),
             "total_users": 0,
             "total_tokens_today": 0,
@@ -337,9 +372,6 @@ def get_community_stats():
     elif my_synced_today:
         rank_status = "outside_top10"
         rank_message = f"已同步，当前第 {my_rank} 名（榜单展示前 {LEADERBOARD_LIMIT}）"
-    elif not token:
-        rank_status = "credential_missing"
-        rank_message = "仅可查看：本机未配置 GitCode 上报凭据"
     else:
         rank_status = "pending"
         rank_message = "等待今日首次同步"
@@ -371,7 +403,7 @@ def get_community_stats():
         "rank_message": rank_message,
         "rank_total": len(sorted_reports),
         "leaderboard_limit": LEADERBOARD_LIMIT,
-        "can_report": bool(token),
+        "can_report": bool(COMMUNITY_RELAY_URL),
         "data_status": "partial" if read_failures else ("ok" if reports_today else "empty"),
         "data_warning": f"有 {read_failures} 份社区报告读取失败，当前统计可能不完整" if read_failures else None,
         "fun_facts": fun_facts,

@@ -31,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.20"
+var appVersion = "1.4.21"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -148,6 +148,14 @@ func hermesDBPath() string {
 
 func workbuddyDBPath() string {
 	return filepath.Join(homeDir(), ".workbuddy", "workbuddy.db")
+}
+
+func workbuddyProjectsPath() string {
+	return filepath.Join(homeDir(), ".workbuddy", "projects")
+}
+
+func codexLogDBPath() string {
+	return filepath.Join(homeDir(), ".codex", "logs_2.sqlite")
 }
 
 func antigravityStatsPath() string {
@@ -322,6 +330,58 @@ func fetchDeepSeekBalance() BalanceInfo {
 
 // ───── 三源扫描 (对齐 scanner.py) ─────
 
+var providerModelPattern = regexp.MustCompile(`(?m)^\s*model\s*=\s*["']([^"']+)["']`)
+
+func loadProviderModelMaps(db *sql.DB) (map[string]string, map[string]string) {
+	byProvider := map[string]string{}
+	activeByApp := map[string]string{}
+	rows, err := db.Query(`SELECT id, app_type, settings_config, is_current FROM providers`)
+	if err != nil {
+		return byProvider, activeByApp
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, appType, raw string
+		var current bool
+		if rows.Scan(&id, &appType, &raw, &current) != nil {
+			continue
+		}
+		var settings struct {
+			Config string `json:"config"`
+		}
+		if json.Unmarshal([]byte(raw), &settings) != nil {
+			continue
+		}
+		match := providerModelPattern.FindStringSubmatch(settings.Config)
+		if len(match) != 2 {
+			continue
+		}
+		byProvider[id] = match[1]
+		if current {
+			activeByApp[appType] = match[1]
+		}
+	}
+	return byProvider, activeByApp
+}
+
+func ccTokenBreakdown(appType string, input, output, cacheRead, cacheCreate int64) (int64, int64, int64, int64) {
+	separateCache := strings.Contains(strings.ToLower(appType), "claude") || cacheRead > input || cacheCreate > 0
+	if separateCache {
+		cached := cacheRead
+		uncached := input + cacheCreate
+		totalInput := cached + uncached
+		return totalInput, totalInput + output, cached, uncached
+	}
+	cached := cacheRead
+	if cached < 0 {
+		cached = 0
+	}
+	if cached > input {
+		cached = input
+	}
+	return input, input + output, cached, input - cached
+}
+
 // 1. cc-switch
 func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	dbPath := ccSwitchDBPath()
@@ -334,9 +394,11 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 		return nil
 	}
 	defer db.Close()
+	providerModels, activeModels := loadProviderModelMaps(db)
 
 	rows, err := db.Query(`
-		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, session_id
+		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens,
+		       cache_creation_tokens, session_id, provider_id, data_source
 		FROM proxy_request_logs
 		WHERE created_at >= ? AND status_code = 200
 		ORDER BY created_at ASC
@@ -350,40 +412,36 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	var logs []LogEntry
 	for rows.Next() {
 		var createdAt int64
-		var appType, model sql.NullString
+		var appType, model, providerID, dataSource sql.NullString
 		var inputT, outputT, cacheReadT, cacheCreationT sql.NullInt64
 		var sessionID sql.NullString
-		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT, &cacheCreationT, &sessionID)
+		rows.Scan(&createdAt, &appType, &model, &inputT, &outputT, &cacheReadT, &cacheCreationT, &sessionID, &providerID, &dataSource)
 
 		iT := inputT.Int64
 		oT := outputT.Int64
-		// 跟 Python _normalize_app_type 保持一致: cache = cache_read + cache_creation,
-		// 但 OpenAI 兼容协议的 input_t 已含 cache 部分, 这里 cap 防双计
-		cRaw := cacheReadT.Int64 + cacheCreationT.Int64
-		var cT, uncached int64
-		if cRaw > iT {
-			cT = iT
-			uncached = 0
-		} else {
-			cT = cRaw
-			uncached = iT - cT
-		}
-		totalT := iT + oT
+		totalInput, totalT, cT, uncached := ccTokenBreakdown(
+			appType.String, iT, oT, cacheReadT.Int64, cacheCreationT.Int64,
+		)
 
 		// 工具归一化 (跟 Python _normalize_app_type 保持一致, 避免首页/详情名字不一致)
 		tool := normalizeAppTypeForCCSwitch(appType.String)
 
-		m := "Other"
-		if model.Valid && model.String != "" {
-			m = normalizeModelName(model.String)
+		actualModel := model.String
+		if configured := providerModels[providerID.String]; configured != "" {
+			actualModel = configured
+		} else if dataSource.String == "codex_session" || providerID.String == "_codex_session" {
+			if configured := activeModels[appType.String]; configured != "" {
+				actualModel = configured
+			}
 		}
+		m := normalizeModelName(actualModel)
 
 		logs = append(logs, LogEntry{
 			Time:          time.Unix(createdAt, 0).Format("15:04:05"),
 			Timestamp:     createdAt,
 			Tool:          tool,
 			Model:         m,
-			InputTokens:   iT,
+			InputTokens:   totalInput,
 			OutputTokens:  oT,
 			TotalTokens:   totalT,
 			InputCached:   cT,
@@ -392,6 +450,179 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 		})
 	}
 	return logs
+}
+
+type codexUsage struct {
+	InputTokens       int64 `json:"input_tokens"`
+	OutputTokens      int64 `json:"output_tokens"`
+	TotalTokens       int64 `json:"total_tokens"`
+	CachedInputTokens int64 `json:"cached_input_tokens"`
+	InputTokenDetails struct {
+		CachedTokens int64 `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+}
+
+func codexLogEntry(ts int64, model string, usage codexUsage, sessionID string) (LogEntry, bool) {
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
+	if usage.TotalTokens <= 0 {
+		return LogEntry{}, false
+	}
+	cached := usage.InputTokenDetails.CachedTokens
+	if cached == 0 {
+		cached = usage.CachedInputTokens
+	}
+	if cached < 0 {
+		cached = 0
+	}
+	if cached > usage.InputTokens {
+		cached = usage.InputTokens
+	}
+	return LogEntry{
+		Time:          time.Unix(ts, 0).Format("15:04:05"),
+		Timestamp:     ts,
+		Tool:          "Codex",
+		Model:         normalizeModelName(model),
+		InputTokens:   usage.InputTokens,
+		OutputTokens:  usage.OutputTokens,
+		TotalTokens:   usage.TotalTokens,
+		InputCached:   cached,
+		InputUncached: usage.InputTokens - cached,
+		SessionID:     sessionID,
+	}, true
+}
+
+func scanCodexRollouts(startTimestamp int64) []LogEntry {
+	var events []LogEntry
+	for _, root := range []string{
+		filepath.Join(homeDir(), ".codex", "sessions"),
+		filepath.Join(homeDir(), ".codex", "archived_sessions"),
+	} {
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+				return nil
+			}
+			if info.ModTime().Unix() < startTimestamp-86400 {
+				return nil
+			}
+			file, err := os.Open(path)
+			if err != nil {
+				return nil
+			}
+			defer file.Close()
+			model := "Other"
+			var previousCumulative codexUsage
+			hasPreviousCumulative := false
+			sessionID := ""
+			if ids := regexp.MustCompile(`[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}`).FindAllString(info.Name(), -1); len(ids) > 0 {
+				sessionID = ids[len(ids)-1]
+			}
+			scanner := bufio.NewScanner(file)
+			// Codex 工具输出可能形成超长 JSONL 单行；AgentsView 同样使用 64 MiB 上限。
+			scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+			for scanner.Scan() {
+				var item struct {
+					Timestamp string `json:"timestamp"`
+					Type      string `json:"type"`
+					Payload   struct {
+						Type  string `json:"type"`
+						Model string `json:"model"`
+						Info  struct {
+							LastTokenUsage  codexUsage `json:"last_token_usage"`
+							TotalTokenUsage codexUsage `json:"total_token_usage"`
+						} `json:"info"`
+					} `json:"payload"`
+				}
+				if json.Unmarshal(scanner.Bytes(), &item) != nil {
+					continue
+				}
+				if item.Type == "turn_context" {
+					model = item.Payload.Model
+					if model == "" {
+						model = "Other"
+					}
+					continue
+				}
+				if item.Type != "event_msg" || item.Payload.Type != "token_count" {
+					continue
+				}
+				cumulative := item.Payload.Info.TotalTokenUsage
+				if cumulative.TotalTokens > 0 {
+					if hasPreviousCumulative && cumulative == previousCumulative {
+						continue
+					}
+					previousCumulative = cumulative
+					hasPreviousCumulative = true
+				}
+				parsed, err := time.Parse(time.RFC3339Nano, item.Timestamp)
+				if err != nil || parsed.Unix() < startTimestamp {
+					continue
+				}
+				if event, ok := codexLogEntry(parsed.Unix(), model, item.Payload.Info.LastTokenUsage, sessionID); ok {
+					events = append(events, event)
+				}
+			}
+			return nil
+		})
+	}
+	return dedupEvents(events)
+}
+
+func scanCodexTokens(startTimestamp int64) []LogEntry {
+	dbPath := codexLogDBPath()
+	if !fileExists(dbPath) {
+		return scanCodexRollouts(startTimestamp)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return scanCodexRollouts(startTimestamp)
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+		SELECT ts, feedback_log_body, thread_id
+		FROM logs
+		WHERE ts >= ? AND target = 'codex_api::sse::responses'
+		  AND feedback_log_body LIKE '%response.completed%'
+		ORDER BY ts ASC, ts_nanos ASC
+	`, startTimestamp)
+	if err != nil {
+		return scanCodexRollouts(startTimestamp)
+	}
+	defer rows.Close()
+	seenIDs := map[string]bool{}
+	var events []LogEntry
+	for rows.Next() {
+		var ts int64
+		var body, threadID sql.NullString
+		if rows.Scan(&ts, &body, &threadID) != nil || !strings.HasPrefix(body.String, "SSE event: ") {
+			continue
+		}
+		var envelope struct {
+			Type     string `json:"type"`
+			Response struct {
+				ID          string     `json:"id"`
+				CompletedAt int64      `json:"completed_at"`
+				Model       string     `json:"model"`
+				Usage       codexUsage `json:"usage"`
+			} `json:"response"`
+		}
+		if json.Unmarshal([]byte(strings.TrimPrefix(body.String, "SSE event: ")), &envelope) != nil || envelope.Type != "response.completed" {
+			continue
+		}
+		if envelope.Response.ID != "" && seenIDs[envelope.Response.ID] {
+			continue
+		}
+		seenIDs[envelope.Response.ID] = true
+		if envelope.Response.CompletedAt > 0 {
+			ts = envelope.Response.CompletedAt
+		}
+		if event, ok := codexLogEntry(ts, envelope.Response.Model, envelope.Response.Usage, threadID.String); ok {
+			events = append(events, event)
+		}
+	}
+	// logs_2.sqlite 可能仅覆盖当前 Codex 进程；始终与 rollout 合并，补齐重启前记录。
+	return dedupEvents(append(events, scanCodexRollouts(startTimestamp)...))
 }
 
 //  2. 冰茶 AI 客户端 (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
@@ -451,8 +682,12 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT started_at, model, input_tokens, output_tokens, cache_read_tokens
-		FROM sessions WHERE started_at >= ? ORDER BY started_at ASC
+		SELECT id, CAST(COALESCE(NULLIF(ended_at, 0), started_at) AS INTEGER) AS occurred_at,
+		       model, input_tokens, output_tokens,
+		       cache_read_tokens, cache_write_tokens
+		FROM sessions
+		WHERE COALESCE(NULLIF(ended_at, 0), started_at) >= ?
+		ORDER BY occurred_at ASC
 	`, todayStart)
 	if err != nil {
 		fmt.Printf("[-] 扫描 Hermes 数据库出错: %v\n", err)
@@ -462,14 +697,15 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 
 	var logs []LogEntry
 	for rows.Next() {
-		var startedAt int64
+		var sessionID sql.NullString
+		var occurredAt int64
 		var model sql.NullString
-		var inputT, outputT, cacheReadT sql.NullInt64
-		rows.Scan(&startedAt, &model, &inputT, &outputT, &cacheReadT)
+		var inputT, outputT, cacheReadT, cacheWriteT sql.NullInt64
+		rows.Scan(&sessionID, &occurredAt, &model, &inputT, &outputT, &cacheReadT, &cacheWriteT)
 
 		// Python: Hermes 的 input_t 是未缓存部分, cache_read_t 是已缓存部分
 		iCached := cacheReadT.Int64
-		iUncached := inputT.Int64
+		iUncached := inputT.Int64 + cacheWriteT.Int64
 		totalInput := iUncached + iCached
 		oT := outputT.Int64
 		totalT := totalInput + oT
@@ -480,8 +716,8 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 		}
 
 		logs = append(logs, LogEntry{
-			Time:          time.Unix(startedAt, 0).Format("15:04:05"),
-			Timestamp:     startedAt,
+			Time:          time.Unix(occurredAt, 0).Format("15:04:05"),
+			Timestamp:     occurredAt,
 			Tool:          "Hermes",
 			Model:         m,
 			InputTokens:   totalInput,
@@ -489,6 +725,7 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 			TotalTokens:   totalT,
 			InputCached:   iCached,
 			InputUncached: iUncached,
+			SessionID:     sessionID.String,
 		})
 	}
 	return logs
@@ -498,14 +735,119 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 
 const dedupWindowSeconds = 2
 
-type dedupKey struct {
-	Bucket     int64
-	ModelLower string
-	TotalToken int64
+type workBuddyUsage struct {
+	InputTokensSnake  int64 `json:"input_tokens"`
+	OutputTokensSnake int64 `json:"output_tokens"`
+	TotalTokensSnake  int64 `json:"total_tokens"`
+	InputTokens       int64 `json:"inputTokens"`
+	OutputTokens      int64 `json:"outputTokens"`
+	TotalTokens       int64 `json:"totalTokens"`
+	PromptTokens      int64 `json:"prompt_tokens"`
+	CompletionTokens  int64 `json:"completion_tokens"`
+	InputDetails      []struct {
+		CachedTokens int64 `json:"cached_tokens"`
+	} `json:"inputTokensDetails"`
+	PromptDetails struct {
+		CachedTokens int64 `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
 }
 
-// scanWorkBuddyTokens 扫描 WorkBuddy (腾讯 CodeBuddy) 数据库
+func scanWorkBuddyProjects(startTimestamp int64) []LogEntry {
+	root := workbuddyProjectsPath()
+	if !fileExists(root) {
+		return nil
+	}
+	var events []LogEntry
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if info.ModTime().Unix() < startTimestamp-86400 {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+		for scanner.Scan() {
+			var item struct {
+				Timestamp    int64 `json:"timestamp"`
+				ProviderData struct {
+					Model    string          `json:"model"`
+					Usage    json.RawMessage `json:"usage"`
+					RawUsage json.RawMessage `json:"rawUsage"`
+				} `json:"providerData"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &item) != nil || item.Timestamp/1000 < startTimestamp {
+				continue
+			}
+			raw := item.ProviderData.Usage
+			if len(raw) == 0 || string(raw) == "null" {
+				raw = item.ProviderData.RawUsage
+			}
+			if len(raw) == 0 || string(raw) == "null" {
+				continue
+			}
+			var usage workBuddyUsage
+			if json.Unmarshal(raw, &usage) != nil {
+				continue
+			}
+			input := usage.InputTokens
+			if input == 0 {
+				input = usage.InputTokensSnake
+			}
+			if input == 0 {
+				input = usage.PromptTokens
+			}
+			output := usage.OutputTokens
+			if output == 0 {
+				output = usage.OutputTokensSnake
+			}
+			if output == 0 {
+				output = usage.CompletionTokens
+			}
+			total := usage.TotalTokens
+			if total == 0 {
+				total = usage.TotalTokensSnake
+			}
+			if total == 0 {
+				total = input + output
+			}
+			if total <= 0 {
+				continue
+			}
+			cached := usage.PromptDetails.CachedTokens
+			for _, detail := range usage.InputDetails {
+				cached += detail.CachedTokens
+			}
+			if cached < 0 {
+				cached = 0
+			}
+			if cached > input {
+				cached = input
+			}
+			ts := item.Timestamp / 1000
+			events = append(events, LogEntry{
+				Time: time.Unix(ts, 0).Format("15:04:05"), Timestamp: ts,
+				Tool: "WorkBuddy", Model: normalizeModelName(item.ProviderData.Model),
+				InputTokens: input, OutputTokens: output, TotalTokens: total,
+				InputCached: cached, InputUncached: input - cached,
+				SessionID: strings.TrimSuffix(info.Name(), filepath.Ext(info.Name())),
+			})
+		}
+		return nil
+	})
+	return dedupEvents(events)
+}
+
+// scanWorkBuddyTokens 优先扫描 AgentsView 同口径的项目 JSONL；旧版本回退数据库近似值。
 func scanWorkBuddyTokens(todayStart int64) []LogEntry {
+	if fileExists(workbuddyProjectsPath()) {
+		return scanWorkBuddyProjects(todayStart)
+	}
 	dbPath := workbuddyDBPath()
 	if !fileExists(dbPath) {
 		return nil
@@ -562,25 +904,31 @@ func dedupEvents(events []LogEntry) []LogEntry {
 	if len(events) == 0 {
 		return nil
 	}
-	// 按时间戳升序, 保证同 key 时保留最早的
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].Timestamp < events[j].Timestamp
-	})
-	seen := make(map[dedupKey]bool)
+	// 按传入顺序决定来源优先级。调用方把 cc-switch 放在官方 Codex 日志前，
+	// 优先保留第三方 provider 的真实模型名。
+	recentByTokens := make(map[int64][]int64)
 	var deduped []LogEntry
 	for _, ev := range events {
-		bucket := ev.Timestamp / dedupWindowSeconds
-		key := dedupKey{
-			Bucket:     bucket,
-			ModelLower: strings.ToLower(ev.Model),
-			TotalToken: ev.TotalTokens,
+		duplicate := false
+		for _, seenTS := range recentByTokens[ev.TotalTokens] {
+			delta := ev.Timestamp - seenTS
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= dedupWindowSeconds {
+				duplicate = true
+				break
+			}
 		}
-		if seen[key] {
+		if duplicate {
 			continue
 		}
-		seen[key] = true
+		recentByTokens[ev.TotalTokens] = append(recentByTokens[ev.TotalTokens], ev.Timestamp)
 		deduped = append(deduped, ev)
 	}
+	sort.SliceStable(deduped, func(i, j int) bool {
+		return deduped[i].Timestamp < deduped[j].Timestamp
+	})
 	return deduped
 }
 
@@ -590,10 +938,11 @@ func getTodayUsage() UsageResponse {
 	todayStart := todayMidnight()
 
 	// 三源并行扫描
-	var ccLogs, antigravityLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, antigravityLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(todayStart) }()
+	go func() { defer wg.Done(); codexLogs = scanCodexTokens(todayStart) }()
 	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens() }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(todayStart) }()
 	var workbuddyLogs []LogEntry
@@ -601,8 +950,8 @@ func getTodayUsage() UsageResponse {
 	wg.Wait()
 
 	// 合并去重
-	eventsBeforeDedup := len(ccLogs) + len(antigravityLogs) + len(hermesLogs) + len(workbuddyLogs)
-	allLogs := append(append(append(ccLogs, antigravityLogs...), hermesLogs...), workbuddyLogs...)
+	eventsBeforeDedup := len(ccLogs) + len(codexLogs) + len(antigravityLogs) + len(hermesLogs) + len(workbuddyLogs)
+	allLogs := append(append(append(append(ccLogs, codexLogs...), antigravityLogs...), hermesLogs...), workbuddyLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var totalTokens, inputTokens, outputTokens, inputCached, inputUncached int64
@@ -712,57 +1061,24 @@ func getHistoricalUsage(days int) HistoryResponse {
 		dateList[i] = d.Format("2006-01-02")
 	}
 
-	// v1.3.92: 不再硬编码 models 列表, 改成动态扫描 cc-switch + Hermes
-	// 实际出现的 model (通过 normalizeModelName 折叠去重), 跟 Python 版一致.
-	// 修法前 models 只有 5 个 model + Other, 其他像 minimax-m3 / gpt-5.4 等
-	// 在 cc-switch 出现但不在列表, 全被归到 Other (1.6B 累加 bug).
-	tools := []string{"Hermes", "Codex", "Claude", "OpenCode", "Other"}
+	events := dedupEvents(append(append(append(
+		scanCCSwitchLogs(startTimestamp),
+		scanCodexTokens(startTimestamp)...),
+		scanHermesTokens(startTimestamp)...),
+		scanWorkBuddyTokens(startTimestamp)...))
+	tools := []string{"Hermes", "Codex", "Claude", "OpenCode", "WorkBuddy", "Other"}
+	knownTools := map[string]bool{}
+	for _, tool := range tools {
+		knownTools[tool] = true
+	}
 	allModels := map[string]struct{}{}
-	// 扫描 cc-switch (含 modelNorm 折叠)
-	if _, err := os.Stat(ccSwitchDBPath()); err == nil {
-		db, _ := sql.Open("sqlite", ccSwitchDBPath())
-		if db != nil {
-			rows, _ := db.Query(`
-				SELECT DISTINCT model FROM proxy_request_logs
-				WHERE created_at >= ? AND status_code = 200
-			`, startTimestamp)
-			if rows != nil {
-				for rows.Next() {
-					var m string
-					if err := rows.Scan(&m); err == nil {
-						if m != "" {
-							allModels[normalizeModelName(m)] = struct{}{}
-						}
-					}
-				}
-				rows.Close()
-			}
-			db.Close()
+	for _, event := range events {
+		allModels[event.Model] = struct{}{}
+		if !knownTools[event.Tool] {
+			knownTools[event.Tool] = true
+			tools = append(tools, event.Tool)
 		}
 	}
-	// 扫描 Hermes
-	if _, err := os.Stat(hermesDBPath()); err == nil {
-		db, _ := sql.Open("sqlite", hermesDBPath())
-		if db != nil {
-			rows, _ := db.Query(`
-				SELECT DISTINCT model FROM sessions WHERE started_at >= ?
-			`, startTimestamp)
-			if rows != nil {
-				for rows.Next() {
-					var m string
-					if err := rows.Scan(&m); err == nil {
-						if m != "" {
-							allModels[normalizeModelName(m)] = struct{}{}
-						}
-					}
-				}
-				rows.Close()
-			}
-			db.Close()
-		}
-	}
-	// 其他常见 model (可能没在 cc-switch/Hermes 但会出现在 Antigravity stats 或 by_history 跨期)
-	allModels["gemini 3.5 flash"] = struct{}{}
 	// 排序 (Other 放最后) — 去掉 Other 再加末尾, 跟 Python 端一致
 	models := make([]string, 0, len(allModels))
 	for m := range allModels {
@@ -788,107 +1104,19 @@ func getHistoricalUsage(days int) HistoryResponse {
 	}
 	dailyTotals := make([]int64, days)
 
-	// 1. cc-switch 历史
-	dbPath := ccSwitchDBPath()
-	if _, err := os.Stat(dbPath); err == nil {
-		if db, err := sql.Open("sqlite", dbPath); err == nil {
-			rows, err := db.Query(`
-				SELECT created_at, input_tokens, output_tokens, app_type, model
-				FROM proxy_request_logs WHERE created_at >= ? AND status_code = 200
-			`, startTimestamp)
-			if err == nil {
-				for rows.Next() {
-					var createdAt int64
-					var inputT, outputT sql.NullInt64
-					var appType, model sql.NullString
-					rows.Scan(&createdAt, &inputT, &outputT, &appType, &model)
-
-					dStr := time.Unix(createdAt, 0).Format("2006-01-02")
-					idx, ok := dateIdx[dStr]
-					if !ok {
-						continue
-					}
-					tokens := inputT.Int64 + outputT.Int64
-					dailyTotals[idx] += tokens
-					tNorm := getNormalizedTool(appType.String)
-					toolData[tNorm][idx] += tokens
-					// v1.3.92: 直接用 normalizeModelName (v1.3.90 加 minimax / gpt-5.4 折叠),
-					// 不用 getNormalizedModel (基于子串匹配, 容易把 gpt-5.5 误匹配到 gpt-5.4)
-					mNorm := normalizeModelName(model.String)
-					if _, ok := modelData[mNorm]; !ok {
-						mNorm = "Other"
-					}
-					modelData[mNorm][idx] += tokens
-				}
-				rows.Close()
-			}
-			db.Close()
+	for _, event := range events {
+		dStr := time.Unix(event.Timestamp, 0).Format("2006-01-02")
+		idx, ok := dateIdx[dStr]
+		if !ok {
+			continue
 		}
-	}
-
-	// 2. Hermes 历史
-	hermesPath := hermesDBPath()
-	if _, err := os.Stat(hermesPath); err == nil {
-		if db, err := sql.Open("sqlite", hermesPath); err == nil {
-			rows, err := db.Query(`
-				SELECT started_at, input_tokens, output_tokens, cache_read_tokens, model
-				FROM sessions WHERE started_at >= ?
-			`, startTimestamp)
-			if err == nil {
-				for rows.Next() {
-					var startedAt int64
-					var inputT, outputT, cacheReadT sql.NullInt64
-					var model sql.NullString
-					rows.Scan(&startedAt, &inputT, &outputT, &cacheReadT, &model)
-
-					dStr := time.Unix(startedAt, 0).Format("2006-01-02")
-					idx, ok := dateIdx[dStr]
-					if !ok {
-						continue
-					}
-					tokens := (inputT.Int64) + (cacheReadT.Int64) + (outputT.Int64)
-					dailyTotals[idx] += tokens
-					toolData["Hermes"][idx] += tokens
-					mNorm := normalizeModelName(model.String)
-					if _, ok := modelData[mNorm]; !ok {
-						mNorm = "Other"
-					}
-					modelData[mNorm][idx] += tokens
-				}
-				rows.Close()
-			}
-			db.Close()
+		dailyTotals[idx] += event.TotalTokens
+		toolData[event.Tool][idx] += event.TotalTokens
+		model := event.Model
+		if _, ok := modelData[model]; !ok {
+			model = "Other"
 		}
-	}
-
-	// 3. Antigravity 历史
-	antigravityPath := antigravityStatsPath()
-	if data, err := os.ReadFile(antigravityPath); err == nil {
-		var stats struct {
-			Records map[string]struct {
-				InputTokens  int64 `json:"inputTokens"`
-				OutputTokens int64 `json:"outputTokens"`
-			} `json:"records"`
-		}
-		if json.Unmarshal(data, &stats) == nil {
-			for _, dStr := range dateList {
-				record, ok := stats.Records[dStr]
-				if !ok {
-					continue
-				}
-				tokens := record.InputTokens + record.OutputTokens
-				idx := dateIdx[dStr]
-				dailyTotals[idx] += tokens
-				// v1.3.91: 用 if _, ok := 防止 toolData 缺 "Antigravity" key 时 panic
-				// (v1.3.90 起冰茶 AI 降级为数据源, tools list 不含 Antigravity)
-				if _, ok := toolData["Antigravity"]; ok {
-					toolData["Antigravity"][idx] += tokens
-				}
-				if _, ok := modelData["gemini 3.5 flash"]; ok {
-					modelData["gemini 3.5 flash"][idx] += tokens
-				}
-			}
-		}
+		modelData[model][idx] += event.TotalTokens
 	}
 
 	resTool := map[string][]int64{}
@@ -1296,16 +1524,17 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
+	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
 	var wbLogs []LogEntry
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(ccLogs, hermesLogs...), wbLogs...)
+	allLogs := append(append(append(ccLogs, codexLogs...), hermesLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	sort.Slice(allLogs, func(i, j int) bool {
@@ -1483,56 +1712,14 @@ func getHeatmapData(days int) HeatmapResponse {
 
 	// daily tokens map
 	dailyTokens := map[string]int64{}
-	seen := map[string]bool{}
-
-	if dbPath := ccSwitchDBPath(); fileExists(dbPath) {
-		db, err := sql.Open("sqlite", dbPath)
-		if err == nil {
-			rows, err := db.Query(`SELECT created_at, input_tokens, output_tokens FROM proxy_request_logs WHERE created_at >= ? AND status_code = 200`, startTimestamp)
-			if err == nil {
-				for rows.Next() {
-					var createdAt, inputT, outputT int64
-					rows.Scan(&createdAt, &inputT, &outputT)
-					tokens := inputT + outputT
-					bucket := createdAt / dedupWindowSeconds
-					key := fmt.Sprintf("%d-%d", bucket, tokens)
-					if seen[key] {
-						continue
-					}
-					seen[key] = true
-					dt := time.Unix(createdAt, 0)
-					dStr := dt.Format("2006-01-02")
-					dailyTokens[dStr] += tokens
-				}
-				rows.Close()
-			}
-			db.Close()
-		}
-	}
-
-	if dbPath := hermesDBPath(); fileExists(dbPath) {
-		db, err := sql.Open("sqlite", dbPath)
-		if err == nil {
-			rows, err := db.Query(`SELECT started_at, input_tokens, output_tokens, cache_read_tokens FROM sessions WHERE started_at >= ?`, startTimestamp)
-			if err == nil {
-				for rows.Next() {
-					var startedAt, inputT, outputT, cacheReadT int64
-					rows.Scan(&startedAt, &inputT, &outputT, &cacheReadT)
-					tokens := inputT + outputT + cacheReadT
-					bucket := startedAt / dedupWindowSeconds
-					key := fmt.Sprintf("%d-%d", bucket, tokens)
-					if seen[key] {
-						continue
-					}
-					seen[key] = true
-					dt := time.Unix(startedAt, 0)
-					dStr := dt.Format("2006-01-02")
-					dailyTokens[dStr] += tokens
-				}
-				rows.Close()
-			}
-			db.Close()
-		}
+	events := dedupEvents(append(append(append(
+		scanCCSwitchLogs(startTimestamp),
+		scanCodexTokens(startTimestamp)...),
+		scanHermesTokens(startTimestamp)...),
+		scanWorkBuddyTokens(startTimestamp)...))
+	for _, event := range events {
+		dStr := time.Unix(event.Timestamp, 0).Format("2006-01-02")
+		dailyTokens[dStr] += event.TotalTokens
 	}
 
 	var maxVal int64
@@ -1574,16 +1761,17 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, hermesLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
+	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
 	var wbLogs []LogEntry
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(ccLogs, hermesLogs...), wbLogs...)
+	allLogs := append(append(append(ccLogs, codexLogs...), hermesLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var filtered []LogEntry
