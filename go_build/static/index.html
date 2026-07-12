@@ -2309,14 +2309,22 @@
             const stateEl = document.getElementById('aboutUpdateState');
             if (!stateEl) return;
             stateEl.title = '';
+            stateEl.style.color = '';
+            if (typeof window.__tmHideUpdateProgress === 'function') window.__tmHideUpdateProgress();
+            const updateBtn = document.getElementById('aboutUpdateBtn');
+            const snoozeBtn = document.getElementById('aboutSnoozeBtn');
+            if (updateBtn) updateBtn.style.display = 'none';
+            if (snoozeBtn) snoozeBtn.style.display = 'none';
             try {
                 const res = await fetch(API_BASE + '/api/check-update', { cache: 'no-store' });
+                const data = await res.json().catch(() => null);
                 if (!res.ok) {
-                    stateEl.innerText = `检查失败 (本地 HTTP ${res.status})`;
+                    stateEl.innerText = '检查失败';
+                    const reason = data && (data.error || data.message);
+                    stateEl.title = `HTTP ${res.status}` + (reason ? ` · ${reason}` : '');
                     stateEl.classList.remove('update-state');
                     return;
                 }
-                const data = await res.json();
                 if (data && data.ok) {
                     const latest = data.latest_version || '?';
                     const current = data.current_version || '?';
@@ -2324,18 +2332,18 @@
                         // v1.4.11: 检查是否被 snooze (用户点了"稍后")
                         const snoozed = localStorage.getItem('tm_snoozed_version');
                         if (snoozed === latest) {
-                            stateEl.innerText = `有新版本 v${latest} (已稍后, 当前 v${current})`;
+                            stateEl.innerText = `已稍后 · v${latest}`;
                             // 隐藏更新按钮, 但显示"取消稍后"
                             var ub = document.getElementById('aboutUpdateBtn');
                             var sb = document.getElementById('aboutSnoozeBtn');
                             if (ub) ub.style.display = 'none';
-                            if (sb) { sb.style.display = ''; sb.innerText = '取消稍后'; }
+                            if (sb) { sb.style.display = ''; sb.disabled = false; sb.innerText = '取消稍后'; }
                         } else {
-                            stateEl.innerText = `有新版本 v${latest} (当前 v${current})`;
+                            stateEl.innerText = `可更新至 v${latest}`;
                             var ub = document.getElementById('aboutUpdateBtn');
                             var sb = document.getElementById('aboutSnoozeBtn');
-                            if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + latest; }
-                            if (sb) { sb.style.display = ''; sb.innerText = '稍后'; }
+                            if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新'; }
+                            if (sb) { sb.style.display = ''; sb.disabled = false; sb.innerText = '稍后'; }
                         }
                         // 徽章加红点
                         var badge = document.getElementById('appVersionBadge');
@@ -2344,7 +2352,7 @@
                             badge.style.opacity = '1';
                         }
                     } else {
-                        stateEl.innerText = `已是最新版本 (v${current})`;
+                        stateEl.innerText = '已是最新';
                         // 隐藏按钮
                         var ub2 = document.getElementById('aboutUpdateBtn');
                         var sb2 = document.getElementById('aboutSnoozeBtn');
@@ -2360,17 +2368,19 @@
                     }
                     stateEl.classList.add('update-state');
                 } else {
-                    const status = data && data.http_status ? ` (HTTP ${data.http_status})` : '';
                     const reason = (data && data.error) || '更新检查失败';
-                    stateEl.innerText = `检查失败${status}: ${reason}`;
+                    const status = data && data.http_status ? `HTTP ${data.http_status} · ` : '';
+                    stateEl.innerText = '检查失败';
+                    stateEl.title = status + reason;
                     stateEl.classList.remove('update-state');
                     if (data && data.raw_excerpt) {
-                        stateEl.title = String(data.raw_excerpt).slice(0, 400);
+                        stateEl.title += `\n${String(data.raw_excerpt).slice(0, 300)}`;
                     }
                 }
             } catch (err) {
                 console.error('check-update 调用失败:', err);
-                stateEl.innerText = '检查请求异常: ' + ((err && err.message) || err);
+                stateEl.innerText = '检查失败';
+                stateEl.title = String((err && err.message) || err || '请求异常');
                 stateEl.classList.remove('update-state');
             }
         }
@@ -2532,13 +2542,15 @@
                     // macOS: 调 Swift performAutoUpdate
                     window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'triggerAutoUpdate' });
                     aboutUpdateBtn.disabled = true;
-                    aboutUpdateBtn.innerText = '已请求, 请稍候...';
-                    showUpdateProgress(0, '准备中...');
+                    aboutUpdateBtn.innerText = '正在更新';
+                    if (aboutSnoozeBtn) aboutSnoozeBtn.disabled = true;
+                    showUpdateProgress(0, '准备更新');
                 } else if (typeof window.triggerWinUpdate === 'function') {
                     // Windows WebView2: 调 Go 端直接下载并替换 EXE。
                     aboutUpdateBtn.disabled = true;
-                    aboutUpdateBtn.innerText = '正在下载更新...';
-                    showUpdateProgress(0, '准备中...');
+                    aboutUpdateBtn.innerText = '正在更新';
+                    if (aboutSnoozeBtn) aboutSnoozeBtn.disabled = true;
+                    showUpdateProgress(0, '准备更新');
                     window.triggerWinUpdate();
                 } else {
                     window.__tmSetUpdateStatus('请在 Token Monitor 应用内使用自动更新', 'error');
@@ -2568,8 +2580,8 @@
                         // 隐藏更新按钮
                         aboutUpdateBtn.style.display = 'none';
                         aboutSnoozeBtn.innerText = '取消稍后';
-                        document.getElementById('aboutUpdateState').innerText =
-                            stateText.replace(/有新版本/, '已稍后') + '';
+                        const version = (stateText.match(/v\d+\.\d+\.\d+/) || [''])[0];
+                        document.getElementById('aboutUpdateState').innerText = '已稍后' + (version ? ' · ' + version : '');
                     }
                 });
             }
@@ -2614,11 +2626,11 @@
                 // About 弹窗里显示按钮
                 const ub = document.getElementById('aboutUpdateBtn');
                 const sb = document.getElementById('aboutSnoozeBtn');
-                if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + info.version; }
-                if (sb) { sb.style.display = ''; sb.innerText = '稍后'; }
+                if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新'; }
+                if (sb) { sb.style.display = ''; sb.disabled = false; sb.innerText = '稍后'; }
 				const state = document.getElementById('aboutUpdateState');
 				if (state) {
-					state.innerText = '有新版本 v' + info.version + (info.currentVersion ? ' (当前 v' + info.currentVersion + ')' : '');
+					state.innerText = '可更新至 v' + info.version;
 					state.style.color = '';
 				}
             };
@@ -2632,7 +2644,15 @@
                 const ub = document.getElementById('aboutUpdateBtn');
                 const sb = document.getElementById('aboutSnoozeBtn');
                 if (ub) { ub.style.display = 'none'; ub.disabled = false; }
-                if (sb) sb.style.display = 'none';
+                if (sb) { sb.style.display = 'none'; sb.disabled = false; }
+                const state = document.getElementById('aboutUpdateState');
+                if (state) {
+                    state.innerText = '已是最新';
+                    state.title = '';
+                    state.style.color = '';
+                    state.classList.add('update-state');
+                }
+                if (typeof window.__tmHideUpdateProgress === 'function') window.__tmHideUpdateProgress();
             };
         });
 
@@ -2648,24 +2668,40 @@
 			if (modal) modal.classList.add('active');
             if (bar) bar.classList.add('visible');
             if (fill) fill.style.width = safePct + '%';
-            if (label) label.textContent = text || '正在更新';
+			if (label) label.textContent = conciseUpdateProgress(text);
             if (ptext) ptext.textContent = Math.round(safePct) + '%';
 			if (track) track.setAttribute('aria-valuenow', String(Math.round(safePct)));
+        }
+        function conciseUpdateProgress(text) {
+            const value = String(text || '正在更新');
+            if (value.includes('重试')) return '正在重试';
+            if (value.includes('下载')) return '正在下载';
+            if (value.includes('解压')) return '正在解压';
+            if (value.includes('编译')) return '正在安装';
+            if (value.includes('准备安装')) return '即将重启';
+            if (value.includes('准备')) return '准备更新';
+            return value.replace(/\s*\([^)]*\)\s*$/, '') || '正在更新';
         }
         window.__tmSetUpdateProgress = function(pct, text) { showUpdateProgress(pct, text); };
 		window.__tmSetUpdateStatus = function(text, kind) {
 			var modal = document.getElementById('aboutModal');
 			var state = document.getElementById('aboutUpdateState');
 			var updateBtn = document.getElementById('aboutUpdateBtn');
+			var snoozeBtn = document.getElementById('aboutSnoozeBtn');
 			if (modal) modal.classList.add('active');
 			if (state) {
-				state.innerText = text || '更新状态未知';
+				var fullText = String(text || '更新状态未知');
+				state.innerText = kind === 'error' ? (fullText.includes('自动更新') ? '更新失败' : '检查失败')
+					: (fullText.includes('已是最新') ? '已是最新' : fullText);
+				state.title = fullText !== state.innerText ? fullText : '';
 				state.style.color = kind === 'error' ? '#f85149' : (kind === 'success' ? '#2ea043' : '');
 			}
 			if (updateBtn && kind === 'error') {
 				updateBtn.disabled = false;
 				updateBtn.innerText = '重试更新';
 			}
+			if (snoozeBtn && kind === 'error') snoozeBtn.disabled = false;
+			if (kind === 'error') window.__tmHideUpdateProgress();
 		};
 		window.__tmOpenAboutForUpdate = function(recheck) {
 			var modal = document.getElementById('aboutModal');

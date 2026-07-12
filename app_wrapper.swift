@@ -452,7 +452,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 } else if !silent {
                     self.pendingUpdate = nil
                     self.notifyFrontendNoUpdate(currentVersion: currentVersion)
-                    self.notifyFrontendUpdateStatus("已是最新版本 (v\(currentVersion))", kind: "success")
+                    self.notifyFrontendUpdateStatus("已是最新", kind: "success")
                 }
             }
         }.resume()
@@ -531,7 +531,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                     self.pendingCurrentVersion = currentVersion
                     self.performAutoUpdate(update: update)
                 } else {
-                    self.notifyFrontendUpdateStatus("已是最新版本 (v\(currentVersion))", kind: "success")
+                    self.notifyFrontendUpdateStatus("已是最新", kind: "success")
                 }
             }
         }.resume()
