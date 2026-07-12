@@ -12,6 +12,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     // 不缓存的话前端点了"立即更新"还要再走一遍网络, 体验更差。
     private var pendingUpdate: UpdateInfo?
     private var pendingCurrentVersion: String = "0"
+    // file:// WKWebView 请求本地 API 时 Origin 固定为 null。
+    // 每次启动生成临时凭据，同时注入 WebView 和 Python 子进程。
+    private let localAPIToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
     // 下载进度 KVO observation 的关联 key, 避免 ARC 释放导致进度回调失效。
     // 用实例级别 (非 static), 每个 AppDelegate 实例独立 key, 多窗口场景不互相覆盖。
     private static var downloadObservationKey: UInt8 = 0
@@ -112,7 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let config = WKWebViewConfiguration()
         // Swift 在 documentStart 注入 API 根地址，避免 JS 端硬编码端口
         let userContentController = WKUserContentController()
-        let injectionScript = "window.__API_BASE__ = '\(apiBaseURL)';"
+        let injectionScript = "window.__API_BASE__ = '\(apiBaseURL)'; window.__LOCAL_API_TOKEN__ = '\(localAPIToken)';"
         let apiBaseScript = WKUserScript(
             source: injectionScript,
             injectionTime: .atDocumentStart,
@@ -199,6 +202,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/bin/sh")
         proc.arguments = ["-c", cmd]
+        var environment = ProcessInfo.processInfo.environment
+        environment["TOKEN_MONITOR_LOCAL_API_TOKEN"] = localAPIToken
+        proc.environment = environment
         let devNull = FileHandle.nullDevice
         proc.standardOutput = devNull
         proc.standardError = devNull

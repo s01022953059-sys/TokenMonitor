@@ -10,6 +10,7 @@
 """
 
 import argparse
+import hmac
 import http.server
 import json
 import os
@@ -74,7 +75,20 @@ _args, _ = _parser.parse_known_args()
 
 PORT = _args.port
 UPDATE_FEED_URL = (_args.update_feed_url or "").strip()
+LOCAL_API_TOKEN = os.environ.get("TOKEN_MONITOR_LOCAL_API_TOKEN", "").strip()
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+
+
+def _is_allowed_profile_origin(origin: str, provided_token: str) -> bool:
+    """Allow loopback pages and authenticated macOS file:// WebViews."""
+    normalized_origin = (origin or "").strip().lower()
+    if normalized_origin == "null":
+        return bool(LOCAL_API_TOKEN) and hmac.compare_digest(
+            (provided_token or "").strip(), LOCAL_API_TOKEN
+        )
+    if not normalized_origin:
+        return True
+    return normalized_origin.startswith("http://127.0.0.1:") or normalized_origin.startswith("http://localhost:")
 
 # ----- 单实例锁 -----
 # 同一个 Lock 文件 + 文件锁是单实例最稳的真源。
@@ -306,8 +320,8 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Token-Monitor-Client")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
@@ -330,8 +344,9 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             self._write_json(404, {"ok": False, "status": "not_found", "message": "接口不存在"})
             return
         try:
-            origin = (self.headers.get("Origin") or "").lower()
-            if origin and not (origin.startswith("http://127.0.0.1:") or origin.startswith("http://localhost:")):
+            origin = self.headers.get("Origin") or ""
+            local_token = self.headers.get("X-Token-Monitor-Client") or ""
+            if not _is_allowed_profile_origin(origin, local_token):
                 self._write_json(403, {"ok": False, "status": "origin_forbidden", "message": "不允许跨站修改昵称"})
                 return
             if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):

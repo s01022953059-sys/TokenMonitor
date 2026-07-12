@@ -56,7 +56,7 @@ print(s.getsockname()[1])
 s.close()
 PY
 )
-TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" python3 server.py \
+TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_LOCAL_API_TOKEN="verify-local-token" python3 server.py \
     --port "$PORT" \
     --update-feed-url "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest" \
     >"$TMP_DIR/server.log" 2>&1 &
@@ -109,6 +109,32 @@ try:
     raise AssertionError("昵称接口接受了跨站请求")
 except urllib.error.HTTPError as exc:
     assert exc.code == 403, f"跨站防护状态异常: {exc.code}"
+
+file_origin_without_token = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/community/profile",
+    data=json.dumps({}).encode(), method="POST",
+    headers={"Content-Type": "application/json", "Origin": "null"},
+)
+try:
+    urllib.request.urlopen(file_origin_without_token, timeout=15)
+    raise AssertionError("macOS file 来源未携带凭据仍被接受")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 403, f"macOS file 无凭据状态异常: {exc.code}"
+
+authenticated_file_origin = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/community/profile",
+    data=json.dumps({}).encode(), method="POST",
+    headers={
+        "Content-Type": "application/json",
+        "Origin": "null",
+        "X-Token-Monitor-Client": "verify-local-token",
+    },
+)
+try:
+    urllib.request.urlopen(authenticated_file_origin, timeout=15)
+    raise AssertionError("昵称接口接受了无效请求")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 400, f"macOS file 合法凭据未通过来源校验: {exc.code}"
 print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=90, sessions={len(sessions['sessions'])}")
 PY
 kill "$SERVER_PID" 2>/dev/null || true

@@ -80,6 +80,7 @@
 - Windows：直接下载并校验 Release 中的 `TokenMonitor.exe`，退出旧进程后替换并重启
 - 所有更新入口统一打开“关于 Token Monitor”：进度条固定在更新区顶部，下方仅保留“立即更新”和“稍后”两个操作，不再使用独立更新弹窗
 - Release 同时保留 Windows ZIP，供首次安装或手动安装使用
+- macOS 的 `file://` 内嵌页面使用每次启动生成的临时凭据访问昵称写接口，兼容 WKWebView 的 `Origin: null`，同时保持跨站修改防护
 
 ### API 接口
 

@@ -3109,7 +3109,10 @@
                 nameFeedback.textContent = '正在保存...';
                 try {
                     const response = await fetch(API_BASE + '/api/community/profile', {
-                        method: 'POST', cache: 'no-store', headers: {'Content-Type': 'application/json'},
+                        method: 'POST', cache: 'no-store', headers: {
+                            'Content-Type': 'application/json',
+                            ...(window.__LOCAL_API_TOKEN__ ? {'X-Token-Monitor-Client': window.__LOCAL_API_TOKEN__} : {})
+                        },
                         body: JSON.stringify({display_name: validation.value})
                     });
                     const result = await response.json();

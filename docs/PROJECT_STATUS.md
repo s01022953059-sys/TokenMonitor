@@ -46,6 +46,7 @@ Token Monitor 是跨平台本地仪表盘，macOS 使用 Swift + Python，Window
 - **总量级别灯** (内圈背景按用量变色): <20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红
 - 历史趋势弹窗 (Chart.js, 7/14/30 天, 工具/模型维度)
 - About 弹窗是唯一更新界面：菜单栏、首页徽章和 About 按钮均进入此处；进度条置顶，下方仅保留立即更新与稍后
+- macOS `file://` WebView 通过每次启动生成的临时本地凭据写入社区昵称；后端仅对凭据匹配的 `Origin: null` 放行，远程来源仍拒绝
 - 首页版本徽章: 有新版本时显示橙色脉冲红点, 点击打开 About
 
 ### 应用内自更新 (app_wrapper.swift + update_helper.sh)
