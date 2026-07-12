@@ -181,6 +181,29 @@ def _report_result(ok, status, message, reported_at=None):
     return result
 
 
+def _report_fingerprint(report):
+    """生成只描述当日统计内容的稳定指纹，用于识别旧身份迁移副本。"""
+    by_tool = report.get("by_tool") if isinstance(report.get("by_tool"), dict) else {}
+    tools = tuple(sorted((str(tool), int(tokens or 0)) for tool, tokens in by_tool.items()))
+    report_day = str(report.get("report_date") or report.get("updated_at", "")[:10])
+    return report_day, int(report.get("today_tokens") or 0), tools
+
+
+def _dedupe_legacy_identity_reports(reports):
+    """有凭据的新身份与无凭据旧身份内容完全相同时，只保留新身份。"""
+    authenticated = {
+        _report_fingerprint(report)
+        for report in reports
+        if str(report.get("auth_hash") or "").strip()
+    }
+    return [
+        report
+        for report in reports
+        if str(report.get("auth_hash") or "").strip()
+        or _report_fingerprint(report) not in authenticated
+    ]
+
+
 def _relay_request(report):
     """通过鹏帅的 VPS 中继提交匿名报告，不向客户端分发 GitCode token。"""
     body = json.dumps(report, ensure_ascii=False).encode("utf-8")
@@ -329,6 +352,8 @@ def get_community_stats():
             "tool_distribution": {},
             "active_hours": [0] * 24,
         }
+
+    reports = _dedupe_legacy_identity_reports(reports)
 
     # 聚合
     my_id = get_user_id()

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -28,6 +29,24 @@ func TestCommunityInt64(t *testing.T) {
 				t.Fatalf("communityInt64(%v) = %d, want %d", tc.value, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNewCommunityIDIsAlwaysEightCharacters(t *testing.T) {
+	if id := newCommunityID(); !regexp.MustCompile(`^User_[A-Z0-9]{8}$`).MatchString(id) {
+		t.Fatalf("unexpected community id: %q", id)
+	}
+}
+
+func TestDedupeLegacyIdentityReports(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_OLD01", ReportDate: "2026-07-12", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}},
+		{ID: "User_NEW0001", AuthHash: "hash", ReportDate: "2026-07-12", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}},
+		{ID: "User_OTHER", AuthHash: "other", ReportDate: "2026-07-12", TodayTokens: 10, ByTool: map[string]int64{"WorkBuddy": 10}},
+	}
+	got := dedupeLegacyIdentityReports(reports)
+	if len(got) != 2 || got[0].ID != "User_NEW0001" || got[1].ID != "User_OTHER" {
+		t.Fatalf("unexpected deduplicated reports: %#v", got)
 	}
 }
 

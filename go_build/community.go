@@ -59,15 +59,56 @@ func getCommunityDir() string {
 }
 
 func newCommunityID() string {
-	random := make([]byte, 5)
+	random := make([]byte, 4)
 	if _, err := rand.Read(random); err != nil {
 		fallback := strings.ToUpper(strconv.FormatInt(time.Now().UnixNano(), 36))
-		if len(fallback) > 10 {
-			fallback = fallback[len(fallback)-10:]
+		if len(fallback) > 8 {
+			fallback = fallback[len(fallback)-8:]
+		} else if len(fallback) < 8 {
+			fallback = strings.Repeat("0", 8-len(fallback)) + fallback
 		}
 		return "User_" + fallback
 	}
 	return "User_" + strings.ToUpper(hex.EncodeToString(random))
+}
+
+type communityReportData struct {
+	ID          string           `json:"id"`
+	AuthHash    string           `json:"auth_hash"`
+	UpdatedAt   string           `json:"updated_at"`
+	ReportDate  string           `json:"report_date"`
+	TodayTokens int64            `json:"today_tokens"`
+	ByTool      map[string]int64 `json:"by_tool"`
+}
+
+func communityReportFingerprint(report communityReportData) string {
+	day := report.ReportDate
+	if day == "" && len(report.UpdatedAt) >= 10 {
+		day = report.UpdatedAt[:10]
+	}
+	tools := make([]string, 0, len(report.ByTool))
+	for tool, tokens := range report.ByTool {
+		tools = append(tools, tool+"="+strconv.FormatInt(tokens, 10))
+	}
+	sort.Strings(tools)
+	return day + "|" + strconv.FormatInt(report.TodayTokens, 10) + "|" + strings.Join(tools, ",")
+}
+
+func dedupeLegacyIdentityReports(reports []communityReportData) []communityReportData {
+	authenticated := make(map[string]bool)
+	for _, report := range reports {
+		if strings.TrimSpace(report.AuthHash) != "" {
+			authenticated[communityReportFingerprint(report)] = true
+		}
+	}
+	result := make([]communityReportData, 0, len(reports))
+	for _, report := range reports {
+		if strings.TrimSpace(report.AuthHash) == "" && authenticated[communityReportFingerprint(report)] {
+			continue
+		}
+		result = append(result, report)
+	}
+	return result
 }
 
 // getUserID 获取或生成匿名用户 ID
@@ -309,14 +350,7 @@ func getCommunityStats() map[string]interface{} {
 	client := &http.Client{Timeout: 8 * time.Second}
 
 	// 批量读取每个用户的 report
-	type reportData struct {
-		ID          string           `json:"id"`
-		UpdatedAt   string           `json:"updated_at"`
-		ReportDate  string           `json:"report_date"`
-		TodayTokens int64            `json:"today_tokens"`
-		ByTool      map[string]int64 `json:"by_tool"`
-	}
-	var reports []reportData
+	var reports []communityReportData
 	readFailures := 0
 	reportFileCount := 0
 	myID := getUserID()
@@ -352,7 +386,7 @@ func getCommunityStats() map[string]interface{} {
 			readFailures++
 			continue
 		}
-		var r reportData
+		var r communityReportData
 		if json.Unmarshal(body2, &r) == nil && r.ID != "" {
 			reports = append(reports, r)
 		} else {
@@ -367,10 +401,11 @@ func getCommunityStats() map[string]interface{} {
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
 	}
+	reports = dedupeLegacyIdentityReports(reports)
 
 	// 只聚合今天的报告，避免离线用户昨天的数据被算进今天。
 	today := time.Now().Format("2006-01-02")
-	reportDay := func(r reportData) string {
+	reportDay := func(r communityReportData) string {
 		if r.ReportDate != "" {
 			return r.ReportDate
 		}
@@ -379,7 +414,7 @@ func getCommunityStats() map[string]interface{} {
 		}
 		return ""
 	}
-	var reportsToday []reportData
+	var reportsToday []communityReportData
 	for _, r := range reports {
 		if reportDay(r) == today {
 			reportsToday = append(reportsToday, r)
@@ -446,7 +481,7 @@ func getCommunityStats() map[string]interface{} {
 		"estimated_cost_saved": math.Round(float64(totalTokensToday)*0.000002*100) / 100,
 	}
 
-	var myReport *reportData
+	var myReport *communityReportData
 	for i := range reports {
 		if reports[i].ID == myID {
 			myReport = &reports[i]

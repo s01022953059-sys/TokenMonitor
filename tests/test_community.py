@@ -34,6 +34,9 @@ class CommunityTests(unittest.TestCase):
         community._aggregate_cache["data"] = None
         community._aggregate_cache["ts"] = 0
 
+    def test_new_user_id_is_always_eight_characters(self):
+        self.assertRegex(community._new_user_id(), r"^User_[A-Z0-9]{8}$")
+
     def test_report_uses_relay_without_gitcode_credentials(self):
         usage = {
             "summary": {"date": "2026-07-10", "total_tokens": 26_391_088},
@@ -140,6 +143,25 @@ class CommunityTests(unittest.TestCase):
 
         self.assertEqual(result["data_status"], "load_failed")
         self.assertIn("全部读取失败", result["error"])
+
+    def test_legacy_identity_duplicate_is_not_counted_twice(self):
+        today = datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_OLD01", "report_date": today, "today_tokens": 30_490_000, "by_tool": {"Codex": 30_490_000}},
+            {"id": "User_TEST1", "auth_hash": "a" * 64, "report_date": today, "today_tokens": 30_490_000, "by_tool": {"Codex": 30_490_000}},
+            {"id": "User_OTHER", "auth_hash": "b" * 64, "report_date": today, "today_tokens": 10, "by_tool": {"WorkBuddy": 10}},
+        ]
+        files = [{"name": f"{report['id']}.json", "download_url": f"https://example.test/{i}"} for i, report in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        self.assertEqual(result["total_users"], 2)
+        self.assertEqual(result["all_reporters"], 2)
+        self.assertEqual(result["total_tokens_today"], 30_490_010)
+        self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1", "User_OTHER"])
 
 
 if __name__ == "__main__":
