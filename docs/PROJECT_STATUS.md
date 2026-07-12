@@ -50,6 +50,8 @@ Token Monitor 是跨平台本地仪表盘，macOS 使用 Swift + Python，Window
 - About 弹窗是唯一更新界面：菜单栏、首页徽章和 About 按钮均进入此处；进度条置顶，下方仅保留立即更新与稍后
 - About 更新状态采用短句，当前版本不在状态栏重复；详细错误放悬停提示，并在重新检查、失败和更新过程中正确清理旧按钮、颜色与进度
 - macOS 本地 WebView 通过每次启动生成的临时凭据写入社区昵称；非 HTTP(S) 的 WebKit 来源必须通过凭据鉴权，HTTP(S) 只允许回环地址
+- macOS 更新器不再按 `/Applications` 路径无条件请求管理员权限：可写时原地替换，不可写时迁移到 `~/Applications` 并注销旧 LaunchServices 记录
+- 发布前验证包含 macOS 更新器回归用例：覆盖原地替换、用户目录迁移，并阻止重新引入 `sudo` 或 AppleScript 管理员授权
 - 首页版本徽章: 有新版本时显示橙色脉冲红点, 点击打开 About
 
 ### 应用内自更新 (app_wrapper.swift + update_helper.sh)

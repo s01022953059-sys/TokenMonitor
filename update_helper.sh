@@ -9,17 +9,19 @@
 #   update_helper.sh <staged-app-path> <target-app-path> <relaunch-bundle-id>
 #
 # 设计原则:
-#   * ~/Applications/ 用户目录: 直接 cp, 不需要 root, 不需要 sudo, silent
-#   * /Applications/ 系统目录: 用 osascript 触发系统 GUI sudo 弹窗拿 root
-#   * AppleScript 写到 .scpt 文件而非 -e inline, 避开 bash heredoc 转义陷阱
-#   * 失败时打印明确错误到 /tmp/token_monitor_update.log
+#   * 目标目录可写时直接替换，不因位于 /Applications 就请求管理员权限
+#   * 目标目录不可写时迁移到 ~/Applications，后续更新保持静默
+#   * 全程不调用系统管理员授权
+#   * 失败时记录明确错误到 /tmp/token_monitor_update.log
 set -u
 
 STAGED_APP="$1"
 TARGET_APP="$2"
 RELAUNCH_BUNDLE_ID="$3"
 LOG_FILE="/tmp/token_monitor_update.log"
-SCPT_FILE="/tmp/tm_install.scpt"
+USER_APPLICATIONS_DIR="${TOKEN_MONITOR_USER_APPLICATIONS_DIR:-$HOME/Applications}"
+TEST_MODE="${TOKEN_MONITOR_UPDATE_TEST_MODE:-0}"
+FORCE_TARGET_UNWRITABLE="${TOKEN_MONITOR_FORCE_TARGET_UNWRITABLE:-0}"
 
 # 重定向所有输出到日志, 这样即使 helper 后台跑用户也能看到结果。
 exec >> "$LOG_FILE" 2>&1
@@ -36,57 +38,38 @@ fi
 
 # 主 app 退出后, LaunchServices 可能还有缓存指向旧 .app 的可执行文件句柄。
 # 给 3 秒缓冲, 确保旧进程真的被回收。
-sleep 3
+if [ "$TEST_MODE" != "1" ]; then
+    sleep 3
+fi
 
-# 检测 target 在系统目录还是用户目录。
-# 系统目录 (/Applications/) 写入需要 root, 走 osascript sudo 弹窗;
-# 用户目录 (~/Applications/) 写入不需要 root, 直接 cp (silent, 无弹窗)。
+# 可写则原地替换；不可写则迁移到用户 Applications。
+ORIGINAL_TARGET_APP="$TARGET_APP"
 TARGET_DIR="$(dirname "$TARGET_APP")"
-case "$TARGET_DIR" in
-    /Applications|/Applications/*)
-        INSTALL_MODE="system"
-        ;;
-    "$HOME"/Applications|"$HOME"/Applications/*)
-        INSTALL_MODE="user"
-        ;;
-    *)
-        # 兜底: 走系统路径, 弹 sudo
-        INSTALL_MODE="system"
-        ;;
-esac
-echo "[update_helper] install mode: $INSTALL_MODE"
+if [ "$FORCE_TARGET_UNWRITABLE" = "1" ] || [ ! -w "$TARGET_DIR" ]; then
+    TARGET_APP="$USER_APPLICATIONS_DIR/$(basename "$TARGET_APP")"
+    TARGET_DIR="$USER_APPLICATIONS_DIR"
+    echo "[update_helper] 原目录不可写，迁移到用户目录: $TARGET_APP"
+fi
 
-if [ "$INSTALL_MODE" = "user" ]; then
-    # 用户目录直接替换, 不需要 root, silent
-    echo "[update_helper] 用户目录, 直接替换 (silent)"
-    mkdir -p "$TARGET_DIR"
-    rm -rf "$TARGET_APP"
-    if ! ditto "$STAGED_APP" "$TARGET_APP"; then
-        echo "[update_helper] ✘ ditto 替换失败: $TARGET_APP"
-        open "file://$LOG_FILE" || true
-        exit 1
-    fi
-    codesign --force --deep --sign - "$TARGET_APP" 2>&1 || true
-    echo "[update_helper] ✔ 用户目录替换完成"
-else
-    # 系统目录: 写 AppleScript, 触发 osascript sudo 弹窗
-    cat > "$SCPT_FILE" <<'SCPT_EOF'
-on run argv
-    set targetApp to item 1 of argv
-    set stagedApp to item 2 of argv
-    do shell script "rm -rf " & quoted form of targetApp & " && ditto " & quoted form of stagedApp & " " & quoted form of targetApp & " && codesign --force --deep --sign - " & quoted form of targetApp with administrator privileges with prompt "Token Monitor 需要管理员权限以替换 /Applications/Token Monitor.app"
-end run
-SCPT_EOF
+mkdir -p "$TARGET_DIR"
+rm -rf "$TARGET_APP"
+if ! ditto "$STAGED_APP" "$TARGET_APP"; then
+    echo "[update_helper] ✘ ditto 替换失败: $TARGET_APP"
+    [ "$TEST_MODE" = "1" ] || open "file://$LOG_FILE" || true
+    exit 1
+fi
+codesign --force --deep --sign - "$TARGET_APP" 2>&1 || true
+echo "[update_helper] ✔ 静默替换完成: $TARGET_APP"
 
-    echo "[update_helper] 请求管理员权限 (AppleScript file: $SCPT_FILE) ..."
-    if ! osascript "$SCPT_FILE" "$TARGET_APP" "$STAGED_APP"; then
-        echo "[update_helper] ✘ 用户取消授权或认证失败"
-        rm -f "$SCPT_FILE"
-        open "file://$LOG_FILE" || true
-        exit 1
-    fi
-    rm -f "$SCPT_FILE"
-    echo "[update_helper] ✔ 系统目录替换完成"
+# 从不可写系统目录迁移后，注销旧副本，避免 LaunchServices 显示两个同名 App。
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ "$ORIGINAL_TARGET_APP" != "$TARGET_APP" ] && [ -x "$LSREGISTER" ]; then
+    "$LSREGISTER" -u "$ORIGINAL_TARGET_APP" 2>/dev/null || true
+fi
+
+if [ "$TEST_MODE" = "1" ]; then
+    echo "[update_helper] ✔ 测试模式完成"
+    exit 0
 fi
 
 # 重启 app。彻底清理老进程 (Swift 主进程 + Python server 子进程),
@@ -144,7 +127,6 @@ done
 # 老 app 进程的 status item (icon/title) 已经被 system 加到全局状态栏,
 # 只重启 Swift binary 不够, 老 item 可能残留 0.x 秒
 # 强制 lsregister 重索引 (跟 install.sh / build_macos.sh 同步), 触发系统重读 .app
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [ -x "$LSREGISTER" ]; then
     "$LSREGISTER" -f -R -trusted "$TARGET_APP" 2>/dev/null && \
         echo "[update_helper] ✔ lsregister 重索引 (清 NSStatusItem 缓存)" || true
@@ -153,11 +135,8 @@ fi
 touch "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true
 
 # 6. 启动新 app
-if [ -n "$RELAUNCH_BUNDLE_ID" ]; then
-    open -b "$RELAUNCH_BUNDLE_ID" || open -a "$TARGET_APP" || true
-else
-    open -a "$TARGET_APP" || true
-fi
+# 必须按路径启动；按 bundle id 启动可能重新打开遗留的系统目录副本。
+open "$TARGET_APP" || open -a "$TARGET_APP" || true
 
 echo "[update_helper] ✔ 完成"
 exit 0

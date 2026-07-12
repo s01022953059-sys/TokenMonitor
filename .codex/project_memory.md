@@ -198,6 +198,8 @@
 - **Windows 自启只保留一个入口**: HKCU Run 是唯一入口；启用/迁移时清理旧 Startup 快捷方式、计划任务和错误的 StartupApproved 值，避免重复启动
 - **Windows 应用内更新不用 ZIP**: Release 同时发布 `TokenMonitor.exe` 与手动安装 ZIP；应用内更新只下载、校验、替换 EXE，并删除可能干扰版本判断的旧 `version.txt`
 - **更新 UI 单一入口**: 托盘和原生菜单的更新操作都打开 About 页；后台检查只刷新版本标记，下载进度和错误都在 About 内展示，不使用独立更新弹窗
+- **macOS 静默更新权限**: 禁止仅因目标位于 `/Applications` 就调用 `administrator privileges`。目录可写时直接替换；不可写时迁移到 `~/Applications`，注销旧 LaunchServices 记录并按新路径重启，避免每次更新索要密码和 bundle id 启动到旧副本
+- **macOS 更新权限必须回归验证**: 发版前运行 `tests/test_update_helper.sh`，覆盖可写目录原地替换、不可写目录迁移，并检查 helper 不含 `sudo` 或 AppleScript 管理员授权
 - **About 更新区布局**: 进度条独立位于更新区顶部，下方只保留“立即更新”和“稍后”两个等宽按钮；不要把进度、阶段文字和按钮放进同一横排
 - **About 更新文案**: 当前版本已在左侧展示，右侧状态不得重复版本号；最新版写“已是最新”，新版写“可更新至 vX”，按钮写“立即更新”。错误区只显示“检查失败/更新失败”，详细原因放 `title`；进度标签只显示阶段，百分比单独显示
 - **macOS 昵称写入鉴权**: WKWebView 的本地 Origin 不稳定，可能是 `null`、`file://...`、`applewebdata://...` 或其他 WebKit 内部 scheme，不能枚举单个字符串。Swift 每次启动生成临时凭据并同时注入 WebView 与 Python 子进程；所有非 HTTP(S) 来源都必须携带匹配的 `X-Token-Monitor-Client`，HTTP(S) 只允许本机回环地址

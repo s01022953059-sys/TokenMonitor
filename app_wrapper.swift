@@ -966,7 +966,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
         // helper 路径优先用 stagedApp (新版本) 里的, 而不是当前 app (旧版本) 里的。
         // 原因: 自更新代码会"自我升级", 旧 .app 里的 helper 不知道新代码的设计
-        // (例如 v1.3.12 引入了 osascript sudo 弹窗, v1.3.10 的 helper 没有)。
+        // (例如新版 helper 支持无权限时迁移到 ~/Applications)。
         // 如果用旧 helper, 永远装不上新代码 (helper 自己不知道如何处理新需求)。
         // 兜底: 如果 stagedApp 里没找到 helper, 用当前 app 里的 (向后兼容)。
         let fm = FileManager.default

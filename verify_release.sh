@@ -15,6 +15,11 @@ fi
 echo "[verify] Python 单元测试"
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 
+if [[ "$(uname)" == "Darwin" ]]; then
+    echo "[verify] macOS 无密码更新路径"
+    bash tests/test_update_helper.sh
+fi
+
 echo "[verify] Go 单元测试"
 (cd go_build && go test ./...)
 
