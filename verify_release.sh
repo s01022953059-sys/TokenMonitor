@@ -68,6 +68,7 @@ done
 python3 - "$PORT" <<'PY'
 import json
 import sys
+import urllib.error
 import urllib.request
 
 port = int(sys.argv[1])
@@ -87,6 +88,27 @@ assert not update["download_url"].startswith("https://api.gitcode.com/"), "附�
 community = get("/api/community")
 assert community.get("data_status") != "load_failed", community.get("error")
 assert community.get("can_report") is True, "社区中继未启用"
+
+request = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/community/profile",
+    data=json.dumps({}).encode(), method="POST", headers={"Content-Type": "application/json"},
+)
+try:
+    urllib.request.urlopen(request, timeout=15)
+    raise AssertionError("昵称接口接受了无效请求")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 400, f"昵称接口错误状态异常: {exc.code}"
+
+cross_origin = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/community/profile",
+    data=json.dumps({"display_name": "安全昵称"}).encode(), method="POST",
+    headers={"Content-Type": "application/json", "Origin": "https://example.com"},
+)
+try:
+    urllib.request.urlopen(cross_origin, timeout=15)
+    raise AssertionError("昵称接口接受了跨站请求")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 403, f"跨站防护状态异常: {exc.code}"
 print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=90, sessions={len(sessions['sessions'])}")
 PY
 kill "$SERVER_PID" 2>/dev/null || true

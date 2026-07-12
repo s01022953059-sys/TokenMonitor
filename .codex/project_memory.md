@@ -39,7 +39,7 @@
 - **两版功能完全对齐**: Codex 官方日志 + cc-switch / Antigravity / Hermes / WorkBuddy 扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
 - **前端同一份** index.html + chart.js, go_build/static/ 是同步副本
 
-## 社区昵称设计 (2026-07-12, 待实现)
+## 社区昵称设计 (2026-07-12, 已实现待发布)
 
 - 公开昵称与不可变匿名 ID 分离；改名不得创建新身份或影响历史用量、排名与设备凭据。
 - 字符规则: 中文、ASCII 英文字母、数字、下划线，NFKC 后 2–16 字，至少包含中文或英文字母。
@@ -47,6 +47,10 @@
 - VPS SQLite 负责原子重名检测、冷却与旧名保护，GitCode 报告保存公开昵称；写入失败必须回滚。
 - 防护系统身份冒充、违规词、不可见/双向字符、XSS、网址和联系方式；风险词表在 VPS 维护。
 - 详细设计: `docs/plans/2026-07-12-community-nickname-design.md`。
+- VPS 已部署昵称 SQLite 与 `POST /v1/profile`，数据库位于 systemd `StateDirectory=token-monitor-community`，真实目录权限 0750、数据库 0640；Nginx 对改名接口单独限制为 10 次/分钟。
+- 线上端到端已验证: 两用户抢同名、同名无变化、大小写重名、错误凭据、风险名称、7 天冷却、GitCode 昵称和修改时间读回；测试报告与 SQLite 记录均已清理。
+- 页面使用原地编辑，不增加弹窗；桌面及 390px 窄屏已验证无横向溢出。未修改鹏帅的真实昵称。
+- 本地 `POST /api/community/profile` 必须强制 `application/json` 并拒绝非 localhost Origin；CORS 预检不得开放 POST，防止第三方网页借本机凭据改名。
 
 ## 数据源
 

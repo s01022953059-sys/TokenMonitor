@@ -2033,6 +2033,42 @@ func main() {
 		result := reportCommunityStats(&usage)
 		writeJSON(w, 200, result)
 	})
+	http.HandleFunc("/api/community/profile", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "status": "method_not_allowed", "message": "仅支持 POST"})
+			return
+		}
+		origin := strings.ToLower(strings.TrimSpace(r.Header.Get("Origin")))
+		if origin != "" && !strings.HasPrefix(origin, "http://127.0.0.1:") && !strings.HasPrefix(origin, "http://localhost:") {
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{"ok": false, "status": "origin_forbidden", "message": "不允许跨站修改昵称"})
+			return
+		}
+		if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+			writeJSON(w, http.StatusUnsupportedMediaType, map[string]interface{}{"ok": false, "status": "invalid_content_type", "message": "请求必须使用 JSON"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		var payload struct {
+			DisplayName string `json:"display_name"`
+		}
+		if decoder.Decode(&payload) != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "status": "name_invalid", "message": "昵称请求格式不正确"})
+			return
+		}
+		result := updateCommunityProfile(payload.DisplayName)
+		status := http.StatusOK
+		if !result.OK {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, result)
+	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)
 	staticContent, _ := fs.Sub(staticFS, "static")

@@ -27,10 +27,10 @@ from urllib import request as urlrequest
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats
+    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats
+    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -324,6 +324,31 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/api/community/profile":
+            self._write_json(404, {"ok": False, "status": "not_found", "message": "接口不存在"})
+            return
+        try:
+            origin = (self.headers.get("Origin") or "").lower()
+            if origin and not (origin.startswith("http://127.0.0.1:") or origin.startswith("http://localhost:")):
+                self._write_json(403, {"ok": False, "status": "origin_forbidden", "message": "不允许跨站修改昵称"})
+                return
+            if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+                self._write_json(415, {"ok": False, "status": "invalid_content_type", "message": "请求必须使用 JSON"})
+                return
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > 4096:
+                self._write_json(400, {"ok": False, "status": "name_invalid", "message": "昵称请求格式不正确"})
+                return
+            payload = json.loads(self.rfile.read(content_length))
+            if not isinstance(payload, dict) or not isinstance(payload.get("display_name"), str):
+                self._write_json(400, {"ok": False, "status": "name_invalid", "message": "昵称请求格式不正确"})
+                return
+            result = update_community_profile(payload["display_name"])
+            self._write_json(200 if result.get("ok") else 400, result)
+        except Exception as exc:
+            self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
 
     def do_GET(self):
         if self.path == "/api/usage":

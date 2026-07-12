@@ -60,6 +60,23 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(report["today_tokens"], 26_391_088)
         self.assertEqual(report["report_date"], "2026-07-10")
 
+    def test_profile_update_uses_local_credential_and_clears_cache(self):
+        captured = []
+        community._aggregate_cache.update(data={"cached": True}, ts=123)
+
+        def fake_profile(payload):
+            captured.append(payload)
+            return {"ok": True, "status": "updated", "display_name": "鹏帅"}
+
+        with mock.patch.object(community, "_profile_request", side_effect=fake_profile):
+            result = community.update_community_profile("鹏帅")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(captured[0]["id"], "User_TEST1")
+        self.assertEqual(len(captured[0]["device_secret"]), 43)
+        self.assertEqual(captured[0]["display_name"], "鹏帅")
+        self.assertIsNone(community._aggregate_cache["data"])
+
     def test_legacy_identity_is_rotated_and_retried(self):
         usage = {
             "summary": {"date": "2026-07-10", "total_tokens": 123},
@@ -149,7 +166,7 @@ class CommunityTests(unittest.TestCase):
         today = datetime.date.today().isoformat()
         reports = [
             {"id": "User_OLD01", "report_date": today, "today_tokens": 30_490_000, "by_tool": {"Codex": 30_490_000}},
-            {"id": "User_TEST1", "auth_hash": "a" * 64, "replaces_id": "User_OLD01", "report_date": today, "today_tokens": 31_000_000, "by_tool": {"Codex": 31_000_000}},
+            {"id": "User_TEST1", "auth_hash": "a" * 64, "replaces_id": "User_OLD01", "display_name": "鹏帅", "report_date": today, "today_tokens": 31_000_000, "by_tool": {"Codex": 31_000_000}},
             {"id": "User_OTHER", "auth_hash": "b" * 64, "report_date": today, "today_tokens": 10, "by_tool": {"WorkBuddy": 10}},
         ]
         files = [{"name": f"{report['id']}.json", "download_url": f"https://example.test/{i}"} for i, report in enumerate(reports)]
@@ -163,6 +180,8 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(result["all_reporters"], 2)
         self.assertEqual(result["total_tokens_today"], 31_000_010)
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1", "User_OTHER"])
+        self.assertEqual(result["leaderboard"][0]["display_name"], "鹏帅")
+        self.assertEqual(result["my_display_name"], "鹏帅")
 
 
 if __name__ == "__main__":

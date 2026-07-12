@@ -1,0 +1,9 @@
+# One lowercase or Chinese fragment per line. Matching is substring-based after NFKC normalization.
+# Built-in system-role and contact protections do not need to be repeated here.
+诈骗
+赌博
+色情
+毒品
+代开发票
+刷单
+裸聊

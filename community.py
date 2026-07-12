@@ -239,6 +239,44 @@ def _relay_request(report):
         return {"ok": False, "status": "relay_unavailable", "message": f"社区中继暂时不可用：{exc}"}
 
 
+def _profile_relay_url():
+    if COMMUNITY_RELAY_URL.endswith("/v1/report"):
+        return COMMUNITY_RELAY_URL[:-len("/v1/report")] + "/v1/profile"
+    return COMMUNITY_RELAY_URL.rstrip("/") + "/v1/profile"
+
+
+def _profile_request(payload):
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        _profile_relay_url(), data=body, method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown")},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            return json.loads(exc.read())
+        except (ValueError, TypeError):
+            return {"ok": False, "status": "relay_http_error", "message": f"昵称服务 HTTP {exc.code}"}
+    except Exception as exc:
+        return {"ok": False, "status": "relay_unavailable", "message": f"昵称服务暂时不可用：{exc}"}
+
+
+def update_community_profile(display_name):
+    """使用本机设备凭据更新公开社区昵称。"""
+    credential = _get_community_credential()
+    result = _profile_request({
+        "id": credential["id"],
+        "device_secret": credential["device_secret"],
+        "display_name": str(display_name or ""),
+    })
+    if result.get("ok"):
+        _aggregate_cache["data"] = None
+        _aggregate_cache["ts"] = 0
+    return result
+
+
 def report_community_stats(today_usage):
     """通过 VPS 中继上报当前用户的匿名统计。
 
@@ -382,6 +420,7 @@ def get_community_stats():
     leaderboard = sorted_reports[:LEADERBOARD_LIMIT]
     leaderboard = [{
         "id": r.get("id", "?"),
+        "display_name": r.get("display_name", ""),
         "tokens": r.get("today_tokens", 0),
         "tool": max(r.get("by_tool", {}), key=r.get("by_tool", {}).get, default="?") if r.get("by_tool") else "?",
         "is_me": r.get("id") == my_id
@@ -435,6 +474,8 @@ def get_community_stats():
         "my_synced_today": my_synced_today,
         "my_report_found": my_report is not None,
         "my_last_synced_at": my_report.get("updated_at") if my_report else None,
+        "my_display_name": my_report.get("display_name", "") if my_report else "",
+        "my_name_changed_at": my_report.get("name_changed_at") if my_report else None,
         "rank_status": rank_status,
         "rank_message": rank_message,
         "rank_total": len(sorted_reports),

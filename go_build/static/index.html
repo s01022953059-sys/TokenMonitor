@@ -654,6 +654,79 @@
             color: var(--text-muted);
         }
 
+        .community-identity-view {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 30px;
+        }
+        .community-name {
+            max-width: min(320px, 55vw);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .community-id {
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+        }
+        .community-icon-btn {
+            width: 28px;
+            height: 28px;
+            flex: 0 0 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-card);
+            border-radius: 6px;
+            background: var(--bg-subtle);
+            color: var(--text-main);
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+        }
+        .community-icon-btn:hover { background: var(--bg-subtle-hover); }
+        .community-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .community-name-editor {
+            display: none;
+            grid-template-columns: minmax(140px, 260px) 28px 28px;
+            gap: 6px;
+            align-items: center;
+        }
+        .community-name-editor.active { display: grid; }
+        .community-name-input {
+            width: 100%;
+            min-width: 0;
+            height: 30px;
+            padding: 0 9px;
+            border: 1px solid var(--border-card);
+            border-radius: 6px;
+            background: var(--bg-subtle);
+            color: var(--text-main);
+            font: 12px 'JetBrains Mono', monospace;
+            outline: none;
+        }
+        .community-name-input:focus { border-color: var(--modal-line-color); }
+        .community-name-meta {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            min-height: 14px;
+            color: var(--text-muted);
+            font-size: 9px;
+        }
+        .community-name-error { color: #ef4444; }
+
+		@media (max-width: 520px) {
+			.community-name-editor { grid-template-columns: minmax(0, 1fr) 28px 28px; }
+			.community-name { max-width: 220px; }
+		}
+
 		@media (max-width: 520px) {
 			#aboutModal .modal-content {
 				width: calc(100% - 24px);
@@ -2794,9 +2867,22 @@
             }).format(date);
         }
 
+        function validateCommunityDisplayName(rawValue) {
+            const value = String(rawValue || '').normalize('NFKC').trim();
+            const chars = Array.from(value);
+            if (chars.length < 2 || chars.length > 16) return {value, error: '昵称需要 2–16 个字符'};
+            if (!/^[A-Za-z0-9_\u3400-\u9FFF]+$/u.test(value)) return {value, error: '只能使用中文、英文字母、数字和下划线'};
+            if (!/[A-Za-z\u3400-\u9FFF]/u.test(value)) return {value, error: '至少需要一个中文或英文字母'};
+            if (/^(.)\1\1\1/iu.test(value) || /(.)\1\1\1/iu.test(value)) return {value, error: '不能连续重复同一字符'};
+            if (/^user_/iu.test(value)) return {value, error: '该昵称格式不可使用'};
+            return {value, error: ''};
+        }
+
         function renderCommunity(data) {
             const container = document.getElementById('communityContainer');
             const myId = data.my_id || '';
+            const myDisplayName = data.my_display_name || '';
+            const nameChangedAt = data.my_name_changed_at || '';
             const optedIn = Boolean(data.opted_in);
             const canReport = Boolean(data.can_report);
             const mySyncedToday = Boolean(data.my_synced_today);
@@ -2826,9 +2912,11 @@
             }).join('');
 
             const leaderboardRows = leaderboard.map((u, i) => {
+                const publicName = u.display_name || u.id || '?';
+                const identityTitle = u.display_name ? ' title="ID: ' + escapeHtml(u.id || '') + '"' : '';
                 return '<div style="display:grid;grid-template-columns:44px minmax(110px,1fr) minmax(70px,0.7fr) 90px;align-items:center;gap:8px;padding:9px 10px;border-top:' + (i ? '1px solid var(--border-subtle)' : '0') + ';' + (u.is_me ? 'background:var(--hover-bg);' : '') + '">' +
                     '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-muted);">No.' + (i + 1) + '</div>' +
-                    '<div style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.id || '?') + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
+                    '<div' + identityTitle + ' style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(publicName) + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.tool || '未识别') + '</div>' +
                     '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;text-align:right;">' + formatTokens(u.tokens || 0) + '</div>' +
                     '</div>';
@@ -2839,6 +2927,12 @@
             const syncButton = optedIn && canReport
                 ? '<button id="communityReportNowBtn" class="recheck-btn" style="font-size:10px;">立即同步</button>'
                 : '';
+            const changedAtDate = nameChangedAt ? new Date(nameChangedAt) : null;
+            const nextNameChange = changedAtDate && !Number.isNaN(changedAtDate.getTime())
+                ? new Date(changedAtDate.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+            const nameCoolingDown = Boolean(myDisplayName && nextNameChange && nextNameChange.getTime() > Date.now());
+            const editTitle = nameCoolingDown ? ('可在 ' + formatCommunityTime(nextNameChange.toISOString()) + ' 后修改') : '修改社区昵称';
+            const shownName = myDisplayName || myId;
             const dataNotice = dataStatus === 'partial'
                 ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid #d97706;background:var(--bg-subtle);border-radius:8px;">' +
                     '<div style="font-size:12px;color:#d97706;font-weight:600;margin-bottom:4px;">当前统计可能不完整</div>' +
@@ -2853,8 +2947,17 @@
 
             container.innerHTML =
                 '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px;">' +
-                    '<div><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">匿名社区 ID</div>' +
-                    '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:var(--text-main);">' + escapeHtml(myId) + '</div></div>' +
+                    '<div id="communityIdentityBlock"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">社区昵称</div>' +
+                    '<div id="communityIdentityView" class="community-identity-view"><span class="community-name">' + escapeHtml(shownName) + '</span>' +
+                        '<button id="communityNameEditBtn" class="community-icon-btn" title="' + escapeHtml(editTitle) + '" aria-label="修改社区昵称"' + (nameCoolingDown ? ' disabled' : '') + '>✎</button></div>' +
+                    '<div class="community-id">ID: ' + escapeHtml(myId) + '</div>' +
+                    (nameCoolingDown ? '<div style="font-size:9px;color:var(--text-muted);margin-top:3px;">' + escapeHtml(editTitle) + '</div>' : '') +
+                    '<div id="communityNameEditor" class="community-name-editor">' +
+                        '<input id="communityNameInput" class="community-name-input" maxlength="16" autocomplete="off" value="' + escapeHtml(myDisplayName) + '">' +
+                        '<button id="communityNameSaveBtn" class="community-icon-btn" title="保存昵称" aria-label="保存昵称">✓</button>' +
+                        '<button id="communityNameCancelBtn" class="community-icon-btn" title="取消修改" aria-label="取消修改">×</button>' +
+                        '<div class="community-name-meta"><span id="communityNameFeedback">昵称将公开显示</span><span id="communityNameCount">' + Array.from(myDisplayName).length + '/16</span></div>' +
+                    '</div></div>' +
                     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">' +
                         '<span id="communitySyncFeedback" style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' + syncButton +
                     '</div>' +
@@ -2907,6 +3010,69 @@
                     }
                 });
             }
+
+            const editNameBtn = document.getElementById('communityNameEditBtn');
+            const identityView = document.getElementById('communityIdentityView');
+            const nameEditor = document.getElementById('communityNameEditor');
+            const nameInput = document.getElementById('communityNameInput');
+            const nameSaveBtn = document.getElementById('communityNameSaveBtn');
+            const nameCancelBtn = document.getElementById('communityNameCancelBtn');
+            const nameFeedback = document.getElementById('communityNameFeedback');
+            const nameCount = document.getElementById('communityNameCount');
+            const cancelNameEdit = () => {
+                nameInput.value = myDisplayName;
+                nameFeedback.className = '';
+                nameFeedback.textContent = '昵称将公开显示';
+                nameCount.textContent = Array.from(myDisplayName).length + '/16';
+                nameEditor.classList.remove('active');
+                identityView.style.display = 'flex';
+            };
+            const checkNameInput = () => {
+                nameCount.textContent = Array.from(nameInput.value).length + '/16';
+                const validation = validateCommunityDisplayName(nameInput.value);
+                nameFeedback.textContent = validation.error || '昵称将公开显示';
+                nameFeedback.className = validation.error ? 'community-name-error' : '';
+                return validation;
+            };
+            if (editNameBtn && !editNameBtn.disabled) {
+                editNameBtn.addEventListener('click', () => {
+                    identityView.style.display = 'none';
+                    nameEditor.classList.add('active');
+                    nameInput.focus();
+                    nameInput.select();
+                });
+            }
+            nameInput.addEventListener('input', checkNameInput);
+            nameCancelBtn.addEventListener('click', cancelNameEdit);
+            nameInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') cancelNameEdit();
+                if (event.key === 'Enter') nameSaveBtn.click();
+            });
+            nameSaveBtn.addEventListener('click', async () => {
+                const validation = checkNameInput();
+                if (validation.error) return;
+                nameSaveBtn.disabled = true;
+                nameCancelBtn.disabled = true;
+                nameInput.disabled = true;
+                nameFeedback.className = '';
+                nameFeedback.textContent = '正在保存...';
+                try {
+                    const response = await fetch(API_BASE + '/api/community/profile', {
+                        method: 'POST', cache: 'no-store', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({display_name: validation.value})
+                    });
+                    const result = await response.json();
+                    if (!result.ok) throw new Error(result.message || '昵称保存失败');
+                    await loadCommunity();
+                } catch (error) {
+                    nameSaveBtn.disabled = false;
+                    nameCancelBtn.disabled = false;
+                    nameInput.disabled = false;
+                    nameFeedback.className = 'community-name-error';
+                    nameFeedback.textContent = error.message;
+                    nameInput.focus();
+                }
+            });
         }
 
         document.getElementById('communityOpenBtn').addEventListener('click', () => {

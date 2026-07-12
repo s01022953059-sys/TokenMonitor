@@ -112,3 +112,24 @@ func TestCommunityLegacyIdentityRotatesAndRetries(t *testing.T) {
 		t.Fatalf("migration relation missing: %#v", requests)
 	}
 }
+
+func TestCommunityProfileUsesRelayCredential(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var received map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&received)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"status":"updated","display_name":"鹏帅","next_change_at":"2026-07-19T08:00:00Z"}`))
+	}))
+	defer server.Close()
+	t.Setenv("TOKEN_MONITOR_COMMUNITY_RELAY_URL", server.URL+"/v1/report")
+
+	result := updateCommunityProfile("鹏帅")
+	if !result.OK || result.DisplayName != "鹏帅" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if received["id"] == "" || received["device_secret"] == "" || received["display_name"] != "鹏帅" {
+		t.Fatalf("unexpected payload: %#v", received)
+	}
+}

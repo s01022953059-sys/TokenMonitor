@@ -82,6 +82,19 @@ func TestUpdatesWhenCredentialMatches(t *testing.T) {
 	}
 }
 
+func TestReportUpdatePreservesProfileFields(t *testing.T) {
+	secret, _ := base64.RawURLEncoding.DecodeString(testSecret())
+	hash := sha256.Sum256(secret)
+	store := &fakeStore{existing: &reportDocument{
+		ID: "User_TEST1", AuthHash: hex.EncodeToString(hash[:]),
+		DisplayName: "鹏帅", NameChangedAt: "2026-07-11T08:00:00Z",
+	}, sha: "existing-sha"}
+	response := performReport(t, store, testRequest())
+	if response.Code != http.StatusOK || store.written == nil || store.written.DisplayName != "鹏帅" || store.written.NameChangedAt != "2026-07-11T08:00:00Z" {
+		t.Fatalf("status=%d written=%#v", response.Code, store.written)
+	}
+}
+
 func TestRejectsWrongCredential(t *testing.T) {
 	store := &fakeStore{existing: &reportDocument{ID: "User_TEST1", AuthHash: "wrong"}, sha: "sha"}
 	response := performReport(t, store, testRequest())

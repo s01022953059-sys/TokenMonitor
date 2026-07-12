@@ -42,6 +42,15 @@ type CommunityReportResult struct {
 	ReportedAt string `json:"reported_at,omitempty"`
 }
 
+type CommunityProfileResult struct {
+	OK           bool   `json:"ok"`
+	Status       string `json:"status"`
+	Message      string `json:"message,omitempty"`
+	DisplayName  string `json:"display_name,omitempty"`
+	NextChangeAt string `json:"next_change_at,omitempty"`
+	Unchanged    bool   `json:"unchanged,omitempty"`
+}
+
 type communityCredential struct {
 	ID           string `json:"id"`
 	DeviceSecret string `json:"device_secret"`
@@ -73,13 +82,15 @@ func newCommunityID() string {
 }
 
 type communityReportData struct {
-	ID          string           `json:"id"`
-	AuthHash    string           `json:"auth_hash"`
-	ReplacesID  string           `json:"replaces_id"`
-	UpdatedAt   string           `json:"updated_at"`
-	ReportDate  string           `json:"report_date"`
-	TodayTokens int64            `json:"today_tokens"`
-	ByTool      map[string]int64 `json:"by_tool"`
+	ID            string           `json:"id"`
+	AuthHash      string           `json:"auth_hash"`
+	ReplacesID    string           `json:"replaces_id"`
+	DisplayName   string           `json:"display_name"`
+	NameChangedAt string           `json:"name_changed_at"`
+	UpdatedAt     string           `json:"updated_at"`
+	ReportDate    string           `json:"report_date"`
+	TodayTokens   int64            `json:"today_tokens"`
+	ByTool        map[string]int64 `json:"by_tool"`
 }
 
 func communityReportFingerprint(report communityReportData) string {
@@ -184,6 +195,14 @@ func communityRelayURL() string {
 		return value
 	}
 	return communityRelayDefault
+}
+
+func communityProfileURL() string {
+	value := communityRelayURL()
+	if strings.HasSuffix(value, "/v1/report") {
+		return strings.TrimSuffix(value, "/v1/report") + "/v1/profile"
+	}
+	return strings.TrimRight(value, "/") + "/v1/profile"
 }
 
 // isOptedIn 检查 opt-in 状态 (v1.4.12: 默认开启, 用户量小先自动收集)
@@ -306,6 +325,38 @@ func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
 
 	invalidateCommunityCache()
 	return CommunityReportResult{OK: true, Status: "synced", Message: result.Message, ReportedAt: result.ReportedAt}
+}
+
+func updateCommunityProfile(displayName string) CommunityProfileResult {
+	credential := getCommunityCredential()
+	payload := map[string]interface{}{
+		"id": credential.ID, "device_secret": credential.DeviceSecret, "display_name": displayName,
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, communityProfileURL(), bytes.NewReader(body))
+	if err != nil {
+		return CommunityProfileResult{Status: "relay_unavailable", Message: "昵称服务地址无效"}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return CommunityProfileResult{Status: "relay_unavailable", Message: "昵称服务暂时不可用：" + err.Error()}
+	}
+	defer resp.Body.Close()
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	var result CommunityProfileResult
+	if json.Unmarshal(responseBody, &result) != nil {
+		return CommunityProfileResult{Status: "relay_invalid_response", Message: "昵称服务返回格式异常"}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.OK = false
+	}
+	if result.OK {
+		invalidateCommunityCache()
+	}
+	return result
 }
 
 // getCommunityStats 获取社区聚合统计 (带缓存)
@@ -458,10 +509,11 @@ func getCommunityStats() map[string]interface{} {
 			}
 		}
 		entry := map[string]interface{}{
-			"id":     r.ID,
-			"tokens": r.TodayTokens,
-			"tool":   topTool,
-			"is_me":  r.ID == myID,
+			"id":           r.ID,
+			"display_name": r.DisplayName,
+			"tokens":       r.TodayTokens,
+			"tool":         topTool,
+			"is_me":        r.ID == myID,
 		}
 		leaderboard = append(leaderboard, entry)
 	}
@@ -501,8 +553,12 @@ func getCommunityStats() map[string]interface{} {
 	mySyncedToday := myReport != nil && reportDay(*myReport) == today
 	myTokens := int64(0)
 	myLastSyncedAt := ""
+	myDisplayName := ""
+	myNameChangedAt := ""
 	if myReport != nil {
 		myLastSyncedAt = myReport.UpdatedAt
+		myDisplayName = myReport.DisplayName
+		myNameChangedAt = myReport.NameChangedAt
 		if mySyncedToday {
 			myTokens = myReport.TodayTokens
 		}
@@ -542,6 +598,8 @@ func getCommunityStats() map[string]interface{} {
 		"my_synced_today":      mySyncedToday,
 		"my_report_found":      myReport != nil,
 		"my_last_synced_at":    myLastSyncedAt,
+		"my_display_name":      myDisplayName,
+		"my_name_changed_at":   myNameChangedAt,
 		"rank_status":          rankStatus,
 		"rank_message":         rankMessage,
 		"rank_total":           len(reportsToday),

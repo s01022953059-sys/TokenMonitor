@@ -5,8 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=nobody
-Group=nogroup
+DynamicUser=true
+StateDirectory=token-monitor-community
+StateDirectoryMode=0750
+UMask=0027
 EnvironmentFile=/etc/token-monitor-community.env
 ExecStart=/usr/local/bin/token-monitor-community-relay
 Restart=always
@@ -15,6 +17,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/var/lib/token-monitor-community
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
