@@ -508,9 +508,60 @@
             color: var(--text-main);
         }
 
-        /* About 弹窗里的更新操作按钮 */
+        /* About 弹窗里的统一更新区 */
+        .about-update-progress {
+            display: none;
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            background: var(--bg-subtle);
+        }
+        .about-update-progress.visible { display: block; }
+        .about-update-progress-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        .about-update-progress-label {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--text-main);
+            font-size: 11px;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .about-update-progress-value {
+            flex: none;
+            color: var(--text-muted);
+            font: 10px 'JetBrains Mono', monospace;
+        }
+        .about-update-progress-track {
+            width: 100%;
+            height: 6px;
+            overflow: hidden;
+            border-radius: 3px;
+            background: var(--border-card);
+        }
+        .about-update-progress-fill {
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--modal-line-color);
+            transition: width 0.3s ease;
+        }
+        .about-update-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0 18px;
+        }
         .primary-btn {
-            flex: 1;
+            width: 100%;
+            min-width: 0;
             padding: 10px 16px;
             border: 1px solid var(--tab-active-border);
             background: var(--tab-active-bg);
@@ -521,13 +572,15 @@
             cursor: pointer;
             transition: all 0.2s ease;
             font-family: inherit;
+            white-space: nowrap;
         }
         .primary-btn:hover {
             background: var(--btn-hover-accent);
             box-shadow: 0 4px 14px var(--btn-hover-shadow);
         }
         .secondary-btn {
-            flex: 1;
+            width: 100%;
+            min-width: 0;
             padding: 10px 16px;
             border: 1px solid var(--border-card);
             background: var(--bg-subtle);
@@ -538,6 +591,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
             font-family: inherit;
+            white-space: nowrap;
         }
         .secondary-btn:hover {
             background: var(--bg-subtle-hover);
@@ -748,6 +802,9 @@
 			#aboutModal .version-value {
 				overflow-wrap: break-word;
 				word-break: normal;
+			}
+			#aboutModal .about-update-actions {
+				grid-template-columns: 1fr 1fr;
 			}
 			#aboutModal td code {
 				overflow-wrap: anywhere;
@@ -1436,6 +1493,15 @@
                 <button id="aboutCloseBtn" class="close-btn">&times;</button>
             </div>
             <div class="about-body" style="padding: 0 24px 20px; max-height: 60vh; overflow-y: auto; font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
+                <div id="aboutUpdateProgress" class="about-update-progress" aria-live="polite">
+                    <div class="about-update-progress-head">
+                        <span id="aboutUpdateProgressLabel" class="about-update-progress-label">准备更新</span>
+                        <span id="aboutUpdateProgressText" class="about-update-progress-value">0%</span>
+                    </div>
+                    <div class="about-update-progress-track" role="progressbar" aria-label="更新进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="aboutUpdateProgressFill" class="about-update-progress-fill"></div>
+                    </div>
+                </div>
                 <div class="version-panel">
                     <div class="version-field">
                         <span class="version-label">当前版本</span>
@@ -1449,16 +1515,9 @@
                         </div>
                     </div>
                 </div>
-                <div id="aboutUpdateActions" style="display: flex; gap: 10px; margin: 14px 0 18px; flex-wrap: wrap; align-items: center;">
+                <div id="aboutUpdateActions" class="about-update-actions">
                     <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
                     <button id="aboutSnoozeBtn" class="secondary-btn" style="display: none;">稍后</button>
-                    <button id="aboutDownloadBtn" class="secondary-btn" style="display: none;">下载 zip</button>
-                    <div id="aboutUpdateProgress" style="display: none; flex: 1; min-width: 200px; gap: 8px; align-items: center;">
-                        <div style="flex: 1; height: 8px; background: var(--bg-subtle); border-radius: 4px; overflow: hidden;">
-                            <div id="aboutUpdateProgressFill" style="height: 100%; width: 0%; background: var(--modal-line-color); border-radius: 4px; transition: width 0.3s ease;"></div>
-                        </div>
-                        <span id="aboutUpdateProgressText" style="font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; white-space: nowrap;">0%</span>
-                    </div>
                 </div>
                 <p style="margin-bottom: 12px; color: var(--text-primary); font-size: 13px; font-weight: 600;">已支持平台</p>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -2269,18 +2328,14 @@
                             // 隐藏更新按钮, 但显示"取消稍后"
                             var ub = document.getElementById('aboutUpdateBtn');
                             var sb = document.getElementById('aboutSnoozeBtn');
-                            var db = document.getElementById('aboutDownloadBtn');
                             if (ub) ub.style.display = 'none';
                             if (sb) { sb.style.display = ''; sb.innerText = '取消稍后'; }
-                            if (db) db.style.display = 'none';
                         } else {
                             stateEl.innerText = `有新版本 v${latest} (当前 v${current})`;
                             var ub = document.getElementById('aboutUpdateBtn');
                             var sb = document.getElementById('aboutSnoozeBtn');
-                            var db = document.getElementById('aboutDownloadBtn');
                             if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + latest; }
                             if (sb) { sb.style.display = ''; sb.innerText = '稍后'; }
-                            if (db) db.style.display = '';
                         }
                         // 徽章加红点
                         var badge = document.getElementById('appVersionBadge');
@@ -2292,9 +2347,9 @@
                         stateEl.innerText = `已是最新版本 (v${current})`;
                         // 隐藏按钮
                         var ub2 = document.getElementById('aboutUpdateBtn');
-                        var db2 = document.getElementById('aboutDownloadBtn');
+                        var sb2 = document.getElementById('aboutSnoozeBtn');
                         if (ub2) { ub2.style.display = 'none'; ub2.disabled = false; }
-                        if (db2) db2.style.display = 'none';
+                        if (sb2) sb2.style.display = 'none';
                         // 移除徽章红点
                         var badge2 = document.getElementById('appVersionBadge');
                         if (badge2) {
@@ -2449,7 +2504,6 @@
             const aboutCloseBtn = document.getElementById('aboutCloseBtn');
             const appVersionBadge = document.getElementById('appVersionBadge');
             const aboutUpdateBtn = document.getElementById('aboutUpdateBtn');
-            const aboutDownloadBtn = document.getElementById('aboutDownloadBtn');
 
             aboutOpenBtn.addEventListener('click', () => {
                 aboutModal.classList.add('active');
@@ -2490,13 +2544,6 @@
                     window.__tmSetUpdateStatus('请在 Token Monitor 应用内使用自动更新', 'error');
                 }
             });
-            // 下载 zip → 调 Swift 端用默认浏览器打开 release 下载页
-            aboutDownloadBtn.addEventListener('click', () => {
-                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tokenMonitor) {
-                    window.webkit.messageHandlers.tokenMonitor.postMessage({ action: 'openUpdatePage' });
-                }
-            });
-
             // v1.4.11: 稍后 / 取消稍后
             const aboutSnoozeBtn = document.getElementById('aboutSnoozeBtn');
             if (aboutSnoozeBtn) {
@@ -2520,7 +2567,6 @@
                         }
                         // 隐藏更新按钮
                         aboutUpdateBtn.style.display = 'none';
-                        aboutDownloadBtn.style.display = 'none';
                         aboutSnoozeBtn.innerText = '取消稍后';
                         document.getElementById('aboutUpdateState').innerText =
                             stateText.replace(/有新版本/, '已稍后') + '';
@@ -2567,9 +2613,9 @@
                 }
                 // About 弹窗里显示按钮
                 const ub = document.getElementById('aboutUpdateBtn');
-                const db = document.getElementById('aboutDownloadBtn');
+                const sb = document.getElementById('aboutSnoozeBtn');
                 if (ub) { ub.style.display = ''; ub.disabled = false; ub.innerText = '立即更新到 v' + info.version; }
-                if (db) db.style.display = '';
+                if (sb) { sb.style.display = ''; sb.innerText = '稍后'; }
 				const state = document.getElementById('aboutUpdateState');
 				if (state) {
 					state.innerText = '有新版本 v' + info.version + (info.currentVersion ? ' (当前 v' + info.currentVersion + ')' : '');
@@ -2584,9 +2630,9 @@
                     badge.style.opacity = '0.7';
                 }
                 const ub = document.getElementById('aboutUpdateBtn');
-                const db = document.getElementById('aboutDownloadBtn');
+                const sb = document.getElementById('aboutSnoozeBtn');
                 if (ub) { ub.style.display = 'none'; ub.disabled = false; }
-                if (db) db.style.display = 'none';
+                if (sb) sb.style.display = 'none';
             };
         });
 
@@ -2596,10 +2642,15 @@
             var bar = document.getElementById('aboutUpdateProgress');
             var fill = document.getElementById('aboutUpdateProgressFill');
             var ptext = document.getElementById('aboutUpdateProgressText');
+			var label = document.getElementById('aboutUpdateProgressLabel');
+			var track = bar ? bar.querySelector('[role="progressbar"]') : null;
+			var safePct = Math.min(100, Math.max(0, Number(pct) || 0));
 			if (modal) modal.classList.add('active');
-            if (bar) bar.style.display = 'flex';
-            if (fill) fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
-            if (ptext) ptext.textContent = text || (Math.round(pct) + '%');
+            if (bar) bar.classList.add('visible');
+            if (fill) fill.style.width = safePct + '%';
+            if (label) label.textContent = text || '正在更新';
+            if (ptext) ptext.textContent = Math.round(safePct) + '%';
+			if (track) track.setAttribute('aria-valuenow', String(Math.round(safePct)));
         }
         window.__tmSetUpdateProgress = function(pct, text) { showUpdateProgress(pct, text); };
 		window.__tmSetUpdateStatus = function(text, kind) {
@@ -2623,7 +2674,7 @@
 		};
         window.__tmHideUpdateProgress = function() {
             var bar = document.getElementById('aboutUpdateProgress');
-            if (bar) bar.style.display = 'none';
+            if (bar) bar.classList.remove('visible');
         };
 
         // ===== 活动热力图 =====

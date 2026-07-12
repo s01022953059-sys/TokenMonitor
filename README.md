@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.22**。
+当前发布版本：**v1.4.23**。
 
 ## 功能
 
@@ -78,7 +78,7 @@
 
 - macOS：下载发布包、构建并替换 `.app`，然后自动重启
 - Windows：直接下载并校验 Release 中的 `TokenMonitor.exe`，退出旧进程后替换并重启
-- 所有检查结果、错误和下载进度统一显示在“关于 Token Monitor”窗口，不再使用独立更新弹窗
+- 所有更新入口统一打开“关于 Token Monitor”：进度条固定在更新区顶部，下方仅保留“立即更新”和“稍后”两个操作，不再使用独立更新弹窗
 - Release 同时保留 Windows ZIP，供首次安装或手动安装使用
 
 ### API 接口
@@ -207,7 +207,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.23/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -229,14 +229,14 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载 ZIP
 curl -L -o TokenMonitor-win.zip \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor-win.zip"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.23/TokenMonitor-win.zip"
 ```
 
 解压后双击 `TokenMonitor.exe`：
 - 打开独立 WebView2 仪表盘，不打开外部浏览器、不显示命令行窗口
 - 关闭窗口后继续驻留系统托盘，可从托盘重新显示或退出
 - 托盘菜单可启用“开机自启”，登录后只启动托盘
-- “关于 Token Monitor”内检查、下载和展示更新进度
+- “关于 Token Monitor”内统一检查、更新和展示进度；菜单栏“检查更新…”也直接进入该窗口
 
 调试接口仍可访问 http://127.0.0.1:15723 。
 首次运行需要按上面"绕过 SmartScreen"步骤.
@@ -351,11 +351,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.22](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.22)
+最新版本：[v1.4.23](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.23)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.23/Token%20Monitor.dmg)
+- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.23/TokenMonitor.exe)
+- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.23/TokenMonitor-win.zip)
 
 ## 发布与验证规则
 
@@ -369,6 +369,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、7 天冷却、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.23 (2026-07-12)
+
+- 所有更新入口统一进入 About，重做置顶进度条与“立即更新 / 稍后”双按钮布局
 
 ### v1.4.22 (2026-07-12)
 

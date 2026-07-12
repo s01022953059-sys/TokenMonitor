@@ -4,7 +4,7 @@
 
 ## 2026-07-10 最新补充
 
-- 当前已发布版本: v1.4.22
+- 当前已发布版本: v1.4.23
 - 数据源已扩展为五类: Codex 官方日志 / cc-switch / Antigravity / Hermes / WorkBuddy；Codex 不再依赖 cc-switch，WorkBuddy 改读项目 JSONL 的逐请求 usage，Antigravity 汇总文件仅识别不重复累加
 - 新增社区用量排行: 匿名 ID、今日聚合、完整个人排名、Top 10、工具占比、手动/每小时上报
 - 社区报告使用独立 `community-data` 分支, 避免自动上报污染 `main` 提交历史
@@ -45,7 +45,7 @@ Token Monitor 是跨平台本地仪表盘，macOS 使用 Swift + Python，Window
 - **内圈柔和化**: 去掉硬 border, 改 `inset box-shadow` 柔和光晕, radial-gradient 边缘柔过渡
 - **总量级别灯** (内圈背景按用量变色): <20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红
 - 历史趋势弹窗 (Chart.js, 7/14/30 天, 工具/模型维度)
-- About 弹窗 (4 个更新入口: NSAlert / 状态栏菜单 / 首页徽章 / About 按钮)
+- About 弹窗是唯一更新界面：菜单栏、首页徽章和 About 按钮均进入此处；进度条置顶，下方仅保留立即更新与稍后
 - 首页版本徽章: 有新版本时显示橙色脉冲红点, 点击打开 About
 
 ### 应用内自更新 (app_wrapper.swift + update_helper.sh)

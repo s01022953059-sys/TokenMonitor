@@ -224,7 +224,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
     @objc func checkForUpdatesFromMenu() {
         openAboutForUpdate(recheck: true)
-        checkForUpdates(silent: true)
     }
 
     private func openAboutForUpdate(recheck: Bool) {
@@ -473,12 +472,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 // checkForUpdates 可能还没跑过 (或跑过但没缓存)。
                 // 先主动检查一次, 拿到结果后再执行自动更新。
                 checkForUpdatesAndAutoUpdate()
-            }
-        case "openUpdatePage":
-            if let url = pendingUpdate?.downloadURL {
-                NSWorkspace.shared.open(url)
-            } else if let feedURL = configuredUpdateFeedURL() {
-                NSWorkspace.shared.open(feedURL)
             }
         default:
             break
