@@ -82,7 +82,12 @@ DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 def _is_allowed_profile_origin(origin: str, provided_token: str) -> bool:
     """Allow loopback pages and authenticated macOS file:// WebViews."""
     normalized_origin = (origin or "").strip().lower()
-    if normalized_origin == "null":
+    is_webview_local_origin = normalized_origin == "null" or (
+        bool(normalized_origin)
+        and not normalized_origin.startswith("http://")
+        and not normalized_origin.startswith("https://")
+    )
+    if is_webview_local_origin:
         return bool(LOCAL_API_TOKEN) and hmac.compare_digest(
             (provided_token or "").strip(), LOCAL_API_TOKEN
         )

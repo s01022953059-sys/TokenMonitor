@@ -135,6 +135,21 @@ try:
     raise AssertionError("昵称接口接受了无效请求")
 except urllib.error.HTTPError as exc:
     assert exc.code == 400, f"macOS file 合法凭据未通过来源校验: {exc.code}"
+
+authenticated_file_url_origin = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/community/profile",
+    data=json.dumps({}).encode(), method="POST",
+    headers={
+        "Content-Type": "application/json",
+        "Origin": "file://",
+        "X-Token-Monitor-Client": "verify-local-token",
+    },
+)
+try:
+    urllib.request.urlopen(authenticated_file_url_origin, timeout=15)
+    raise AssertionError("昵称接口接受了无效请求")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 400, f"macOS file:// 合法凭据未通过来源校验: {exc.code}"
 print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=90, sessions={len(sessions['sessions'])}")
 PY
 kill "$SERVER_PID" 2>/dev/null || true

@@ -14,12 +14,22 @@ class ProfileOriginSecurityTests(unittest.TestCase):
     def tearDown(self):
         server.LOCAL_API_TOKEN = self.original_token
 
-    def test_authenticated_file_webview_is_allowed(self):
-        self.assertTrue(server._is_allowed_profile_origin("null", "local-test-token"))
+    def test_authenticated_file_webview_origins_are_allowed(self):
+        for origin in (
+            "null",
+            "file://",
+            "file:///Users/test/Applications/Token%20Monitor.app/Contents/Resources/index.html",
+            "applewebdata://local/index.html",
+            "webkit-masked-url://local/index.html",
+        ):
+            with self.subTest(origin=origin):
+                self.assertTrue(server._is_allowed_profile_origin(origin, "local-test-token"))
 
     def test_unauthenticated_file_webview_is_rejected(self):
-        self.assertFalse(server._is_allowed_profile_origin("null", ""))
-        self.assertFalse(server._is_allowed_profile_origin("null", "wrong-token"))
+        for origin in ("null", "file://", "file:///tmp/index.html", "applewebdata://local/index.html", "webkit-masked-url://local/index.html"):
+            with self.subTest(origin=origin):
+                self.assertFalse(server._is_allowed_profile_origin(origin, ""))
+                self.assertFalse(server._is_allowed_profile_origin(origin, "wrong-token"))
 
     def test_loopback_origin_remains_allowed(self):
         self.assertTrue(server._is_allowed_profile_origin("http://127.0.0.1:15723", ""))
