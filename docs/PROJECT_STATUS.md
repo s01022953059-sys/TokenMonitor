@@ -4,7 +4,7 @@
 
 ## 2026-07-10 最新补充
 
-- 当前已发布版本: v1.4.24
+- 当前已发布版本: v1.4.25
 - 数据源已扩展为五类: Codex 官方日志 / cc-switch / Antigravity / Hermes / WorkBuddy；Codex 不再依赖 cc-switch，WorkBuddy 改读项目 JSONL 的逐请求 usage，Antigravity 汇总文件仅识别不重复累加
 - 新增社区用量排行: 匿名 ID、今日聚合、完整个人排名、Top 10、工具占比、手动/每小时上报
 - 社区报告使用独立 `community-data` 分支, 避免自动上报污染 `main` 提交历史
