@@ -39,7 +39,7 @@
 - **两版功能完全对齐**: Codex 官方日志 + cc-switch / Antigravity / Hermes / WorkBuddy 扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
 - **前端同一份** index.html + chart.js, go_build/static/ 是同步副本
 
-## 社区昵称设计 (2026-07-12, 已实现待发布)
+## 社区昵称设计 (2026-07-12, v1.4.22)
 
 - 公开昵称与不可变匿名 ID 分离；改名不得创建新身份或影响历史用量、排名与设备凭据。
 - 字符规则: 中文、ASCII 英文字母、数字、下划线，NFKC 后 2–16 字，至少包含中文或英文字母。
@@ -120,6 +120,10 @@
 - release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
+
+### v1.4.22 (2026-07-12)
+- 社区页支持原地修改公开昵称，底层匿名 ID 与设备凭据保持不变
+- VPS SQLite 提供全局重名、7 天冷却和旧名 30 天保护，并拦截冒充、风险名称、联系方式与跨站请求
 
 ### v1.4.21 (2026-07-12)
 - 对齐 AgentsView 与本机原始日志，修复 Codex、WorkBuddy、Hermes、缓存 Token 和跨源去重的统计口径

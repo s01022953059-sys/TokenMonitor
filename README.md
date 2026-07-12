@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.21**。
+当前发布版本：**v1.4.22**。
 
 ## 功能
 
@@ -68,7 +68,7 @@
 - 每台设备首次生成仅保存在本机的随机凭据，用于保护匿名 ID，避免其他设备覆盖该用户的统计
 - macOS 与 Windows 新生成的匿名 ID 统一为 `User_` 加 8 位大写字母或数字；旧版短 ID 会在首次安全迁移后换成统一格式
 - 旧版无凭据身份迁移时，新报告会记录被替代的旧 ID；之后即使 Token 继续增长，旧报告也不再参与用户数、排名和总量统计
-- 主分支已支持在社区页原地修改公开昵称：昵称与底层匿名 ID 分离，排行榜优先显示昵称，失败不会改变原名称（待鹏帅明确要求后随下一版本发布）
+- 社区页支持原地修改公开昵称：昵称与底层匿名 ID 分离，排行榜优先显示昵称，失败不会改变原名称
 - 昵称允许中文、英文字母、数字和下划线，长度 2–16 字；全社区大小写不敏感唯一，首次设置后每 7 天可改一次，旧昵称保护 30 天
 - VPS 统一拦截官方身份冒充、不可见字符、风险词、网址和联系方式；浏览器不接触设备凭据
 - 本地改名接口仅接受同源 JSON POST，拒绝第三方网页跨站调用，避免借用本机设备凭据修改昵称
@@ -207,7 +207,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.21/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -229,7 +229,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载 ZIP
 curl -L -o TokenMonitor-win.zip \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.21/TokenMonitor-win.zip"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor-win.zip"
 ```
 
 解压后双击 `TokenMonitor.exe`：
@@ -351,11 +351,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.21](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.21)
+最新版本：[v1.4.22](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.22)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.21/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.21/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.21/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/Token%20Monitor.dmg)
+- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor.exe)
+- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.22/TokenMonitor-win.zip)
 
 ## 发布与验证规则
 
@@ -369,6 +369,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、7 天冷却、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.22 (2026-07-12)
+
+- 新增社区公开昵称原地编辑，并加入全局重名检测、7 天冷却、旧名保护、风险名称和跨站请求防护
 
 ### v1.4.21 (2026-07-12)
 
