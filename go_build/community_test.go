@@ -38,6 +38,27 @@ func TestNewCommunityIDIsAlwaysEightCharacters(t *testing.T) {
 	}
 }
 
+func TestLegacyOptOutIsMigratedToAutomaticMembership(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".token_monitor")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "community_optin.txt")
+	if err := os.WriteFile(path, []byte("false"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !isOptedIn() {
+		t.Fatal("legacy opt-out still disabled automatic community membership")
+	}
+	setOptIn(false)
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "true" {
+		t.Fatalf("legacy opt-in file was not migrated: %q, %v", data, err)
+	}
+}
+
 func TestDedupeLegacyIdentityReports(t *testing.T) {
 	reports := []communityReportData{
 		{ID: "User_OLD01", ReportDate: "2026-07-12", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}},

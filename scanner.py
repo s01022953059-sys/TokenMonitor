@@ -156,9 +156,9 @@ def _cc_token_breakdown(app_type, input_tokens, output_tokens, cache_read, cache
 def scan_cc_switch_logs(today_start):
     """只读扫描 cc-switch 数据库中今天的 API 请求记录，提取包含缓存细节的高精度 Token 消耗。
 
-    使用 provider_id 和 data_source 修正模型名, 确保统计的是真实使用的模型:
-    - proxy 来源: model 字段已是实际后端模型, 直接用
-    - codex_session 来源: model 是客户端声明名, 用当前激活 provider 的实际模型覆盖
+    优先使用每条请求记录的 model。仅当 provider_id 明确指向真实 provider 时，
+    才使用该 provider 的配置模型；不能用“当前激活模型”覆盖历史 codex_session，
+    否则切换模型后会把当天早先的 GPT-5.6 全部改写成当前 GPT-5.5。
     """
     logs_data = []
 
@@ -180,7 +180,7 @@ def scan_cc_switch_logs(today_start):
         rows = cursor.fetchall()
         conn.close()
 
-        provider_model_map, active_model_by_app = _load_provider_model_map()
+        provider_model_map = _load_provider_model_map()
 
         for created_at, app_type, model, input_t, output_t, cache_read_t, cache_creation_t, provider_id, data_source in rows:
             local_time = datetime.datetime.fromtimestamp(created_at).strftime("%H:%M:%S")
@@ -188,14 +188,7 @@ def scan_cc_switch_logs(today_start):
                 app_type, input_t, output_t, cache_read_t, cache_creation_t
             )
 
-            # 模型修正: codex_session 来源的 model 是声明名, 不可信
-            actual_model = model
-            if provider_id and provider_id in provider_model_map:
-                actual_model = provider_model_map[provider_id]
-            elif data_source == "codex_session" or provider_id == "_codex_session":
-                active_model = active_model_by_app.get(app_type)
-                if active_model:
-                    actual_model = active_model
+            actual_model = _resolve_cc_model(provider_id, model, provider_model_map)
 
             logs_data.append({
                 "time": local_time,
@@ -423,35 +416,23 @@ def _normalize_app_type(app_type):
     return "Other"
 
 def _load_provider_model_map():
-    """从 cc-switch 数据库加载两层模型映射。
+    """加载明确 provider_id 对应的配置模型。
 
-    返回 (provider_model_map, active_model_by_app):
-    - provider_model_map: {provider_id: actual_model}
-      从 providers 表的 settings_config.config 解析每个 provider 实际配置的模型。
-    - active_model_by_app: {app_type: actual_model}
-      每个 app_type 当前激活 (is_current=1) 的 provider 实际配置的模型。
-      用于修正 _codex_session 等内部路径的声明模型。
-
-    背景: cc-switch 的 proxy_request_logs 有两种数据来源:
-    1. data_source='proxy': 请求经过 cc-switch 代理转发, model 字段记的是
-       实际转发到后端的模型 (已替换), 可以信任。
-    2. data_source='codex_session': cc-switch 从 ~/.codex/sessions/ 同步的
-       Codex 会话日志, model 字段记的是 Codex 客户端声明的模型名 (如 gpt-5.5),
-       不是实际后端模型。需要用当前激活的 Codex provider 模型来覆盖。
+    `_codex_session` 不指向具体 provider，必须保留事件自身模型；当前激活配置
+    只能代表此刻，不能用于改写当天早先或历史会话。
     """
     provider_model_map = {}
-    active_model_by_app = {}
     if not os.path.exists(CC_SWITCH_DB_PATH):
-        return provider_model_map, active_model_by_app
+        return provider_model_map
 
     try:
         conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT id, app_type, settings_config, is_current FROM providers")
+        cursor.execute("SELECT id, settings_config FROM providers")
         rows = cursor.fetchall()
         conn.close()
 
-        for provider_id, app_type, cfg_raw, is_current in rows:
+        for provider_id, cfg_raw in rows:
             if not cfg_raw:
                 continue
             try:
@@ -468,13 +449,18 @@ def _load_provider_model_map():
                     if m:
                         model_name = m.group(1)
                         provider_model_map[provider_id] = model_name
-                        if is_current:
-                            active_model_by_app[app_type] = model_name
                     break
     except Exception as e:
         print(f"[-] 加载 provider 模型映射出错: {e}")
 
-    return provider_model_map, active_model_by_app
+    return provider_model_map
+
+
+def _resolve_cc_model(provider_id, raw_model, provider_model_map):
+    """Resolve an event model without rewriting historical session rows."""
+    if provider_id and provider_id != "_codex_session" and provider_id in provider_model_map:
+        return provider_model_map[provider_id]
+    return raw_model
 
 def _get_ccswitch_today_models():
     """从 cc-switch.db 拿今天出现过的 model 集合, 用于 Antigravity 去重判断。
@@ -827,20 +813,14 @@ def _get_historical_usage_legacy(days=30):
         return _normalize_app_type(app_type)
 
     # 加载 provider_id -> 实际配置模型的映射 + app_type -> 当前激活 provider 模型
-    provider_model_map, active_model_by_app = _load_provider_model_map()
+    provider_model_map = _load_provider_model_map()
 
     # 第一阶段: 扫描所有数据源, 收集实际出现的模型名 (经过 provider 修正 + normalize_model_name)
     all_model_names = set()
 
     def resolve_model(provider_id, raw_model, data_source=None, app_type=None):
         """用 provider 实际配置的模型覆盖声明模型, 再做归一化。"""
-        actual_model = raw_model
-        if provider_id and provider_id in provider_model_map:
-            actual_model = provider_model_map[provider_id]
-        elif data_source == "codex_session" or provider_id == "_codex_session":
-            active_model = active_model_by_app.get(app_type)
-            if active_model:
-                actual_model = active_model
+        actual_model = _resolve_cc_model(provider_id, raw_model, provider_model_map)
         return normalize_model_name(actual_model)
 
     # --- 扫描 cc-switch 收集模型名 ---
@@ -1070,7 +1050,7 @@ def get_session_list(days=1, page=1, page_size=50):
     events = []
 
     # --- cc-switch ---
-    provider_model_map, active_model_by_app = _load_provider_model_map()
+    provider_model_map = _load_provider_model_map()
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
             conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
@@ -1088,13 +1068,7 @@ def get_session_list(days=1, page=1, page_size=50):
                     app_type, model, provider_id, data_source, latency_ms, sess_id = row
 
                 # 解析实际模型 (同 get_today_usage 逻辑)
-                actual_model = model
-                if provider_id and provider_id in provider_model_map:
-                    actual_model = provider_model_map[provider_id]
-                elif data_source == "codex_session" or provider_id == "_codex_session":
-                    active_model = active_model_by_app.get(app_type)
-                    if active_model:
-                        actual_model = active_model
+                actual_model = _resolve_cc_model(provider_id, model, provider_model_map)
                 actual_model = normalize_model_name(actual_model)
 
                 # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)
@@ -1379,7 +1353,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
     events = []
 
     # --- cc-switch ---
-    provider_model_map, active_model_by_app = _load_provider_model_map()
+    provider_model_map = _load_provider_model_map()
     if os.path.exists(CC_SWITCH_DB_PATH):
         try:
             conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
@@ -1404,13 +1378,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
                     if dt.weekday() != weekday or dt.hour != hour:
                         continue
 
-                actual_model = model
-                if provider_id and provider_id in provider_model_map:
-                    actual_model = provider_model_map[provider_id]
-                elif data_source == "codex_session" or provider_id == "_codex_session":
-                    active_model = active_model_by_app.get(app_type)
-                    if active_model:
-                        actual_model = active_model
+                actual_model = _resolve_cc_model(provider_id, model, provider_model_map)
                 actual_model = normalize_model_name(actual_model)
 
                 # 工具归一化 (统一函数, 跟首页大屏 by_tool 保持同名)

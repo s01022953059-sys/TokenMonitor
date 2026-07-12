@@ -10,6 +10,17 @@ import scanner
 
 
 class ScannerAccuracyTests(unittest.TestCase):
+    def test_codex_session_keeps_event_model_after_provider_switch(self):
+        provider_models = {"current-provider": "gpt-5.5"}
+        self.assertEqual(
+            scanner._resolve_cc_model("_codex_session", "gpt-5.6-sol", provider_models),
+            "gpt-5.6-sol",
+        )
+        self.assertEqual(
+            scanner._resolve_cc_model("current-provider", "gpt-declared", provider_models),
+            "gpt-5.5",
+        )
+
     def test_cc_switch_handles_anthropic_and_openai_cache_semantics(self):
         anthropic = scanner._cc_token_breakdown("claude", 100, 30, 500, 20)
         openai = scanner._cc_token_breakdown("codex", 1_000, 50, 600, 0)

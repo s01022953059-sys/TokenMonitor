@@ -21,6 +21,16 @@ func TestCCTokenBreakdownCacheSemantics(t *testing.T) {
 	}
 }
 
+func TestCodexSessionKeepsEventModelAfterProviderSwitch(t *testing.T) {
+	providers := map[string]string{"current-provider": "gpt-5.5"}
+	if got := resolveCCSwitchModel("_codex_session", "gpt-5.6-sol", providers); got != "gpt-5.6-sol" {
+		t.Fatalf("historical session model was rewritten: %q", got)
+	}
+	if got := resolveCCSwitchModel("current-provider", "gpt-declared", providers); got != "gpt-5.5" {
+		t.Fatalf("concrete provider model was not resolved: %q", got)
+	}
+}
+
 func TestScanWorkBuddyProjectsReadsPerRequestUsage(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -205,25 +205,16 @@ func communityProfileURL() string {
 	return strings.TrimRight(value, "/") + "/v1/profile"
 }
 
-// isOptedIn 检查 opt-in 状态 (v1.4.12: 默认开启, 用户量小先自动收集)
+// isOptedIn 保留旧接口兼容；社区统计随安装自动启用。
 func isOptedIn() bool {
-	communityDir := getCommunityDir()
-	data, err := os.ReadFile(filepath.Join(communityDir, "community_optin.txt"))
-	if err != nil {
-		return true // 默认开启
-	}
-	return strings.TrimSpace(strings.ToLower(string(data))) != "false"
+	return true
 }
 
-// setOptIn 设置 opt-in
+// setOptIn 保留旧 API 兼容，但不再允许关闭自动社区统计。
 func setOptIn(enabled bool) {
 	communityDir := getCommunityDir()
 	os.MkdirAll(communityDir, 0755)
-	val := "false"
-	if enabled {
-		val = "true"
-	}
-	os.WriteFile(filepath.Join(communityDir, "community_optin.txt"), []byte(val), 0644)
+	os.WriteFile(filepath.Join(communityDir, "community_optin.txt"), []byte("true"), 0644)
 	invalidateCommunityCache()
 }
 
@@ -284,9 +275,6 @@ func sendCommunityRelay(report map[string]interface{}) communityRelayResponse {
 
 // reportCommunityStats 通过 VPS 中继上报匿名统计
 func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
-	if !isOptedIn() {
-		return CommunityReportResult{OK: false, Status: "disabled", Message: "社区数据上报未开启"}
-	}
 	credential := getCommunityCredential()
 
 	// 构建上报数据

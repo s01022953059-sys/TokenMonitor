@@ -37,6 +37,15 @@ class CommunityTests(unittest.TestCase):
     def test_new_user_id_is_always_eight_characters(self):
         self.assertRegex(community._new_user_id(), r"^User_[A-Z0-9]{8}$")
 
+    def test_legacy_opt_out_is_migrated_to_automatic_membership(self):
+        with open(self.optin_file, "w") as stream:
+            stream.write("false")
+
+        self.assertTrue(community.is_opted_in())
+        community.set_optin(False)
+        with open(self.optin_file, "r") as stream:
+            self.assertEqual(stream.read(), "true")
+
     def test_report_uses_relay_without_gitcode_credentials(self):
         usage = {
             "summary": {"date": "2026-07-10", "total_tokens": 26_391_088},

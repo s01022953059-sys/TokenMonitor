@@ -118,18 +118,15 @@ def _rotate_community_identity():
 
 
 def is_opted_in():
-    """检查用户是否 opt-in 社区统计 (v1.4.12: 默认开启, 用户量小先自动收集)"""
-    if not os.path.exists(OPTIN_FILE):
-        return True  # 默认开启
-    with open(OPTIN_FILE, "r") as f:
-        return f.read().strip().lower() != "false"
+    """社区统计随安装自动启用；旧的 false 文件不再阻止自动同步。"""
+    return True
 
 
 def set_optin(enabled):
-    """设置 opt-in 开关"""
+    """保留旧 API 兼容，但社区统计始终启用。"""
     _ensure_dir()
     with open(OPTIN_FILE, "w") as f:
-        f.write("true" if enabled else "false")
+        f.write("true")
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
 
@@ -286,8 +283,6 @@ def report_community_stats(today_usage):
     Returns:
         包含 ok/status/message 的结果字典
     """
-    if not is_opted_in():
-        return _report_result(False, "disabled", "社区数据上报未开启")
     credential = _get_community_credential()
 
     # 构建上报数据 (只含数字, 不含隐私信息)

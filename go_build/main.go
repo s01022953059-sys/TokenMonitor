@@ -332,18 +332,16 @@ func fetchDeepSeekBalance() BalanceInfo {
 
 var providerModelPattern = regexp.MustCompile(`(?m)^\s*model\s*=\s*["']([^"']+)["']`)
 
-func loadProviderModelMaps(db *sql.DB) (map[string]string, map[string]string) {
+func loadProviderModelMap(db *sql.DB) map[string]string {
 	byProvider := map[string]string{}
-	activeByApp := map[string]string{}
-	rows, err := db.Query(`SELECT id, app_type, settings_config, is_current FROM providers`)
+	rows, err := db.Query(`SELECT id, settings_config FROM providers`)
 	if err != nil {
-		return byProvider, activeByApp
+		return byProvider
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, appType, raw string
-		var current bool
-		if rows.Scan(&id, &appType, &raw, &current) != nil {
+		var id, raw string
+		if rows.Scan(&id, &raw) != nil {
 			continue
 		}
 		var settings struct {
@@ -357,11 +355,8 @@ func loadProviderModelMaps(db *sql.DB) (map[string]string, map[string]string) {
 			continue
 		}
 		byProvider[id] = match[1]
-		if current {
-			activeByApp[appType] = match[1]
-		}
 	}
-	return byProvider, activeByApp
+	return byProvider
 }
 
 func ccTokenBreakdown(appType string, input, output, cacheRead, cacheCreate int64) (int64, int64, int64, int64) {
@@ -382,6 +377,15 @@ func ccTokenBreakdown(appType string, input, output, cacheRead, cacheCreate int6
 	return input, input + output, cached, input - cached
 }
 
+func resolveCCSwitchModel(providerID, rawModel string, providerModels map[string]string) string {
+	if providerID != "" && providerID != "_codex_session" {
+		if configured := providerModels[providerID]; configured != "" {
+			return configured
+		}
+	}
+	return rawModel
+}
+
 // 1. cc-switch
 func scanCCSwitchLogs(todayStart int64) []LogEntry {
 	dbPath := ccSwitchDBPath()
@@ -394,7 +398,7 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 		return nil
 	}
 	defer db.Close()
-	providerModels, activeModels := loadProviderModelMaps(db)
+	providerModels := loadProviderModelMap(db)
 
 	rows, err := db.Query(`
 		SELECT created_at, app_type, model, input_tokens, output_tokens, cache_read_tokens,
@@ -426,14 +430,7 @@ func scanCCSwitchLogs(todayStart int64) []LogEntry {
 		// 工具归一化 (跟 Python _normalize_app_type 保持一致, 避免首页/详情名字不一致)
 		tool := normalizeAppTypeForCCSwitch(appType.String)
 
-		actualModel := model.String
-		if configured := providerModels[providerID.String]; configured != "" {
-			actualModel = configured
-		} else if dataSource.String == "codex_session" || providerID.String == "_codex_session" {
-			if configured := activeModels[appType.String]; configured != "" {
-				actualModel = configured
-			}
-		}
+		actualModel := resolveCCSwitchModel(providerID.String, model.String, providerModels)
 		m := normalizeModelName(actualModel)
 
 		logs = append(logs, LogEntry{
@@ -2116,14 +2113,12 @@ func main() {
 
 	server := &http.Server{Addr: addr}
 
-	// v1.4.12: 社区统计自动上报 (opt-in 默认开启, 每 1 小时)
+	// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
 	go func() {
-		time.Sleep(30 * time.Second)
+		time.Sleep(5 * time.Second)
 		for {
-			if isOptedIn() {
-				usage := getTodayUsage()
-				reportCommunityStats(&usage)
-			}
+			usage := getTodayUsage()
+			reportCommunityStats(&usage)
 			time.Sleep(1 * time.Hour)
 		}
 	}()

@@ -532,15 +532,14 @@ def main():
     print(f"[+] Token Monitor 仪表盘已启动: http://127.0.0.1:{PORT}")
     print(f"[+] 更新源 (TokenMonitorUpdateFeedURL): {feed_status}")
 
-    # v1.4.12: 社区统计自动上报 (opt-in 默认开启, 每 1 小时上报一次)
+    # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
     import threading
     def _community_report_loop():
         import time as _time
-        _time.sleep(30)  # 启动后 30 秒再首次上报, 给 server 时间就绪
+        _time.sleep(5)
         while True:
             try:
-                if is_opted_in():
-                    report_community_stats(get_today_usage())
+                report_community_stats(get_today_usage())
             except Exception:
                 pass
             _time.sleep(3600)  # 每小时
