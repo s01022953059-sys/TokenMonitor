@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.26**。
+当前发布版本：**v1.4.27**。
 
 ## 功能
 
@@ -61,7 +61,7 @@
 
 - 社区 Dashboard 内展示本机 `User_XXXXX` 匿名 ID、同步状态与排行，不再保留重复的独立 ID 入口
 - 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每小时同步；无需手动加入，“立即同步”仅用于网络失败重试
-- 展示今日社区总用量、今日参与用户、个人今日用量、完整个人排名和 Top 10
+- 展示今日社区总用量、今日参与用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
 - 状态明确区分“等待首次同步”“今日第 N 名”“已同步但未进前十”和“无法上报”
 - 启动约 30 秒后首次自动上报，之后每小时一次；页面聚合结果最多缓存 5 分钟
 - 社区报告写入独立的 `community-data` 分支，不污染 `main` 代码提交历史
@@ -70,7 +70,7 @@
 - macOS 与 Windows 新生成的匿名 ID 统一为 `User_` 加 8 位大写字母或数字；旧版短 ID 会在首次安全迁移后换成统一格式
 - 旧版无凭据身份迁移时，新报告会记录被替代的旧 ID；之后即使 Token 继续增长，旧报告也不再参与用户数、排名和总量统计
 - 社区页支持原地修改公开昵称：昵称与底层匿名 ID 分离，排行榜优先显示昵称，失败不会改变原名称
-- 昵称允许中文、英文字母、数字和下划线，长度 2–16 字；全社区大小写不敏感唯一，首次设置后每 7 天可改一次，旧昵称保护 30 天
+- 昵称允许中文、英文字母、数字和下划线，长度 2–16 字；全社区大小写不敏感唯一，滚动 24 小时最多修改 3 次，旧昵称保护 30 天
 - VPS 统一拦截官方身份冒充、不可见字符、风险词、网址和联系方式；浏览器不接触设备凭据
 - 本地改名接口仅接受同源 JSON POST，拒绝第三方网页跨站调用，避免借用本机设备凭据修改昵称
 - 不上传对话内容、模型名称、时间戳明细、文件路径或个人信息
@@ -210,7 +210,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.26/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.27/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -232,7 +232,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载 ZIP
 curl -L -o TokenMonitor-win.zip \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.26/TokenMonitor-win.zip"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.27/TokenMonitor-win.zip"
 ```
 
 解压后双击 `TokenMonitor.exe`：
@@ -354,11 +354,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.26](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.26)
+最新版本：[v1.4.27](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.27)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.26/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.26/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.26/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.27/Token%20Monitor.dmg)
+- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.27/TokenMonitor.exe)
+- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.27/TokenMonitor-win.zip)
 
 ## 发布与验证规则
 
@@ -369,9 +369,14 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - Windows 注册表自启、退出替换和重启属于系统行为，正式发布前仍需在真实 Windows 机器完成一次验收
 - `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG、EXE、ZIP，任一项失败就终止发布
 - 社区功能变更还必须验证 VPS 健康检查、两个独立匿名用户的新建与更新、错误凭据拒绝，以及 GitCode `community-data` 分支可读回；任一项失败不发布
-- 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、7 天冷却、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
+- 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.27 (2026-07-12)
+
+- 修正 GPT-5.6 历史事件归类；安装后自动加入社区统计，并通过 VPS 中继同步身份与公开昵称
+- 社区昵称改为滚动 24 小时最多修改 3 次，达到限额后明确提示下次可修改时间
 
 ### v1.4.26 (2026-07-12)
 

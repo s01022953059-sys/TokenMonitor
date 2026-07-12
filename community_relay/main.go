@@ -207,10 +207,14 @@ func (h *relayHandler) handleProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, typed.status, payload)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	payload := map[string]interface{}{
 		"ok": true, "status": "updated", "display_name": result.DisplayName,
-		"next_change_at": result.NextChangeAt.UTC().Format(time.RFC3339), "unchanged": result.NoChange,
-	})
+		"unchanged": result.NoChange,
+	}
+	if !result.NextChangeAt.IsZero() {
+		payload["next_change_at"] = result.NextChangeAt.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func sameReportContent(previous reportDocument, request reportRequest) bool {

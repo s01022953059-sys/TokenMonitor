@@ -20,7 +20,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const renameCooldown = 7 * 24 * time.Hour
+const renameWindow = 24 * time.Hour
+const maxRenamesPerWindow = 3
 const oldNameProtection = 30 * 24 * time.Hour
 
 var phonePattern = regexp.MustCompile(`[0-9]{11}`)
@@ -81,6 +82,14 @@ func openProfileDatabase(path string) (*profileDatabase, error) {
 			owner_id TEXT NOT NULL,
 			reserved_until TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS profile_changes (
+			user_id TEXT NOT NULL,
+			changed_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, changed_at)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_profile_changes_user_time ON profile_changes(user_id, changed_at)`,
+		`INSERT OR IGNORE INTO profile_changes(user_id, changed_at)
+			SELECT user_id, changed_at FROM profiles`,
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			db.Close()
@@ -229,16 +238,22 @@ func (p *profileDatabase) updateName(ctx context.Context, userID, displayName, c
 		return profileResult{}, false, err
 	}
 	if profileExists && currentCanonical == canonicalName {
-		changedAt, _ := time.Parse(time.RFC3339, changedAtRaw)
 		_, _ = connection.ExecContext(ctx, "ROLLBACK")
 		committed = true
-		return profileResult{DisplayName: currentName, Canonical: currentCanonical, NextChangeAt: changedAt.Add(renameCooldown), NoChange: true}, false, nil
+		return profileResult{DisplayName: currentName, Canonical: currentCanonical, NoChange: true}, false, nil
 	}
 	if profileExists {
-		changedAt, parseErr := time.Parse(time.RFC3339, changedAtRaw)
-		if parseErr == nil && now.Before(changedAt.Add(renameCooldown)) {
+		cutoff := now.Add(-renameWindow).UTC().Format(time.RFC3339)
+		var renameCount int
+		var oldestRaw string
+		if err := connection.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(MIN(changed_at), '')
+			FROM profile_changes WHERE user_id = ? AND changed_at > ?`, userID, cutoff).Scan(&renameCount, &oldestRaw); err != nil {
+			return profileResult{}, false, err
+		}
+		if renameCount >= maxRenamesPerWindow {
+			oldest, _ := time.Parse(time.RFC3339, oldestRaw)
 			return profileResult{}, false, &profileError{
-				status: 429, code: "rename_cooldown", message: "昵称每 7 天可以修改一次", nextChangeAt: changedAt.Add(renameCooldown),
+				status: 429, code: "rename_rate_limited", message: "24 小时内最多修改 3 次", nextChangeAt: oldest.Add(renameWindow),
 			}
 		}
 	}
@@ -259,7 +274,7 @@ func (p *profileDatabase) updateName(ctx context.Context, userID, displayName, c
 		return profileResult{}, false, err
 	}
 
-	nowRaw := now.UTC().Format(time.RFC3339)
+	nowRaw := now.UTC().Format(time.RFC3339Nano)
 	createdAt := nowRaw
 	if profileExists {
 		createdAt = createdAtRaw
@@ -275,6 +290,9 @@ func (p *profileDatabase) updateName(ctx context.Context, userID, displayName, c
 		}
 		return profileResult{}, false, err
 	}
+	if _, err := connection.ExecContext(ctx, "INSERT INTO profile_changes(user_id, changed_at) VALUES(?, ?)", userID, nowRaw); err != nil {
+		return profileResult{}, false, err
+	}
 	if err := syncReport(); err != nil {
 		return profileResult{}, false, &profileError{status: 502, code: "upload_failed", message: "昵称同步失败，请稍后重试"}
 	}
@@ -282,7 +300,7 @@ func (p *profileDatabase) updateName(ctx context.Context, userID, displayName, c
 		return profileResult{}, true, err
 	}
 	committed = true
-	return profileResult{DisplayName: displayName, Canonical: canonicalName, NextChangeAt: now.Add(renameCooldown)}, true, nil
+	return profileResult{DisplayName: displayName, Canonical: canonicalName}, true, nil
 }
 
 func profileDatabasePath() string {

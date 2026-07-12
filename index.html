@@ -2970,8 +2970,6 @@
             const container = document.getElementById('communityContainer');
             const myId = data.my_id || '';
             const myDisplayName = data.my_display_name || '';
-            const nameChangedAt = data.my_name_changed_at || '';
-            const optedIn = Boolean(data.opted_in);
             const canReport = Boolean(data.can_report);
             const mySyncedToday = Boolean(data.my_synced_today);
             const totalUsers = data.total_users || 0;
@@ -3012,14 +3010,7 @@
 
             const statusColor = rankStatus === 'ranked' ? 'var(--neon-green)' :
                 (rankStatus === 'outside_top10' ? '#d97706' : 'var(--text-muted)');
-            const syncButton = optedIn && canReport
-                ? '<button id="communityReportNowBtn" class="recheck-btn" style="font-size:10px;">立即同步</button>'
-                : '';
-            const changedAtDate = nameChangedAt ? new Date(nameChangedAt) : null;
-            const nextNameChange = changedAtDate && !Number.isNaN(changedAtDate.getTime())
-                ? new Date(changedAtDate.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
-            const nameCoolingDown = Boolean(myDisplayName && nextNameChange && nextNameChange.getTime() > Date.now());
-            const editTitle = nameCoolingDown ? ('可在 ' + formatCommunityTime(nextNameChange.toISOString()) + ' 后修改') : '修改社区昵称';
+            const editTitle = '修改社区昵称（24 小时内最多 3 次）';
             const shownName = myDisplayName || myId;
             const dataNotice = dataStatus === 'partial'
                 ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid #d97706;background:var(--bg-subtle);border-radius:8px;">' +
@@ -3029,7 +3020,7 @@
                 ? '<div style="padding:12px 14px;margin-bottom:14px;border:1px solid var(--border-card);background:var(--bg-subtle);border-radius:8px;">' +
                     '<div style="font-size:12px;color:var(--text-main);font-weight:600;margin-bottom:4px;">今天还没有有效的社区上报</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);">' +
-                        (canReport ? '应用会自动同步；如果刚启动或网络中断，可以点击“立即同步”重试。' : '社区中继暂时不可用，请稍后重试。') +
+                        (canReport ? '社区数据正在准备，请稍后查看。' : '社区数据暂时不可用，请稍后查看。') +
                     '</div></div>'
                 : '';
 
@@ -3037,9 +3028,8 @@
                 '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px;">' +
                     '<div id="communityIdentityBlock"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">社区昵称</div>' +
                     '<div id="communityIdentityView" class="community-identity-view"><span class="community-name">' + escapeHtml(shownName) + '</span>' +
-                        '<button id="communityNameEditBtn" class="community-icon-btn" title="' + escapeHtml(editTitle) + '" aria-label="修改社区昵称"' + (nameCoolingDown ? ' disabled' : '') + '>✎</button></div>' +
+                        '<button id="communityNameEditBtn" class="community-icon-btn" title="' + escapeHtml(editTitle) + '" aria-label="修改社区昵称">✎</button></div>' +
                     '<div class="community-id">ID: ' + escapeHtml(myId) + '</div>' +
-                    (nameCoolingDown ? '<div style="font-size:9px;color:var(--text-muted);margin-top:3px;">' + escapeHtml(editTitle) + '</div>' : '') +
                     '<div id="communityNameEditor" class="community-name-editor">' +
                         '<input id="communityNameInput" class="community-name-input" maxlength="16" autocomplete="off" value="' + escapeHtml(myDisplayName) + '">' +
                         '<button id="communityNameSaveBtn" class="community-icon-btn" title="保存昵称" aria-label="保存昵称">✓</button>' +
@@ -3047,7 +3037,7 @@
                         '<div class="community-name-meta"><span id="communityNameFeedback">昵称将公开显示</span><span id="communityNameCount">' + Array.from(myDisplayName).length + '/16</span></div>' +
                     '</div></div>' +
                     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">' +
-                        '<span id="communitySyncFeedback" style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' + syncButton +
+                        '<span style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' +
                     '</div>' +
                 '</div>' +
                 dataNotice +
@@ -3055,7 +3045,7 @@
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
                         '<div style="font-size:10px;color:var(--text-muted);">今日社区用量</div>' +
                         '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + (dataStatus === 'empty' ? '--' : formatTokens(totalToday)) + '</div>' +
-                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">仅统计今天已成功同步的数据</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">今日参与社区统计的数据</div>' +
                     '</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
                         '<div style="font-size:10px;color:var(--text-muted);">今日参与用户</div>' +
@@ -3063,41 +3053,17 @@
                         '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">累计有 ' + allReporters + ' 个匿名 ID 提交过数据</div>' +
                     '</div>' +
                 '</div>' +
-                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
+                '<div style="display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
-                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">最近成功同步</div><div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;margin-top:4px;">' + formatCommunityTime(data.my_last_synced_at) + '</div></div>' +
                 '</div>' +
                 (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日用量 Top 10</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
-                    '通过社区中继自动提交匿名 ID、Token 数量和工具汇总，不提交对话、模型名称或个人信息，也不需要 GitCode 凭据。每小时自动同步一次。' +
+                    '社区仅展示匿名 ID、Token 数量和工具汇总，不包含对话、模型名称或个人信息。' +
                 '</div>';
-
-            const reportBtn = document.getElementById('communityReportNowBtn');
-            if (reportBtn) {
-                reportBtn.addEventListener('click', async () => {
-                    const feedback = document.getElementById('communitySyncFeedback');
-                    reportBtn.disabled = true;
-                    reportBtn.innerText = '同步中...';
-                    if (feedback) feedback.innerText = '正在提交匿名统计...';
-                    try {
-                        const res = await fetch(API_BASE + '/api/community/report', { cache: 'no-store' });
-                        const result = await res.json();
-                        if (!result.ok) throw new Error(result.message || '同步失败');
-                        await loadCommunity();
-                    } catch (err) {
-                        reportBtn.disabled = false;
-                        reportBtn.innerText = '重新同步';
-                        if (feedback) {
-                            feedback.style.color = '#ef4444';
-                            feedback.innerText = err.message;
-                        }
-                    }
-                });
-            }
 
             const editNameBtn = document.getElementById('communityNameEditBtn');
             const identityView = document.getElementById('communityIdentityView');
@@ -3153,7 +3119,11 @@
                         body: JSON.stringify({display_name: validation.value})
                     });
                     const result = await response.json();
-                    if (!result.ok) throw new Error(result.message || '昵称保存失败');
+                    if (!result.ok) {
+                        let message = result.message || '昵称保存失败';
+                        if (result.next_change_at) message += '，可在 ' + formatCommunityTime(result.next_change_at) + ' 后再试';
+                        throw new Error(message);
+                    }
                     await loadCommunity();
                 } catch (error) {
                     nameSaveBtn.disabled = false;

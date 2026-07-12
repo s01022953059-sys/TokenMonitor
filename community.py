@@ -441,10 +441,10 @@ def get_community_stats():
         rank_message = f"今日第 {my_rank} 名"
     elif my_synced_today:
         rank_status = "outside_top10"
-        rank_message = f"已同步，当前第 {my_rank} 名（榜单展示前 {LEADERBOARD_LIMIT}）"
+        rank_message = f"当前第 {my_rank} 名（榜单展示前 {LEADERBOARD_LIMIT}）"
     else:
         rank_status = "pending"
-        rank_message = "等待今日首次同步"
+        rank_message = "今日数据准备中"
 
     # 趣味统计
     import math

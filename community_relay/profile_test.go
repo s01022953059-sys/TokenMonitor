@@ -75,7 +75,7 @@ func testProfileDatabase(t *testing.T) *profileDatabase {
 	return database
 }
 
-func TestProfileUniquenessCooldownAndReservation(t *testing.T) {
+func TestProfileUniquenessRateLimitAndReservation(t *testing.T) {
 	database := testProfileDatabase(t)
 	now := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
 	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏帅", "鹏帅", now, func() error { return nil }); err != nil {
@@ -84,13 +84,19 @@ func TestProfileUniquenessCooldownAndReservation(t *testing.T) {
 	if _, _, err := database.updateName(context.Background(), "User_SECOND", "鹏帅", "鹏帅", now, func() error { return nil }); profileErrorCode(err) != "name_taken" {
 		t.Fatalf("expected name_taken, got %v", err)
 	}
-	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏哥", "鹏哥", now.Add(24*time.Hour), func() error { return nil }); profileErrorCode(err) != "rename_cooldown" {
-		t.Fatalf("expected rename_cooldown, got %v", err)
-	}
-	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏哥", "鹏哥", now.Add(8*24*time.Hour), func() error { return nil }); err != nil {
+	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏哥", "鹏哥", now.Add(time.Hour), func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := database.updateName(context.Background(), "User_SECOND", "鹏帅", "鹏帅", now.Add(9*24*time.Hour), func() error { return nil }); profileErrorCode(err) != "name_reserved" {
+	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏总", "鹏总", now.Add(2*time.Hour), func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏王", "鹏王", now.Add(3*time.Hour), func() error { return nil }); profileErrorCode(err) != "rename_rate_limited" {
+		t.Fatalf("expected rename_rate_limited, got %v", err)
+	}
+	if _, _, err := database.updateName(context.Background(), "User_FIRST1", "鹏王", "鹏王", now.Add(25*time.Hour), func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := database.updateName(context.Background(), "User_SECOND", "鹏帅", "鹏帅", now.Add(26*time.Hour), func() error { return nil }); profileErrorCode(err) != "name_reserved" {
 		t.Fatalf("expected name_reserved, got %v", err)
 	}
 }

@@ -552,14 +552,14 @@ func getCommunityStats() map[string]interface{} {
 		}
 	}
 	rankStatus := "pending"
-	rankMessage := "等待今日首次同步"
+	rankMessage := "今日数据准备中"
 	if !isOptedIn() {
 		rankStatus, rankMessage = "disabled", "数据上报未开启"
 	} else if mySyncedToday && myRank > 0 && myRank <= communityLeaderboardLimit {
 		rankStatus, rankMessage = "ranked", "今日第 "+strconv.Itoa(myRank)+" 名"
 	} else if mySyncedToday {
 		rankStatus = "outside_top10"
-		rankMessage = "已同步，当前第 " + strconv.Itoa(myRank) + " 名（榜单展示前 " + strconv.Itoa(communityLeaderboardLimit) + "）"
+		rankMessage = "当前第 " + strconv.Itoa(myRank) + " 名（榜单展示前 " + strconv.Itoa(communityLeaderboardLimit) + "）"
 	}
 
 	dataStatus := "empty"
