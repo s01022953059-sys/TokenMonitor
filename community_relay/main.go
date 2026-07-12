@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ type reportRequest struct {
 	TodayTokens  int64            `json:"today_tokens"`
 	ByTool       map[string]int64 `json:"by_tool"`
 	Version      string           `json:"version"`
+	ReplacesID   string           `json:"replaces_id,omitempty"`
 }
 
 type reportDocument struct {
@@ -46,6 +48,7 @@ type reportDocument struct {
 	ByTool      map[string]int64 `json:"by_tool"`
 	ToolCount   int              `json:"tool_count"`
 	Version     string           `json:"version"`
+	ReplacesID  string           `json:"replaces_id,omitempty"`
 }
 
 type reportStore interface {
@@ -108,13 +111,28 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	replacesID := ""
+	if existing != nil {
+		replacesID = existing.ReplacesID
+	} else if request.ReplacesID != "" {
+		previous, _, previousErr := h.store.Get(r.Context(), request.ReplacesID)
+		if previousErr != nil {
+			writeError(w, http.StatusBadGateway, "storage_unavailable", "社区存储暂时不可用")
+			return
+		}
+		if previous == nil || previous.AuthHash != "" || !sameReportContent(*previous, request) {
+			writeError(w, http.StatusConflict, "identity_migration_invalid", "旧社区身份迁移校验失败")
+			return
+		}
+		replacesID = request.ReplacesID
+	}
 
 	now := h.now().UTC()
 	doc := reportDocument{
 		ID: request.ID, AuthHash: authHash, UpdatedAt: now.Format(time.RFC3339),
 		ReportDate: request.ReportDate, TodayTokens: request.TodayTokens,
 		ByTool: normalizeTools(request.ByTool), ToolCount: len(request.ByTool),
-		Version: strings.TrimSpace(request.Version),
+		Version: strings.TrimSpace(request.Version), ReplacesID: replacesID,
 	}
 	if err := h.store.Write(r.Context(), doc, sha); err != nil {
 		writeError(w, http.StatusBadGateway, "upload_failed", "匿名统计写入失败")
@@ -123,6 +141,12 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "status": "synced", "message": "匿名统计已同步", "reported_at": doc.UpdatedAt,
 	})
+}
+
+func sameReportContent(previous reportDocument, request reportRequest) bool {
+	return previous.ReportDate == request.ReportDate &&
+		previous.TodayTokens == request.TodayTokens &&
+		reflect.DeepEqual(normalizeTools(previous.ByTool), normalizeTools(request.ByTool))
 }
 
 func ensureJSONEnd(decoder *json.Decoder) error {
@@ -136,6 +160,9 @@ func ensureJSONEnd(decoder *json.Decoder) error {
 func validateReport(request reportRequest, now time.Time) ([]byte, error) {
 	if !communityIDPattern.MatchString(request.ID) {
 		return nil, errors.New("匿名 ID 格式不正确")
+	}
+	if request.ReplacesID != "" && (!communityIDPattern.MatchString(request.ReplacesID) || request.ReplacesID == request.ID) {
+		return nil, errors.New("旧匿名 ID 格式不正确")
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(request.DeviceSecret)
 	if err != nil || len(secret) != 32 {

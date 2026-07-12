@@ -15,14 +15,18 @@ import (
 )
 
 type fakeStore struct {
-	existing *reportDocument
-	sha      string
-	written  *reportDocument
-	writeSHA string
-	err      error
+	existing     *reportDocument
+	existingByID map[string]*reportDocument
+	sha          string
+	written      *reportDocument
+	writeSHA     string
+	err          error
 }
 
-func (s *fakeStore) Get(context.Context, string) (*reportDocument, string, error) {
+func (s *fakeStore) Get(_ context.Context, id string) (*reportDocument, string, error) {
+	if s.existingByID != nil {
+		return s.existingByID[id], s.sha, s.err
+	}
 	return s.existing, s.sha, s.err
 }
 
@@ -91,6 +95,35 @@ func TestLegacyIdentityRequiresUpgrade(t *testing.T) {
 	response := performReport(t, store, testRequest())
 	if response.Code != http.StatusConflict || !bytes.Contains(response.Body.Bytes(), []byte("identity_upgrade_required")) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestMigrationRecordsReplacedLegacyIdentity(t *testing.T) {
+	request := testRequest()
+	request.ID = "User_NEW001"
+	request.ReplacesID = "User_OLD01"
+	store := &fakeStore{existingByID: map[string]*reportDocument{
+		"User_OLD01": {
+			ID: "User_OLD01", ReportDate: request.ReportDate, TodayTokens: request.TodayTokens,
+			ByTool: normalizeTools(request.ByTool),
+		},
+	}}
+	response := performReport(t, store, request)
+	if response.Code != http.StatusOK || store.written == nil || store.written.ReplacesID != "User_OLD01" {
+		t.Fatalf("status=%d written=%#v body=%s", response.Code, store.written, response.Body.String())
+	}
+}
+
+func TestMigrationRejectsMismatchedLegacyReport(t *testing.T) {
+	request := testRequest()
+	request.ID = "User_NEW001"
+	request.ReplacesID = "User_OLD01"
+	store := &fakeStore{existingByID: map[string]*reportDocument{
+		"User_OLD01": {ID: "User_OLD01", ReportDate: request.ReportDate, TodayTokens: 1},
+	}}
+	response := performReport(t, store, request)
+	if response.Code != http.StatusConflict || store.written != nil {
+		t.Fatalf("status=%d written=%#v", response.Code, store.written)
 	}
 }
 

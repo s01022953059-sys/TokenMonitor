@@ -79,6 +79,7 @@ class CommunityTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(len(calls), 2)
         self.assertNotEqual(calls[0]["id"], calls[1]["id"])
+        self.assertEqual(calls[1]["replaces_id"], calls[0]["id"])
         self.assertEqual(community.get_user_id(), calls[1]["id"])
 
     def test_rank_is_calculated_beyond_top_ten(self):
@@ -148,7 +149,7 @@ class CommunityTests(unittest.TestCase):
         today = datetime.date.today().isoformat()
         reports = [
             {"id": "User_OLD01", "report_date": today, "today_tokens": 30_490_000, "by_tool": {"Codex": 30_490_000}},
-            {"id": "User_TEST1", "auth_hash": "a" * 64, "report_date": today, "today_tokens": 30_490_000, "by_tool": {"Codex": 30_490_000}},
+            {"id": "User_TEST1", "auth_hash": "a" * 64, "replaces_id": "User_OLD01", "report_date": today, "today_tokens": 31_000_000, "by_tool": {"Codex": 31_000_000}},
             {"id": "User_OTHER", "auth_hash": "b" * 64, "report_date": today, "today_tokens": 10, "by_tool": {"WorkBuddy": 10}},
         ]
         files = [{"name": f"{report['id']}.json", "download_url": f"https://example.test/{i}"} for i, report in enumerate(reports)]
@@ -160,7 +161,7 @@ class CommunityTests(unittest.TestCase):
 
         self.assertEqual(result["total_users"], 2)
         self.assertEqual(result["all_reporters"], 2)
-        self.assertEqual(result["total_tokens_today"], 30_490_010)
+        self.assertEqual(result["total_tokens_today"], 31_000_010)
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1", "User_OTHER"])
 
 

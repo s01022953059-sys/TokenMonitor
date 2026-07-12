@@ -41,7 +41,7 @@ func TestNewCommunityIDIsAlwaysEightCharacters(t *testing.T) {
 func TestDedupeLegacyIdentityReports(t *testing.T) {
 	reports := []communityReportData{
 		{ID: "User_OLD01", ReportDate: "2026-07-12", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}},
-		{ID: "User_NEW0001", AuthHash: "hash", ReportDate: "2026-07-12", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}},
+		{ID: "User_NEW0001", AuthHash: "hash", ReplacesID: "User_OLD01", ReportDate: "2026-07-12", TodayTokens: 200, ByTool: map[string]int64{"Codex": 200}},
 		{ID: "User_OTHER", AuthHash: "other", ReportDate: "2026-07-12", TodayTokens: 10, ByTool: map[string]int64{"WorkBuddy": 10}},
 	}
 	got := dedupeLegacyIdentityReports(reports)
@@ -107,5 +107,8 @@ func TestCommunityLegacyIdentityRotatesAndRetries(t *testing.T) {
 	}
 	if requests[0]["id"] == requests[1]["id"] || getUserID() != requests[1]["id"] {
 		t.Fatalf("identity was not rotated: %#v", requests)
+	}
+	if requests[1]["replaces_id"] != requests[0]["id"] {
+		t.Fatalf("migration relation missing: %#v", requests)
 	}
 }

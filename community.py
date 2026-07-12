@@ -191,6 +191,12 @@ def _report_fingerprint(report):
 
 def _dedupe_legacy_identity_reports(reports):
     """有凭据的新身份与无凭据旧身份内容完全相同时，只保留新身份。"""
+    replaced_ids = {
+        str(report.get("replaces_id") or "").strip()
+        for report in reports
+        if str(report.get("auth_hash") or "").strip()
+        and str(report.get("replaces_id") or "").strip()
+    }
     authenticated = {
         _report_fingerprint(report)
         for report in reports
@@ -199,8 +205,11 @@ def _dedupe_legacy_identity_reports(reports):
     return [
         report
         for report in reports
-        if str(report.get("auth_hash") or "").strip()
-        or _report_fingerprint(report) not in authenticated
+        if str(report.get("id") or "") not in replaced_ids
+        and (
+            str(report.get("auth_hash") or "").strip()
+            or _report_fingerprint(report) not in authenticated
+        )
     ]
 
 
@@ -257,9 +266,11 @@ def report_community_stats(today_usage):
     }
     result = _relay_request(report)
     if result.get("status") == "identity_upgrade_required":
+        previous_id = credential["id"]
         credential = _rotate_community_identity()
         report["id"] = credential["id"]
         report["device_secret"] = credential["device_secret"]
+        report["replaces_id"] = previous_id
         result = _relay_request(report)
     if not result.get("ok"):
         return _report_result(

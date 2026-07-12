@@ -75,6 +75,7 @@ func newCommunityID() string {
 type communityReportData struct {
 	ID          string           `json:"id"`
 	AuthHash    string           `json:"auth_hash"`
+	ReplacesID  string           `json:"replaces_id"`
 	UpdatedAt   string           `json:"updated_at"`
 	ReportDate  string           `json:"report_date"`
 	TodayTokens int64            `json:"today_tokens"`
@@ -95,14 +96,21 @@ func communityReportFingerprint(report communityReportData) string {
 }
 
 func dedupeLegacyIdentityReports(reports []communityReportData) []communityReportData {
+	replacedIDs := make(map[string]bool)
 	authenticated := make(map[string]bool)
 	for _, report := range reports {
 		if strings.TrimSpace(report.AuthHash) != "" {
 			authenticated[communityReportFingerprint(report)] = true
+			if strings.TrimSpace(report.ReplacesID) != "" {
+				replacedIDs[report.ReplacesID] = true
+			}
 		}
 	}
 	result := make([]communityReportData, 0, len(reports))
 	for _, report := range reports {
+		if replacedIDs[report.ID] {
+			continue
+		}
 		if strings.TrimSpace(report.AuthHash) == "" && authenticated[communityReportFingerprint(report)] {
 			continue
 		}
@@ -285,9 +293,11 @@ func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
 	}
 	result := sendCommunityRelay(report)
 	if result.Status == "identity_upgrade_required" {
+		previousID := credential.ID
 		credential = rotateCommunityIdentity()
 		report["id"] = credential.ID
 		report["device_secret"] = credential.DeviceSecret
+		report["replaces_id"] = previousID
 		result = sendCommunityRelay(report)
 	}
 	if !result.OK {
