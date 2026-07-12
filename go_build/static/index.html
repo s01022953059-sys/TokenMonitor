@@ -776,9 +776,74 @@
         }
         .community-name-error { color: #ef4444; }
 
+        .community-activity-strip {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 10px;
+            min-height: 38px;
+            margin-bottom: 14px;
+            padding: 0 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            background: var(--bg-subtle);
+        }
+        .community-activity-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 9px;
+            white-space: nowrap;
+        }
+        .community-activity-pulse {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--neon-green);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+        }
+        .community-activity-window {
+            min-width: 0;
+            height: 20px;
+            overflow: hidden;
+        }
+        .community-activity-track {
+            transition: transform 360ms cubic-bezier(.22, .61, .36, 1);
+            will-change: transform;
+        }
+        .community-activity-item {
+            height: 20px;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            color: var(--text-main);
+            font-size: 10px;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .community-activity-count {
+            color: var(--modal-line-color);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .community-activity-step {
+            color: var(--text-muted);
+            font: 9px 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .community-activity-track { transition: none; }
+        }
+
 		@media (max-width: 520px) {
 			.community-name-editor { grid-template-columns: minmax(0, 1fr) 28px 28px; }
 			.community-name { max-width: 220px; }
+			.community-activity-strip { grid-template-columns: auto minmax(0, 1fr); }
+			.community-activity-step { display: none; }
 		}
 
 		@media (max-width: 520px) {
@@ -2966,6 +3031,57 @@
             return {value, error: ''};
         }
 
+        function buildCommunityActivities(data) {
+            const activities = [];
+            const leaderboard = data.leaderboard || [];
+            const leader = leaderboard[0];
+            const totalUsers = Number(data.total_users || 0);
+            const totalToday = Number(data.total_tokens_today || 0);
+            const leadingTool = Object.entries(data.tool_distribution || {})[0];
+
+            if (leader && Number(leader.tokens || 0) > 0) {
+                const name = leader.display_name || leader.id || '一位社区成员';
+                activities.push('<span class="community-activity-count">' + escapeHtml(name) + '</span>&nbsp;暂居今日榜首，已使用&nbsp;<span class="community-activity-count">' + formatTokens(leader.tokens) + '</span>');
+            }
+            if (totalUsers > 0) {
+                activities.push('今天已有&nbsp;<span class="community-activity-count">' + totalUsers + '</span>&nbsp;位成员加入统计');
+            }
+            if (totalToday > 0) {
+                activities.push('社区今日累计用量达到&nbsp;<span class="community-activity-count">' + formatTokens(totalToday) + '</span>');
+            }
+            if (leadingTool && Number(leadingTool[1]) > 0) {
+                activities.push('<span class="community-activity-count">' + escapeHtml(leadingTool[0]) + '</span>&nbsp;是今天使用最多的工具，占比&nbsp;<span class="community-activity-count">' + escapeHtml(leadingTool[1]) + '%</span>');
+            }
+            return activities;
+        }
+
+        function startCommunityActivityStrip(activities) {
+            const strip = document.getElementById('communityActivityStrip');
+            const track = document.getElementById('communityActivityTrack');
+            const step = document.getElementById('communityActivityStep');
+            if (!strip || !track || activities.length < 2) return;
+            let current = 0;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const show = () => {
+                track.style.transform = 'translateY(-' + (current * 20) + 'px)';
+                step.textContent = (current + 1) + ' / ' + activities.length;
+            };
+            show();
+            if (reducedMotion) return;
+            let timer = setInterval(() => {
+                current = (current + 1) % activities.length;
+                show();
+            }, 3800);
+            strip.addEventListener('mouseenter', () => clearInterval(timer));
+            strip.addEventListener('mouseleave', () => {
+                clearInterval(timer);
+                timer = setInterval(() => {
+                    current = (current + 1) % activities.length;
+                    show();
+                }, 3800);
+            });
+        }
+
         function renderCommunity(data) {
             const container = document.getElementById('communityContainer');
             const myId = data.my_id || '';
@@ -2984,6 +3100,15 @@
             const dataStatus = data.data_status || 'empty';
             const dataWarning = data.data_warning || '';
             const rankTotal = data.rank_total || totalUsers;
+            const activities = buildCommunityActivities(data);
+            const activityStrip = activities.length ?
+                '<div id="communityActivityStrip" class="community-activity-strip" role="status" aria-live="polite">' +
+                    '<div class="community-activity-label"><span class="community-activity-pulse"></span><span>社区动态</span></div>' +
+                    '<div class="community-activity-window"><div id="communityActivityTrack" class="community-activity-track">' +
+                        activities.map(item => '<div class="community-activity-item">' + item + '</div>').join('') +
+                    '</div></div>' +
+                    '<div id="communityActivityStep" class="community-activity-step">1 / ' + activities.length + '</div>' +
+                '</div>' : '';
 
             const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'OpenCode': '#f59e0b', 'WorkBuddy': '#8b5cf6', 'Other': '#6b7280'};
             const toolDots = Object.entries(toolDist).map(([tool, pct]) => {
@@ -3040,6 +3165,7 @@
                         '<span style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' +
                     '</div>' +
                 '</div>' +
+                activityStrip +
                 dataNotice +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
@@ -3134,6 +3260,7 @@
                     nameInput.focus();
                 }
             });
+            startCommunityActivityStrip(activities);
         }
 
         document.getElementById('communityOpenBtn').addEventListener('click', () => {
