@@ -39,6 +39,15 @@
 - **两版功能完全对齐**: Codex 官方日志 + cc-switch / Antigravity / Hermes / WorkBuddy 扫描 + 去重 + 模型归一化 + DeepSeek 余额 + 社区排行 + check-update
 - **前端同一份** index.html + chart.js, go_build/static/ 是同步副本
 
+## 社区昵称设计 (2026-07-12, 待实现)
+
+- 公开昵称与不可变匿名 ID 分离；改名不得创建新身份或影响历史用量、排名与设备凭据。
+- 字符规则: 中文、ASCII 英文字母、数字、下划线，NFKC 后 2–16 字，至少包含中文或英文字母。
+- 全局大小写不敏感唯一；首次设置不限，之后 7 天一次，旧昵称保护 30 天。
+- VPS SQLite 负责原子重名检测、冷却与旧名保护，GitCode 报告保存公开昵称；写入失败必须回滚。
+- 防护系统身份冒充、违规词、不可见/双向字符、XSS、网址和联系方式；风险词表在 VPS 维护。
+- 详细设计: `docs/plans/2026-07-12-community-nickname-design.md`。
+
 ## 数据源
 
 - cc-switch: `~/.cc-switch/cc-switch.db` (SQLite)
