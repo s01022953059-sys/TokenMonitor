@@ -985,7 +985,9 @@
             gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
-            width: 100%;
+            flex: 1;
+            width: auto;
+            min-width: 0;
             overflow-x: auto;
             padding-bottom: 4px;
         }
@@ -993,6 +995,7 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
+            flex: 0 0 14px;
         }
         .heatmap-cell-day {
             width: 14px;
@@ -1039,10 +1042,10 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 4px;
-            padding-left: 22px;
+            padding-left: 26px;
         }
         .heatmap-month-labels span {
-            width: 16px;
+            flex: 0 0 16px;
             text-align: left;
         }
         .heatmap-weekday-labels {
@@ -1241,7 +1244,9 @@
             gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
-            width: 100%;
+            flex: 1;
+            width: auto;
+            min-width: 0;
             overflow-x: auto;
             padding-bottom: 4px;
         }
@@ -1249,6 +1254,7 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
+            flex: 0 0 14px;
         }
         .heatmap-cell-day {
             width: 14px;
@@ -1295,10 +1301,10 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 4px;
-            padding-left: 22px;
+            padding-left: 26px;
         }
         .heatmap-month-labels span {
-            width: 16px;
+            flex: 0 0 16px;
             text-align: left;
         }
         .heatmap-weekday-labels {
@@ -1476,10 +1482,10 @@
             </div>
             <div class="tab-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; width: 100%;">
                 <div class="tab-container" id="heatmapTabContainer">
-                    <button class="tab-btn" data-days="30">近 30 天</button>
+                    <button class="tab-btn active" data-days="30">近 30 天</button>
                     <button class="tab-btn" data-days="90">近 90 天</button>
                     <button class="tab-btn" data-days="180">近半年</button>
-                    <button class="tab-btn active" data-days="365">近一年</button>
+                    <button class="tab-btn" data-days="365">近一年</button>
                 </div>
             </div>
             <div id="heatmapSubtitle" style="padding: 0 4px 4px; font-size: 11px; color: var(--text-muted);">
@@ -3087,6 +3093,7 @@
         // ===== 社区 Dashboard =====
         const COMMUNITY_CACHE_KEY = 'tokenMonitorCommunityCacheV1';
         let _communityFetchPromise = null;
+        let _communityPresencePromise = null;
         let _communityActivityTimer = null;
 
         function communityTodayKey() {
@@ -3131,6 +3138,28 @@
             return _communityFetchPromise;
         }
 
+        function ensureCommunityPresence(data) {
+            if (!data || data.rank_status !== 'pending' || !data.can_report || _communityPresencePromise) return;
+            _communityPresencePromise = fetch(API_BASE + '/api/community/report', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: '{}'
+            })
+                .then(response => response.json())
+                .then(result => {
+                    if (!result.ok) return null;
+                    localStorage.removeItem(COMMUNITY_CACHE_KEY);
+                    return fetchCommunityData();
+                })
+                .then(fresh => {
+                    if (fresh && !fresh.error && document.getElementById('communityModal').classList.contains('active')) {
+                        renderCommunity(fresh);
+                    }
+                })
+                .catch(() => {})
+                .finally(() => { _communityPresencePromise = null; });
+        }
+
         async function loadCommunity(options = {}) {
             const container = document.getElementById('communityContainer');
             const cached = options.preferCache === false ? null : readCommunityCache();
@@ -3149,6 +3178,7 @@
                     return;
                 }
                 renderCommunity(data);
+                ensureCommunityPresence(data);
             } catch (err) {
                 if (cached) return;
                 container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +

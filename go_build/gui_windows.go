@@ -70,6 +70,9 @@ func onTrayReady(port int, feedURL string, autoStarted bool) {
 	}
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "关闭 Token Monitor")
+	if err := installTrayDoubleClickHandler(); err != nil {
+		guiLog("tray double-click handler unavailable: %v", err)
+	}
 
 	// v1.4.03: 窗口只创建一次, 在独占线程上跑消息循环
 	// 关窗口 = WM_CLOSE 被拦截 → SW_HIDE (窗口对象不销毁)
@@ -212,6 +215,23 @@ func onTrayReady(port int, feedURL string, autoStarted bool) {
 			}
 		}
 	}()
+}
+
+func showDashboardHome() {
+	windowMu.Lock()
+	ready := windowReady
+	w := currentWv
+	port := guiPort
+	windowMu.Unlock()
+	if !ready || w == nil {
+		guiLog("tray double-click: window not ready")
+		return
+	}
+	showHiddenWindow()
+	w.Dispatch(func() {
+		w.Navigate(fmt.Sprintf("http://127.0.0.1:%d/", port))
+	})
+	guiLog("tray double-click: dashboard home opened")
 }
 
 // ─── 检查更新 (v1.4.11: 不自动更新, 只通知; 不阻塞后台数据扫描) ───

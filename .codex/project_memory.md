@@ -212,6 +212,7 @@
 - **会话详情 max_messages=500**: 防止超大 rollout 文件导致内存爆炸, 分页在前端做
 - **Windows 自启只保留一个入口**: HKCU Run 是唯一入口；启用/迁移时清理旧 Startup 快捷方式、计划任务和错误的 StartupApproved 值，避免重复启动
 - **Windows 安装与更新统一**: 首次安装和新版应用内升级走 `TokenMonitor-Setup.exe`；为保证旧客户在线升级，Release 还必须上传同内容的 `TokenMonitor.exe` 迁移入口。迁移入口先自复制为临时 Setup 再启动，避免旧替换脚本将其改名为主程序后被 `taskkill` 误杀；不再发布 ZIP 或便携版裸主程序
+- **Windows 托盘交互**: 双击托盘图标直接显示并导航首页，右键打开菜单；getlantern/systray 不提供双击回调，通过 Windows 托盘窗口消息子类化处理 `WM_LBUTTONDBLCLK`，左键单击不弹菜单
 - **更新 UI 单一入口**: 托盘和原生菜单的更新操作都打开 About 页；后台检查只刷新版本标记，下载进度和错误都在 About 内展示，不使用独立更新弹窗
 - **macOS 静默更新权限**: 禁止仅因目标位于 `/Applications` 就调用 `administrator privileges`。目录可写时直接替换；不可写时迁移到 `~/Applications`，注销旧 LaunchServices 记录并按新路径重启，避免每次更新索要密码和 bundle id 启动到旧副本
 - **macOS 更新权限必须回归验证**: 发版前运行 `tests/test_update_helper.sh`，覆盖可写目录原地替换、不可写目录迁移，并检查 helper 不含 `sudo` 或 AppleScript 管理员授权
@@ -220,6 +221,8 @@
 - **macOS 昵称写入鉴权**: WKWebView 的本地 Origin 不稳定，可能是 `null`、`file://...`、`applewebdata://...` 或其他 WebKit 内部 scheme，不能枚举单个字符串。Swift 每次启动生成临时凭据并同时注入 WebView 与 Python 子进程；所有非 HTTP(S) 来源都必须携带匹配的 `X-Token-Monitor-Client`，HTTP(S) 只允许本机回环地址
 - **社区入口保持唯一**: 匿名社区 ID、同步状态和排名统一在社区 Dashboard 展示，不恢复首页独立“我的匿名 ID”按钮或重复弹窗
 - **社区安装即加入**: 社区匿名统计随安装自动开启，历史 `community_optin.txt=false` 也自动迁移；启动后约 5 秒首次上报、之后每小时在后台同步，不出现手动加入流程
+- **新用户首次排行**: 本地匿名 ID 生成早于首次远端上报；社区页若读到 `rank_status=pending`，必须后台立即调用报告接口、清除当天社区缓存并自动刷新，不能要求用户等待定时任务或手工同步
+- **热力图轴对齐**: 月份标签左留白必须等于星期标签宽度 + 主体间距（当前 20 + 6 = 26px）；周列固定 14px、月份列固定 16px，主网格使用 `flex: 1; width: auto`，禁止 `width: 100%` 再叠加左侧标签
 - **社区同步无感化**: UI 不展示“立即同步”、最近同步时间、等待同步或同步失败等传输过程；只展示社区结果、排名和隐私边界。后台启动后及定时自动上报，失败留在后台重试
 - **社区动态展示**: 动态栏只使用已有匿名聚合结果生成榜首、参与人数、总量和工具占比；保持单行、低干扰，悬停暂停并尊重系统减少动态效果，不新增隐私字段
 - **社区页面缓存**: 社区 Dashboard 使用当天 `localStorage` 聚合缓存做 stale-while-revalidate，并在应用启动后静默预取；跨日缓存不得展示，刷新失败时保留当天最近成功结果，不缓存错误响应
