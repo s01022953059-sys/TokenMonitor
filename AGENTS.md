@@ -19,3 +19,11 @@
 - Windows: Go 单体 (go_build/main.go), 系统托盘, 交叉编译
 - 两版功能完全对齐, 前端同一份 index.html + chart.js
 - 详细文档: `docs/PROJECT_STATUS.md`
+
+## AgentMemory 接入（轻接入，2026-07-13）
+
+- 项目已轻接入 AgentMemory：新建 `.agentmemory/` 目录作为跨 Agent 入口，**不**迁 `.codex/project_memory.md` 原文、**不**迁 `docs/PROJECT_STATUS.md` 原文。
+- 接手顺序：`.agentmemory/manifest.yaml` → `brief.md` + `current-state.md` → 按需查 `decisions.md` / `tasks.md` / `glossary.md` / `events.jsonl`。
+- 发版硬约束**未**变：要发布仍需鹏帅明确说"发新版本"；本接入不授权任何版本号变更、tag、Release 或 push。
+- 工作区里 7 个 M 文件（`go_build/static/index.html`、`index.html`、`scanner.py`、`server.py`、`tests/api_contract.py`、`tests/e2e_ui.sh`、`tests/run_unit_tests.sh`）与本接入无关，**不**自动 add / commit。
+- 入账事件：`.agentmemory/events.jsonl` 第 1 条 `memory.initialized`。
