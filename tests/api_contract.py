@@ -61,6 +61,7 @@ class Backend:
             "TOKEN_MONITOR_LOCK_FILE": str(self.tempdir / f"{kind}.lock"),
             "TOKEN_MONITOR_HEATMAP_CACHE_FILE": str(self.tempdir / f"{kind}-heatmap.json"),
             "TOKEN_MONITOR_LOCAL_API_TOKEN": "api-contract-token",
+            "TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT": "1",
         })
         pathlib.Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
         if kind == "python":

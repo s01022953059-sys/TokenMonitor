@@ -2312,15 +2312,18 @@ func main() {
 	// 提前生成统一的全年快照，避免用户首次打开热力图才开始扫描。
 	go getCachedHeatmap(heatmapCacheDays)
 
-	// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
-	go func() {
-		time.Sleep(5 * time.Second)
-		for {
-			usage := getTodayUsage()
-			reportCommunityStats(&usage)
-			time.Sleep(1 * time.Hour)
-		}
-	}()
+	// 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
+	if communityReportingEnabled() {
+		// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
+		go func() {
+			time.Sleep(5 * time.Second)
+			for {
+				usage := getTodayUsage()
+				reportCommunityStats(&usage)
+				time.Sleep(1 * time.Hour)
+			}
+		}()
+	}
 
 	// --server-only 模式: 只跑 HTTP server (CI/后台, 不需要桌面环境)
 	if serverOnly {

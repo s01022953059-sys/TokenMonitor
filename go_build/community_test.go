@@ -71,6 +71,17 @@ func TestDedupeLegacyIdentityReports(t *testing.T) {
 	}
 }
 
+func TestActiveCommunityReportsExcludeZeroTokenStartupReports(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_ACTIVE", TodayTokens: 123},
+		{ID: "User_IDLE", TodayTokens: 0},
+	}
+	active := activeCommunityReports(reports)
+	if len(active) != 1 || active[0].ID != "User_ACTIVE" {
+		t.Fatalf("zero-token startup report entered active ranking: %#v", active)
+	}
+}
+
 func testCommunityUsage() *UsageResponse {
 	return &UsageResponse{
 		Summary: map[string]interface{}{"date": "2026-07-12", "total_tokens": int64(123)},

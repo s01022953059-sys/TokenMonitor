@@ -208,6 +208,12 @@ class CommunityTests(unittest.TestCase):
                 "today_tokens": 2_000,
                 "by_tool": {"Claude": 2_000},
             },
+            {
+                "id": "User_IDLE",
+                "report_date": today.isoformat(),
+                "today_tokens": 0,
+                "by_tool": {},
+            },
         ]
         files = [
             {"name": f"{report['id']}.json", "download_url": f"https://example.test/{index}"}
@@ -219,7 +225,7 @@ class CommunityTests(unittest.TestCase):
              mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
             result = community.get_community_stats()
 
-        self.assertEqual(result["all_reporters"], 2)
+        self.assertEqual(result["all_reporters"], 3)
         self.assertEqual(result["total_users"], 1)
         self.assertEqual(result["rank_total"], 1)
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1"])

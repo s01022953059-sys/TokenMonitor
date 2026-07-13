@@ -986,21 +986,18 @@
             gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
-            flex: 1;
-            width: auto;
-            min-width: 0;
-            overflow-x: auto;
-            padding-bottom: 4px;
+            width: max-content;
+            min-width: 100%;
         }
         .heatmap-week {
             display: flex;
             flex-direction: column;
             gap: 2px;
-            flex: 0 0 14px;
+            flex: 0 0 13px;
         }
         .heatmap-cell-day {
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
             border-radius: 2px;
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
@@ -1043,10 +1040,12 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 4px;
-            padding-left: 26px;
+            width: max-content;
+            min-width: 100%;
         }
         .heatmap-month-labels span {
-            flex: 0 0 16px;
+            /* 必须与 .heatmap-week 的列宽一致，否则近一年会逐列向右漂移。 */
+            flex: 0 0 13px;
             text-align: left;
         }
         .heatmap-weekday-labels {
@@ -1060,14 +1059,20 @@
             padding-top: 0;
         }
         .heatmap-weekday-labels span {
-            height: 14px;
-            line-height: 14px;
+            height: 13px;
+            line-height: 13px;
         }
         .heatmap-body {
             display: flex;
             gap: 6px;
             flex: 1;
             min-width: 0;
+        }
+        .heatmap-calendar-track {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+            padding-bottom: 4px;
         }
         .heatmap-legend {
             display: flex;
@@ -1245,21 +1250,18 @@
             gap: 2px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 10px;
-            flex: 1;
-            width: auto;
-            min-width: 0;
-            overflow-x: auto;
-            padding-bottom: 4px;
+            width: max-content;
+            min-width: 100%;
         }
         .heatmap-week {
             display: flex;
             flex-direction: column;
             gap: 2px;
-            flex: 0 0 14px;
+            flex: 0 0 13px;
         }
         .heatmap-cell-day {
-            width: 14px;
-            height: 14px;
+            width: 13px;
+            height: 13px;
             border-radius: 2px;
             cursor: pointer;
             transition: transform 0.1s, outline 0.1s;
@@ -1302,10 +1304,12 @@
             font-size: 9px;
             color: var(--text-muted);
             margin-bottom: 4px;
-            padding-left: 26px;
+            width: max-content;
+            min-width: 100%;
         }
         .heatmap-month-labels span {
-            flex: 0 0 16px;
+            /* 必须与 .heatmap-week 的列宽一致，否则近一年会逐列向右漂移。 */
+            flex: 0 0 13px;
             text-align: left;
         }
         .heatmap-weekday-labels {
@@ -1319,14 +1323,20 @@
             padding-top: 0;
         }
         .heatmap-weekday-labels span {
-            height: 14px;
-            line-height: 14px;
+            height: 13px;
+            line-height: 13px;
         }
         .heatmap-body {
             display: flex;
             gap: 6px;
             flex: 1;
             min-width: 0;
+        }
+        .heatmap-calendar-track {
+            flex: 1;
+            min-width: 0;
+            overflow-x: auto;
+            padding-bottom: 4px;
         }
         .heatmap-legend {
             display: flex;
@@ -3002,7 +3012,7 @@
                         '</div>' +
                     '</div>';
 
-                // 月份标签 (用 16px 宽匹配新格子 14 + gap 2)
+                // 月份标签与周列共用 13px 列宽和 2px 间距，近一年末尾月份不会漂移。
                 let monthHtml = '<div class="heatmap-month-labels">';
                 let lastMonth = 0;
                 for (let w = 0; w < weeks.length; w++) {
@@ -3026,8 +3036,8 @@
                     gridHtml += '<span>' + (i % 2 === 0 ? weekdayNames[i] : '') + '</span>';
                 }
                 gridHtml += '</div>';
-                // 周列
-                gridHtml += '<div class="heatmap-grid">';
+                // 月份标签与周列共享同一个横向轨道，近一年时最右侧月份不会被裁切。
+                gridHtml += '<div class="heatmap-calendar-track">' + monthHtml + '<div class="heatmap-grid">';
                 for (let w = 0; w < weeks.length; w++) {
                     const week = weeks[w];
                     gridHtml += '<div class="heatmap-week">';
@@ -3050,7 +3060,7 @@
                     }
                     gridHtml += '</div>';
                 }
-                gridHtml += '</div></div>';
+                gridHtml += '</div></div></div>';
 
                 // footer: 左图例 + 右说明
                 let legendHtml = '<div class="heatmap-legend"><span>少</span>';
@@ -3062,7 +3072,7 @@
 
                 container.innerHTML = '<div class="heatmap-grid-wrap">' +
                     statsHtml +
-                    '<div>' + monthHtml + gridHtml + '</div>' +
+                    gridHtml +
                     '<div class="heatmap-footer">' + legendHtml +
                         '<span style="font-size: 10px; color: var(--text-muted);">悬停查看日期/总量 · 点击格子下钻当日明细</span>' +
                     '</div>' +

@@ -646,18 +646,20 @@ def main():
     # 启动后预热全年快照；用户首次打开热力图时通常已可直接命中缓存。
     threading.Thread(target=lambda: get_cached_heatmap(HEATMAP_CACHE_DAYS), daemon=True).start()
 
-    # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
-    def _community_report_loop():
-        import time as _time
-        _time.sleep(5)
-        while True:
-            try:
-                report_community_stats(get_today_usage())
-            except Exception:
-                pass
-            _time.sleep(3600)  # 每小时
-    t = threading.Thread(target=_community_report_loop, daemon=True)
-    t.start()
+    # 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
+    reporting_disabled = os.environ.get("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT", "").strip().lower()
+    if reporting_disabled not in {"1", "true", "yes"}:
+        # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
+        def _community_report_loop():
+            import time as _time
+            _time.sleep(5)
+            while True:
+                try:
+                    report_community_stats(get_today_usage())
+                except Exception:
+                    pass
+                _time.sleep(3600)  # 每小时
+        threading.Thread(target=_community_report_loop, daemon=True).start()
 
     try:
         httpd.serve_forever()

@@ -29,7 +29,29 @@ cleanup() {
 }
 trap cleanup EXIT
 
-HOME="$TMP_DIR/home" TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_HEATMAP_CACHE_FILE="$TMP_DIR/heatmap.json" \
+# E2E 使用完整且确定的年度快照，验证前端会渲染到当天，而不是只验证空状态。
+python3 - "$TMP_DIR/heatmap.json" <<'PY'
+import datetime as dt
+import json
+import sys
+import time
+
+today = dt.date.today()
+rows = []
+for offset in range(365):
+    current = today - dt.timedelta(days=364 - offset)
+    rows.append({
+        "date": current.isoformat(),
+        "label": current.strftime("%m-%d"),
+        "weekday": current.weekday(),
+        "month": current.month,
+        "tokens": 1 if offset in (0, 364) else 0,
+    })
+with open(sys.argv[1], "w", encoding="utf-8") as stream:
+    json.dump({"saved_at": time.time(), "data": {"days": rows}}, stream)
+PY
+
+HOME="$TMP_DIR/home" TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_HEATMAP_CACHE_FILE="$TMP_DIR/heatmap.json" TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT=1 \
     python3 "$ROOT/server.py" --port "$PORT" --update-feed-url "" >"$TMP_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in {1..80}; do
@@ -48,6 +70,11 @@ import datetime
 print((datetime.date.today() - datetime.timedelta(days=364)).isoformat())
 PY
 )
+EXPECTED_TODAY=$(python3 - <<'PY'
+import datetime
+print(datetime.date.today().isoformat())
+PY
+)
 
 "$PWCLI" open "http://127.0.0.1:$PORT" --browser msedge --headed >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
@@ -56,7 +83,7 @@ test -n "$HEATMAP_REF"
 "$PWCLI" click "$HEATMAP_REF" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_30 至"
-printf '%s\n' "$SNAPSHOT" | grep -q "暂无数据"
+printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
 
 YEAR_REF=$(printf '%s\n' "$SNAPSHOT" | sed -nE 's/.*button "近一年".*\[ref=([^]]+)\].*/\1/p' | head -1)
 test -n "$YEAR_REF"
@@ -64,5 +91,6 @@ test -n "$YEAR_REF"
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "近一年.*\[active\]"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_365 至"
+printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
 
-echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围"
+echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围及最后一天"

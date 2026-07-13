@@ -407,8 +407,11 @@ def get_community_stats():
         return str(report.get("report_date") or report.get("updated_at", "")[:10])
 
     reports_today = [r for r in reports if report_date(r) == today]
-    sorted_reports = sorted(reports_today, key=lambda r: r.get("today_tokens", 0), reverse=True)
-    total_tokens_today = sum(r.get("today_tokens", 0) for r in reports_today)
+    # 自动上报允许新安装用户提交 0 Token 的初始化报告；这类身份属于历史参与者，
+    # 但不能挤进“今日用量”排行榜或改变今日排名分母。
+    active_reports = [r for r in reports_today if int(r.get("today_tokens") or 0) > 0]
+    sorted_reports = sorted(active_reports, key=lambda r: r.get("today_tokens", 0), reverse=True)
+    total_tokens_today = sum(r.get("today_tokens", 0) for r in active_reports)
 
     # 排名在全部今日参与用户中计算；榜单仅展示前 10。
     my_rank = next((i + 1 for i, r in enumerate(sorted_reports) if r.get("id") == my_id), None)
@@ -423,7 +426,7 @@ def get_community_stats():
 
     # 工具占比
     tool_totals = {}
-    for r in reports_today:
+    for r in active_reports:
         for tool, tokens in r.get("by_tool", {}).items():
             tool_totals[tool] = tool_totals.get(tool, 0) + tokens
     total_tool_tokens = sum(tool_totals.values()) or 1
@@ -433,13 +436,14 @@ def get_community_stats():
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)
     my_tokens = my_report.get("today_tokens", 0) if my_synced_today else 0
+    my_is_active_today = bool(my_synced_today and int(my_tokens or 0) > 0)
     if not is_opted_in():
         rank_status = "disabled"
         rank_message = "数据上报未开启"
-    elif my_synced_today and my_rank is not None and my_rank <= LEADERBOARD_LIMIT:
+    elif my_is_active_today and my_rank is not None and my_rank <= LEADERBOARD_LIMIT:
         rank_status = "ranked"
         rank_message = f"今日第 {my_rank} 名"
-    elif my_synced_today:
+    elif my_is_active_today:
         rank_status = "outside_top10"
         rank_message = f"当前第 {my_rank} 名（榜单展示前 {LEADERBOARD_LIMIT}）"
     else:
@@ -456,7 +460,7 @@ def get_community_stats():
     }
 
     result = {
-        "total_users": len(reports_today),
+        "total_users": len(active_reports),
         "all_reporters": len(reports),
         "total_tokens_today": total_tokens_today,
         "total_tokens_all": total_tokens_today * 30,  # 粗估月度
@@ -476,7 +480,7 @@ def get_community_stats():
         "rank_total": len(sorted_reports),
         "leaderboard_limit": LEADERBOARD_LIMIT,
         "can_report": bool(COMMUNITY_RELAY_URL),
-        "data_status": "partial" if read_failures else ("ok" if reports_today else "empty"),
+        "data_status": "partial" if read_failures else ("ok" if active_reports else "empty"),
         "data_warning": f"有 {read_failures} 份社区报告读取失败，当前统计可能不完整" if read_failures else None,
         "fun_facts": fun_facts,
         "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

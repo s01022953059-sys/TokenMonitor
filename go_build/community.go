@@ -130,6 +130,16 @@ func dedupeLegacyIdentityReports(reports []communityReportData) []communityRepor
 	return result
 }
 
+func activeCommunityReports(reports []communityReportData) []communityReportData {
+	active := make([]communityReportData, 0, len(reports))
+	for _, report := range reports {
+		if report.TodayTokens > 0 {
+			active = append(active, report)
+		}
+	}
+	return active
+}
+
 // getUserID 获取或生成匿名用户 ID
 func getUserID() string {
 	communityDir := getCommunityDir()
@@ -195,6 +205,11 @@ func communityRelayURL() string {
 		return value
 	}
 	return communityRelayDefault
+}
+
+func communityReportingEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT")))
+	return value != "1" && value != "true" && value != "yes"
 }
 
 func communityProfileURL() string {
@@ -469,19 +484,21 @@ func getCommunityStats() map[string]interface{} {
 			reportsToday = append(reportsToday, r)
 		}
 	}
+	// Zero-token startup reports preserve historical membership but never rank today.
+	activeReports := activeCommunityReports(reportsToday)
 
 	// 聚合
 	totalTokensToday := int64(0)
-	for _, r := range reportsToday {
+	for _, r := range activeReports {
 		totalTokensToday += r.TodayTokens
 	}
 	// 排名在全部今日参与者中计算，榜单仅展示前 10。
-	sort.Slice(reportsToday, func(i, j int) bool {
-		return reportsToday[i].TodayTokens > reportsToday[j].TodayTokens
+	sort.Slice(activeReports, func(i, j int) bool {
+		return activeReports[i].TodayTokens > activeReports[j].TodayTokens
 	})
 	leaderboard := []map[string]interface{}{}
 	myRank := 0
-	for i, r := range reportsToday {
+	for i, r := range activeReports {
 		if r.ID == myID {
 			myRank = i + 1
 		}
@@ -507,7 +524,7 @@ func getCommunityStats() map[string]interface{} {
 	}
 	// 工具占比
 	toolTotals := map[string]int64{}
-	for _, r := range reportsToday {
+	for _, r := range activeReports {
 		for t, v := range r.ByTool {
 			toolTotals[t] += v
 		}
@@ -555,15 +572,15 @@ func getCommunityStats() map[string]interface{} {
 	rankMessage := "今日数据准备中"
 	if !isOptedIn() {
 		rankStatus, rankMessage = "disabled", "数据上报未开启"
-	} else if mySyncedToday && myRank > 0 && myRank <= communityLeaderboardLimit {
+	} else if mySyncedToday && myTokens > 0 && myRank > 0 && myRank <= communityLeaderboardLimit {
 		rankStatus, rankMessage = "ranked", "今日第 "+strconv.Itoa(myRank)+" 名"
-	} else if mySyncedToday {
+	} else if mySyncedToday && myTokens > 0 {
 		rankStatus = "outside_top10"
 		rankMessage = "当前第 " + strconv.Itoa(myRank) + " 名（榜单展示前 " + strconv.Itoa(communityLeaderboardLimit) + "）"
 	}
 
 	dataStatus := "empty"
-	if len(reportsToday) > 0 {
+	if len(activeReports) > 0 {
 		dataStatus = "ok"
 	}
 	dataWarning := ""
@@ -573,7 +590,7 @@ func getCommunityStats() map[string]interface{} {
 	}
 
 	result := map[string]interface{}{
-		"total_users":          len(reportsToday),
+		"total_users":          len(activeReports),
 		"all_reporters":        len(reports),
 		"total_tokens_today":   totalTokensToday,
 		"total_tokens_all":     totalTokensToday * 30,
@@ -590,7 +607,7 @@ func getCommunityStats() map[string]interface{} {
 		"my_name_changed_at":   myNameChangedAt,
 		"rank_status":          rankStatus,
 		"rank_message":         rankMessage,
-		"rank_total":           len(reportsToday),
+		"rank_total":           len(activeReports),
 		"leaderboard_limit":    communityLeaderboardLimit,
 		"can_report":           communityRelayURL() != "",
 		"data_status":          dataStatus,
