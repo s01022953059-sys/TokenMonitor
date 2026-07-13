@@ -31,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.28"
+var appVersion = "1.4.29"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -172,23 +172,9 @@ func antigravityStatsPath() string {
 }
 
 func todayMidnight() int64 {
-	start, _, _ := todayWindow(false, time.Now())
-	return start
-}
-
-func todayWindow(useUTC bool, now time.Time) (int64, string, string) {
-	if useUTC {
-		now = now.UTC()
-		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		return midnight.Unix(), now.Format("2006-01-02"), "UTC+0"
-	}
-	local := now.In(time.Local)
-	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
-	label, _ := local.Zone()
-	if label == "" {
-		label = "本地时间"
-	}
-	return midnight.Unix(), local.Format("2006-01-02"), label
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return midnight.Unix()
 }
 
 // ───── 模型名归一化 (对齐 scanner.py normalize_model_name) ─────
@@ -947,11 +933,7 @@ func dedupEvents(events []LogEntry) []LogEntry {
 // ───── API: /api/usage (对齐 scanner.py get_today_usage) ─────
 
 func getTodayUsage() UsageResponse {
-	return getTodayUsageInTimezone(false)
-}
-
-func getTodayUsageInTimezone(useUTC bool) UsageResponse {
-	todayStart, reportDate, timezoneLabel := todayWindow(useUTC, time.Now())
+	todayStart := todayMidnight()
 
 	// 三源并行扫描
 	var ccLogs, codexLogs, antigravityLogs, hermesLogs []LogEntry
@@ -1007,10 +989,7 @@ func getTodayUsageInTimezone(useUTC bool) UsageResponse {
 			"output_tokens":       outputTokens,
 			"input_cached":        inputCached,
 			"input_uncached":      inputUncached,
-			"date":                reportDate,
-			"timezone_mode":       map[bool]string{true: "utc", false: "local"}[useUTC],
-			"timezone_label":      timezoneLabel,
-			"data_scope":          "本机已记录请求",
+			"date":                time.Now().Format("2006-01-02"),
 			"deepseek_balance":    dsBalance.Balance,
 			"deepseek_currency":   dsBalance.Currency,
 			"deepseek_status":     dsBalance.Status,
@@ -1917,7 +1896,7 @@ func main() {
 			w.WriteHeader(200)
 			return
 		}
-		data := getTodayUsageInTimezone(strings.EqualFold(r.URL.Query().Get("timezone"), "utc"))
+		data := getTodayUsage()
 		writeJSON(w, 200, data)
 	})
 

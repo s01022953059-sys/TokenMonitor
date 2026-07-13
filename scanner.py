@@ -46,25 +46,9 @@ def _open_sqlite_readonly(path, attempts=3):
 
 def get_today_midnight_timestamp():
     """获取今天本地时间零点的时间戳"""
-    return _today_window("local")[0]
-
-
-def _today_window(timezone_mode="local", now=None):
-    """返回指定时区口径的今日起点、日期和标签。"""
-    if str(timezone_mode).lower() == "utc":
-        current = now or datetime.datetime.now(datetime.timezone.utc)
-        if current.tzinfo is None:
-            current = current.replace(tzinfo=datetime.timezone.utc)
-        current = current.astimezone(datetime.timezone.utc)
-        midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
-        return int(midnight.timestamp()), current.strftime("%Y-%m-%d"), "UTC+0"
-
-    current = now or datetime.datetime.now().astimezone()
-    if current.tzinfo is None:
-        current = current.astimezone()
-    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
-    label = current.tzname() or "本地时间"
-    return int(midnight.timestamp()), current.strftime("%Y-%m-%d"), label
+    now = datetime.datetime.now()
+    midnight = datetime.datetime(now.year, now.month, now.day, 0, 0, 0)
+    return int(midnight.timestamp())
 
 def estimate_tokens(text):
     """
@@ -722,13 +706,13 @@ def _dedup_events(events):
     return sorted(deduped, key=lambda x: x["timestamp"])
 
 
-def get_today_usage(timezone_mode="local"):
+def get_today_usage():
     """汇总今日所有的大模型 Token 消耗情况以及 DeepSeek 官方余额。
 
     三源 (cc-switch / 冰茶 Antigravity / Hermes) 加和后做跨源去重,
     避免同一笔请求被多个数据源重复计入。
     """
-    today_start, report_date, timezone_label = _today_window(timezone_mode)
+    today_start = get_today_midnight_timestamp()
 
     # 1. cc-switch 优先，官方 Codex 日志用于补全未安装 cc-switch 的用户。
     cc_logs = scan_cc_switch_logs(today_start)
@@ -790,10 +774,7 @@ def get_today_usage(timezone_mode="local"):
             "output_tokens": output_tokens,
             "input_cached": input_cached,
             "input_uncached": input_uncached,
-            "date": report_date,
-            "timezone_mode": "utc" if str(timezone_mode).lower() == "utc" else "local",
-            "timezone_label": timezone_label,
-            "data_scope": "本机已记录请求",
+            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
             "deepseek_balance": ds_balance.get("balance", "0.00"),
             "deepseek_currency": ds_balance.get("currency", "CNY"),
             "deepseek_status": ds_balance.get("status", "Offline"),

@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.28**。
+当前发布版本：**v1.4.29**。
 
 ## 功能
 
@@ -12,7 +12,6 @@
 
 只读扫描五类数据源，不修改任何原始数据：
 
-- 首页可在“本地 / UTC”间切换今日统计口径；UTC 模式用于对照按 UTC+0 归日的供应商控制台
 - Token Monitor 展示本机日志中已记录的请求，不等同于供应商账号“全部 API Key、全部设备”的账户总量；模型条目悬停可查看本机请求次数
 
 | 数据源 | 路径 | 说明 |
@@ -64,9 +63,10 @@
 
 - 社区 Dashboard 内展示本机 `User_XXXXX` 匿名 ID、同步状态与排行，不再保留重复的独立 ID 入口
 - 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每小时同步；无需手动加入，“立即同步”仅用于网络失败重试
-- 展示今日社区总用量、今日参与用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
+- 展示今日社区总用量、历史参与用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
+- 趋势图和热力图同样使用当天缓存优先展示，启动后预取常用的趋势与近 30 天热力图；切换范围后缓存该范围结果
 - 状态明确区分“等待首次同步”“今日第 N 名”“已同步但未进前十”和“无法上报”
 - 启动约 30 秒后首次自动上报，之后每小时一次；页面聚合结果最多缓存 5 分钟
 - 社区报告写入独立的 `community-data` 分支，不污染 `main` 代码提交历史
@@ -217,7 +217,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.28/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -239,7 +239,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载 ZIP
 curl -L -o TokenMonitor-win.zip \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.28/TokenMonitor-win.zip"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor-win.zip"
 ```
 
 解压后双击 `TokenMonitor.exe`：
@@ -361,11 +361,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.28](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.28)
+最新版本：[v1.4.29](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.29)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.28/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.28/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.28/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/Token%20Monitor.dmg)
+- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor.exe)
+- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor-win.zip)
 
 ## 发布与验证规则
 
@@ -379,6 +379,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.29 (2026-07-13)
+
+- 社区、趋势图和热力图改为缓存优先、后台刷新，缩短页面等待时间；社区人数统一展示历史参与用户，安装后仍会自动加入并后台同步。
+- 修正热力图默认范围与界面不一致的问题，并保持首页使用简单的本地日期口径。
 
 ### v1.4.28 (2026-07-12)
 

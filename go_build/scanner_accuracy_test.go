@@ -6,27 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	_ "modernc.org/sqlite"
 )
-
-func TestTodayWindowSupportsLocalAndUTCBucketing(t *testing.T) {
-	originalLocal := time.Local
-	time.Local = time.FixedZone("CST", 8*60*60)
-	t.Cleanup(func() { time.Local = originalLocal })
-	now := time.Date(2026, 7, 13, 3, 30, 0, 0, time.Local)
-
-	utcStart, utcDate, utcLabel := todayWindow(true, now)
-	localStart, localDate, localLabel := todayWindow(false, now)
-
-	if utcStart != time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC).Unix() || utcDate != "2026-07-12" || utcLabel != "UTC+0" {
-		t.Fatalf("unexpected UTC window: %d %s %s", utcStart, utcDate, utcLabel)
-	}
-	if localStart != time.Date(2026, 7, 13, 0, 0, 0, 0, time.Local).Unix() || localDate != "2026-07-13" || localLabel != "CST" {
-		t.Fatalf("unexpected local window: %d %s %s", localStart, localDate, localLabel)
-	}
-}
 
 func TestCCTokenBreakdownCacheSemantics(t *testing.T) {
 	input, total, cached, uncached := ccTokenBreakdown("claude", 100, 30, 500, 20)

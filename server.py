@@ -371,11 +371,9 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
 
     def do_GET(self):
-        if self.path == "/api/usage" or self.path.startswith("/api/usage?"):
+        if self.path == "/api/usage":
             try:
-                from urllib.parse import urlparse, parse_qs
-                timezone_mode = parse_qs(urlparse(self.path).query).get("timezone", ["local"])[0]
-                self._write_json(200, get_today_usage(timezone_mode))
+                self._write_json(200, get_today_usage())
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

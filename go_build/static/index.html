@@ -224,34 +224,6 @@
             letter-spacing: 1px;
         }
 
-        .timezone-switch {
-            display: inline-flex;
-            align-items: center;
-            margin-left: 8px;
-            padding: 2px;
-            border: 1px solid var(--border-card);
-            border-radius: 6px;
-            background: var(--bg-subtle);
-            vertical-align: middle;
-        }
-        .timezone-option {
-            height: 20px;
-            padding: 0 7px;
-            border: 0;
-            border-radius: 4px;
-            background: transparent;
-            color: var(--text-muted);
-            font: 700 9px 'JetBrains Mono', monospace;
-            letter-spacing: 0;
-            text-transform: none;
-            cursor: pointer;
-        }
-        .timezone-option.active {
-            background: var(--bg-subtle-hover);
-            color: var(--text-main);
-            box-shadow: 0 0 0 1px var(--border-subtle);
-        }
-
         /* 并列网格布局 */
         .dashboard-grid {
             display: flex;
@@ -1425,7 +1397,7 @@
         <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.7; letter-spacing: 0.5px; cursor: pointer; user-select: none; transition: opacity 0.2s;" title="点击查看关于">v--</span>
         <header>
             <h1>今日 Token 消耗统计</h1>
-            <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span><span id="timezoneSwitch" class="timezone-switch" title="UTC 可用于对照按 UTC+0 归日的供应商控制台；两种模式都只统计本机记录"><button class="timezone-option active" data-timezone="local">本地</button><button class="timezone-option" data-timezone="utc">UTC</button></span></p>
+            <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span></p>
         </header>
 
         <!-- 工具/模型并列网格 -->
@@ -2060,18 +2032,9 @@
                 ? location.origin
                 : 'http://127.0.0.1:15723');
 
-        let usageTimezone = localStorage.getItem('tokenMonitorUsageTimezone') === 'utc' ? 'utc' : 'local';
-
-        function applyUsageTimezoneSelection() {
-            document.querySelectorAll('.timezone-option').forEach(button => {
-                button.classList.toggle('active', button.dataset.timezone === usageTimezone);
-                button.setAttribute('aria-pressed', button.dataset.timezone === usageTimezone ? 'true' : 'false');
-            });
-        }
-
         async function updateData() {
             try {
-                const response = await fetch(API_BASE + '/api/usage?timezone=' + usageTimezone);
+                const response = await fetch(API_BASE + '/api/usage');
                 const data = await response.json();
 
                 if (data.error) {
@@ -2086,10 +2049,6 @@
                 document.getElementById('modelTotTokens').innerText = formattedTotal;
                 document.getElementById('hdrDate').innerText = data.summary.date;
                 document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
-                document.getElementById('timezoneSwitch').title =
-                    (data.summary.timezone_label || (usageTimezone === 'utc' ? 'UTC+0' : '本地时间')) +
-                    ' · ' + (data.summary.data_scope || '本机已记录请求') +
-                    ' · ' + (data.summary.events_after_dedup || 0) + ' 次';
 
                 // 2. 更新总量级别灯
                 // 用原始 total_tokens 数值 (非 formatted) 映射颜色:
@@ -2284,14 +2243,61 @@
             });
         }
 
-        async function fetchHistoryAndRender(days = 7, dimension = 'tool') {
+        const DASHBOARD_CACHE_PREFIX = 'tokenMonitorDashboardCacheV1:';
+        let _historyRefreshPromise = null;
+        const _heatmapRefreshPromises = new Map();
+
+        function readDashboardCache(name) {
+            try {
+                const cached = JSON.parse(localStorage.getItem(DASHBOARD_CACHE_PREFIX + name) || 'null');
+                if (!cached || cached.date !== communityTodayKey() || !cached.data) return null;
+                return cached.data;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeDashboardCache(name, data) {
+            try {
+                localStorage.setItem(DASHBOARD_CACHE_PREFIX + name, JSON.stringify({
+                    date: communityTodayKey(), saved_at: Date.now(), data: data
+                }));
+            } catch (_) {}
+        }
+
+        function refreshHistoryData() {
+            if (_historyRefreshPromise) return _historyRefreshPromise;
+            _historyRefreshPromise = fetch(API_BASE + '/api/history', {cache: 'no-store'})
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.labels) {
+                        rawHistoryData = data;
+                        writeDashboardCache('history', data);
+                    }
+                    return data;
+                })
+                .finally(() => { _historyRefreshPromise = null; });
+            return _historyRefreshPromise;
+        }
+
+        async function fetchHistoryAndRender(days = 7, dimension = 'tool', suppliedData = null) {
+            if (suppliedData && suppliedData.labels) rawHistoryData = suppliedData;
             if (!rawHistoryData) {
-                try {
-                    const res = await fetch(API_BASE + '/api/history');
-                    rawHistoryData = await res.json();
-                } catch (err) {
-                    console.error("加载历史统计数据出错:", err);
-                    return;
+                const cached = readDashboardCache('history');
+                if (cached && cached.labels) {
+                    rawHistoryData = cached;
+                    refreshHistoryData().then(data => {
+                        if (document.getElementById('historyModal').classList.contains('active')) {
+                            fetchHistoryAndRender(days, dimension, data);
+                        }
+                    }).catch(() => {});
+                } else {
+                    try {
+                        rawHistoryData = await refreshHistoryData();
+                    } catch (err) {
+                        console.error("加载历史统计数据出错:", err);
+                        return;
+                    }
                 }
             }
 
@@ -2568,15 +2574,9 @@
             loadAppInfo();
             // 启动后静默预取社区聚合，用户打开页面时优先命中当天缓存。
             setTimeout(() => fetchCommunityData().catch(() => {}), 1200);
-            applyUsageTimezoneSelection();
-            document.getElementById('timezoneSwitch').addEventListener('click', event => {
-                const button = event.target.closest('.timezone-option');
-                if (!button || button.dataset.timezone === usageTimezone) return;
-                usageTimezone = button.dataset.timezone;
-                localStorage.setItem('tokenMonitorUsageTimezone', usageTimezone);
-                applyUsageTimezoneSelection();
-                updateData();
-            });
+            // 常用统计页提前准备；打开时先显示当天缓存，再在后台更新。
+            setTimeout(() => refreshHistoryData().catch(() => {}), 1600);
+            setTimeout(() => refreshHeatmapData(30).catch(() => {}), 2000);
 
             // 首次启动快速重试：每 150ms 重试直到服务器就绪，然后切换为 3s 常规轮询
             let bootRetryTimer = setInterval(async () => {
@@ -2885,15 +2885,40 @@
             document.getElementById(nextId).style.display = page < totalPages ? '' : 'none';
         }
         // ===== 活动热力图 =====
-        let _heatmapDays = 365;
-        async function loadHeatmap(days) {
+        let _heatmapDays = 30;
+        function refreshHeatmapData(days) {
+            if (_heatmapRefreshPromises.has(days)) return _heatmapRefreshPromises.get(days);
+            const request = fetch(API_BASE + '/api/heatmap?days=' + days, {cache: 'no-store'})
+                .then(response => response.json())
+                .then(data => {
+                    if (data && Array.isArray(data.days)) writeDashboardCache('heatmap:' + days, data);
+                    return data;
+                })
+                .finally(() => { _heatmapRefreshPromises.delete(days); });
+            _heatmapRefreshPromises.set(days, request);
+            return request;
+        }
+
+        async function loadHeatmap(days, suppliedData = null) {
             if (days === undefined) days = _heatmapDays;
             _heatmapDays = days;
             const container = document.getElementById('heatmapContainer');
-            container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
             try {
-                const res = await fetch(API_BASE + '/api/heatmap?days=' + days, { cache: 'no-store' });
-                const data = await res.json();
+                let data = suppliedData;
+                if (!data) {
+                    const cached = readDashboardCache('heatmap:' + days);
+                    if (cached) {
+                        data = cached;
+                        refreshHeatmapData(days).then(fresh => {
+                            if (_heatmapDays === days && document.getElementById('heatmapModal').classList.contains('active')) {
+                                loadHeatmap(days, fresh);
+                            }
+                        }).catch(() => {});
+                    } else {
+                        container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
+                        data = await refreshHeatmapData(days);
+                    }
+                }
                 const dayList = data.days || [];
                 const maxVal = data.max_value || 0;
 
@@ -3299,9 +3324,9 @@
                         '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">今日参与社区统计的数据</div>' +
                     '</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
-                        '<div style="font-size:10px;color:var(--text-muted);">今日参与用户</div>' +
-                        '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + (dataStatus === 'empty' ? '--' : totalUsers) + '</div>' +
-                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">累计有 ' + allReporters + ' 个匿名 ID 提交过数据</div>' +
+                        '<div style="font-size:10px;color:var(--text-muted);">历史参与用户</div>' +
+                        '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + allReporters + '</div>' +
+                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">累计提交过社区数据的匿名 ID</div>' +
                     '</div>' +
                 '</div>' +
                 '<div style="display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
