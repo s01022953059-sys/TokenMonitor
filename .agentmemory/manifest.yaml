@@ -1,0 +1,26 @@
+schema_version: "0.1"
+project_id: "token_monitor"
+project_name: "token monitor"
+language: "zh-CN"
+source_of_truth: "markdown-and-jsonl"
+entrypoints:
+  brief: ".agentmemory/brief.md"
+  current_state: ".agentmemory/current-state.md"
+  decisions: ".agentmemory/decisions.md"
+  tasks: ".agentmemory/tasks.md"
+  glossary: ".agentmemory/glossary.md"
+  events: ".agentmemory/events.jsonl"
+  requirements: "docs/PROJECT_STATUS.md"
+legacy_memory:
+  codex: ".codex/project_memory.md"
+  project_status: "docs/PROJECT_STATUS.md"
+policies:
+  load_strategy: "summary-first"
+  deletion: "logical-by-default"
+  rollback: "compensating-event"
+  unconfirmed_claims: "never-promote-silently"
+  release_authority: "explicit-only"
+adapters:
+  codex: "AGENTS.md"
+  claude_code: ".claude/"
+  workbuddy: "http-inbox-planned"

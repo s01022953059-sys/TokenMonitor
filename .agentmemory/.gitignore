@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+index.sqlite3
+index.sqlite3-*
+runtime/
+inbox/*.jsonl
