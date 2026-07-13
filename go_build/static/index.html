@@ -2566,6 +2566,8 @@
 
             initCharts();
             loadAppInfo();
+            // 启动后静默预取社区聚合，用户打开页面时优先命中当天缓存。
+            setTimeout(() => fetchCommunityData().catch(() => {}), 1200);
             applyUsageTimezoneSelection();
             document.getElementById('timezoneSwitch').addEventListener('click', event => {
                 const button = event.target.closest('.timezone-option');
@@ -3058,13 +3060,64 @@
         });
 
         // ===== 社区 Dashboard =====
-        async function loadCommunity() {
-            const container = document.getElementById('communityContainer');
-            container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>';
+        const COMMUNITY_CACHE_KEY = 'tokenMonitorCommunityCacheV1';
+        let _communityFetchPromise = null;
+        let _communityActivityTimer = null;
+
+        function communityTodayKey() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return year + '-' + month + '-' + day;
+        }
+
+        function readCommunityCache() {
             try {
-                const res = await fetch(API_BASE + '/api/community', {cache: 'no-store'});
-                const data = await res.json();
+                const cached = JSON.parse(localStorage.getItem(COMMUNITY_CACHE_KEY) || 'null');
+                if (!cached || cached.date !== communityTodayKey() || !cached.data || cached.data.error) return null;
+                return cached.data;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeCommunityCache(data) {
+            try {
+                localStorage.setItem(COMMUNITY_CACHE_KEY, JSON.stringify({
+                    date: communityTodayKey(),
+                    saved_at: Date.now(),
+                    data: data
+                }));
+            } catch (_) {
+                // WebView 禁用本地存储时仍可正常走网络加载。
+            }
+        }
+
+        function fetchCommunityData() {
+            if (_communityFetchPromise) return _communityFetchPromise;
+            _communityFetchPromise = fetch(API_BASE + '/api/community', {cache: 'no-store'})
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.error) writeCommunityCache(data);
+                    return data;
+                })
+                .finally(() => { _communityFetchPromise = null; });
+            return _communityFetchPromise;
+        }
+
+        async function loadCommunity(options = {}) {
+            const container = document.getElementById('communityContainer');
+            const cached = options.preferCache === false ? null : readCommunityCache();
+            if (cached) {
+                renderCommunity(cached);
+            } else {
+                container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>';
+            }
+            try {
+                const data = await fetchCommunityData();
                 if (data.error) {
+                    if (cached) return;
                     container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +
                         '<div style="font-size:13px;color:var(--text-main);margin-bottom:8px;">社区数据暂时不可用</div>' +
                         '<div style="font-size:11px;">' + escapeHtml(data.error) + '</div></div>';
@@ -3072,6 +3125,7 @@
                 }
                 renderCommunity(data);
             } catch (err) {
+                if (cached) return;
                 container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +
                     '<div style="font-size:13px;color:var(--text-main);margin-bottom:8px;">社区数据暂时不可用</div>' +
                     '<div style="font-size:11px;">' + escapeHtml(err.message) + '</div></div>';
@@ -3126,6 +3180,10 @@
             const strip = document.getElementById('communityActivityStrip');
             const track = document.getElementById('communityActivityTrack');
             const step = document.getElementById('communityActivityStep');
+            if (_communityActivityTimer) {
+                clearInterval(_communityActivityTimer);
+                _communityActivityTimer = null;
+            }
             if (!strip || !track || activities.length < 2) return;
             let current = 0;
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -3135,14 +3193,14 @@
             };
             show();
             if (reducedMotion) return;
-            let timer = setInterval(() => {
+            _communityActivityTimer = setInterval(() => {
                 current = (current + 1) % activities.length;
                 show();
             }, 3800);
-            strip.addEventListener('mouseenter', () => clearInterval(timer));
+            strip.addEventListener('mouseenter', () => clearInterval(_communityActivityTimer));
             strip.addEventListener('mouseleave', () => {
-                clearInterval(timer);
-                timer = setInterval(() => {
+                clearInterval(_communityActivityTimer);
+                _communityActivityTimer = setInterval(() => {
                     current = (current + 1) % activities.length;
                     show();
                 }, 3800);
@@ -3317,7 +3375,7 @@
                         if (result.next_change_at) message += '，可在 ' + formatCommunityTime(result.next_change_at) + ' 后再试';
                         throw new Error(message);
                     }
-                    await loadCommunity();
+                    await loadCommunity({preferCache: false});
                 } catch (error) {
                     nameSaveBtn.disabled = false;
                     nameCancelBtn.disabled = false;
