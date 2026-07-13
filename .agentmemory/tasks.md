@@ -2,16 +2,7 @@
 
 ## 进行中
 
-### TM-AM-002 让 `agentmemory context` 默认按项目根路由（WorkBuddy 上线前置）
-
-- 状态：待处理
-- 目标：在不传 `--root` 时，`agentmemory context` 应能根据当前工作目录自动发现最近的上级 `.agentmemory/manifest.yaml`，并以该项目为根构建任务知识包。
-- 背景：2026-07-13 验证 `token_monitor` 接入时发现，**在 token_monitor 目录里跑 `context` 不传 `--root` 仍返回 AgentMemory 自己的结果**；必须显式传 `--root /Users/baggio/Projects/token_monitor` 才能命中本项目记忆包。WorkBuddy 上线后用户不会记得加 `--root`，必须自动发现。
-- 验收：
-  1. 在 token_monitor 目录下跑 `context "<query>"`（不传 `--root`），top-1 命中应为 `.agentmemory/current-state.md`（不再是 AgentMemory 主项目）
-  2. 退回 AgentMemory 主项目目录时仍能正确返回主项目结果
-  3. 进入无 `.agentmemory/` 的目录时应给出明确提示，**不**误命中主项目
-  4. 显式 `--root` 仍可用、且优先级最高
+（无 —— TM-AM-002 已与 AM-005 合并实施完成，详见"已完成"。）
 
 ## 待处理
 
@@ -27,3 +18,7 @@
   - 验证：`agentmemory context "token monitor 当前状态" --root ... --budget 3200` top-1 命中本项目 `.agentmemory/current-state.md:1`，score 12.0；8 条结果中 5 条来自新建 `.agentmemory/`，0 条误召回 AgentMemory 主项目
   - 时间：2026-07-13 17:14–17:24
   - 证据：`events.jsonl#memory.initialized` + `events.jsonl#integration.token_monitor_context_verified`
+- TM-AM-002：让 `agentmemory context` 默认按项目根路由（与 AM-005 合并实施）
+  - 时间：2026-07-13 17:30–17:34
+  - 真实体验 3 场景：token_monitor 根 ✅ / token_monitor 子目录 ✅ / `/tmp` 无 `.agentmemory/` 明确报错 ✅
+  - 证据：`AgentMemory/.agentmemory/events.jsonl#evt-20260713-0015` + `events.jsonl#evt-20260713-0014`
