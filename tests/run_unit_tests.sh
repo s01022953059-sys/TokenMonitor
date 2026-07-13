@@ -41,14 +41,33 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
   if (!html.includes("刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。")) {
     throw new Error(`${file}: 缺少社区数据短暂延迟的友好说明`);
   }
+  if (!html.includes("今日活跃用户") || !html.includes("总用户") ||
+      !html.includes("data.today_active_users") || !html.includes("data.total_users")) {
+    throw new Error(`${file}: 社区总用户与今日活跃用户口径展示缺失`);
+  }
   const versionHighlight = new RegExp(`['\"]${currentVersion}['\"]\\s*:\\s*\\[\\s*['\"][^'\"]+['\"]`, 's');
   if (!html.includes('id="aboutReleaseHighlights"') ||
       !html.includes('function renderAboutReleaseHighlights') ||
       !versionHighlight.test(html)) {
     throw new Error(`${file}: 当前版本缺少 About 更新摘要`);
   }
+  if (!html.includes('data-desktop-shell="true"') ||
+      !html.includes('window.__TOKEN_MONITOR_DESKTOP__')) {
+    throw new Error(`${file}: 双端单一内容面标识缺失`);
+  }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
+}
+const swift = fs.readFileSync('app_wrapper.swift', 'utf8');
+const windowsGUI = fs.readFileSync('go_build/gui_windows.go', 'utf8');
+if (!swift.includes('window.__TOKEN_MONITOR_DESKTOP__ = true') ||
+    !swift.includes('webView.topAnchor.constraint(equalTo: window.contentView!.topAnchor)')) {
+  throw new Error('macOS: 单一内容面宿主约束缺失');
+}
+if (!windowsGUI.includes('/?desktop=1') ||
+    !windowsGUI.includes('func startTrayUsageLoop') ||
+    !windowsGUI.includes('systray.SetTitle("🔥" + formatTrayTokens')) {
+  throw new Error('Windows: 单一内容面或实时托盘标题缺失');
 }
 NODE
 cmp -s index.html go_build/static/index.html

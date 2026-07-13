@@ -57,7 +57,7 @@ func startGUI(port int, feedURL string, autoStarted bool) {
 func onTrayReady(port int, feedURL string, autoStarted bool) {
 	guiLog("onTrayReady")
 	systray.SetIcon(trayIconBytes)
-	systray.SetTitle("")
+	systray.SetTitle("🔥--")
 	systray.SetTooltip("Token Monitor")
 
 	mShow := systray.AddMenuItem("显示仪表盘", "打开 Token Monitor 窗口")
@@ -143,7 +143,7 @@ func onTrayReady(port int, feedURL string, autoStarted bool) {
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			w.Dispatch(func() {
-				w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
+				w.Navigate(fmt.Sprintf("http://127.0.0.1:%d/?desktop=1", port))
 			})
 		}()
 
@@ -154,6 +154,9 @@ func onTrayReady(port int, feedURL string, autoStarted bool) {
 		w.Run()
 		guiLog("w.Run() returned")
 	}()
+
+	// 后台刷新托盘用量，与 macOS 状态栏保持相同口径。
+	go startTrayUsageLoop(port)
 
 	// 后台定时检查更新
 	go func() {
@@ -229,9 +232,58 @@ func showDashboardHome() {
 	}
 	showHiddenWindow()
 	w.Dispatch(func() {
-		w.Navigate(fmt.Sprintf("http://127.0.0.1:%d/", port))
+		w.Navigate(fmt.Sprintf("http://127.0.0.1:%d/?desktop=1", port))
 	})
 	guiLog("tray double-click: dashboard home opened")
+}
+
+// startTrayUsageLoop 与 macOS 状态栏同样展示当天 Token 总量；网络失败时保留上次值。
+func startTrayUsageLoop(port int) {
+	updateTrayUsage(port)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			updateTrayUsage(port)
+		case <-exitChan:
+			return
+		}
+	}
+}
+
+func updateTrayUsage(port int) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/api/usage", port))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var payload struct {
+		Summary struct {
+			TotalTokens int64 `json:"total_tokens"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return
+	}
+	systray.SetTitle("🔥" + formatTrayTokens(payload.Summary.TotalTokens))
+}
+
+func formatTrayTokens(tokens int64) string {
+	switch {
+	case tokens >= 100000000:
+		return fmt.Sprintf("%.1f亿", float64(tokens)/100000000)
+	case tokens >= 1000000:
+		return fmt.Sprintf("%.1fM", float64(tokens)/1000000)
+	case tokens >= 1000:
+		return fmt.Sprintf("%.1fK", float64(tokens)/1000)
+	default:
+		return fmt.Sprintf("%d", tokens)
+	}
 }
 
 // ─── 检查更新 (v1.4.11: 不自动更新, 只通知; 不阻塞后台数据扫描) ───

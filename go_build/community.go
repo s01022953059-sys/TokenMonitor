@@ -133,6 +133,32 @@ func dedupeLegacyIdentityReports(reports []communityReportData) []communityRepor
 	return result
 }
 
+func communityReportRecency(report communityReportData) string {
+	// ISO 8601 时间字符串可直接按字典序比较；旧报告没有更新时间时退回报告日期。
+	return report.UpdatedAt + "|" + report.ReportDate
+}
+
+func dedupeCommunityReportsByID(reports []communityReportData) []communityReportData {
+	latestIndex := make(map[string]int)
+	for index, report := range reports {
+		id := strings.TrimSpace(report.ID)
+		if id == "" {
+			continue
+		}
+		previousIndex, exists := latestIndex[id]
+		if !exists || communityReportRecency(report) >= communityReportRecency(reports[previousIndex]) {
+			latestIndex[id] = index
+		}
+	}
+	result := make([]communityReportData, 0, len(latestIndex))
+	for index, report := range reports {
+		if latestIndex[strings.TrimSpace(report.ID)] == index {
+			result = append(result, report)
+		}
+	}
+	return result
+}
+
 func activeCommunityReports(reports []communityReportData) []communityReportData {
 	active := make([]communityReportData, 0, len(reports))
 	for _, report := range reports {
@@ -400,7 +426,7 @@ func getCommunityStats() map[string]interface{} {
 		return map[string]interface{}{
 			"error": message, "data_status": "load_failed",
 			"opted_in": isOptedIn(), "can_report": communityRelayURL() != "", "my_id": getUserID(),
-			"total_users": 0, "total_tokens_today": 0,
+			"total_users": 0, "today_active_users": 0, "all_reporters": 0, "total_tokens_today": 0,
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
 	}
@@ -410,7 +436,7 @@ func getCommunityStats() map[string]interface{} {
 		return map[string]interface{}{
 			"error": "社区数据读取失败：目录响应格式异常", "data_status": "load_failed",
 			"opted_in": isOptedIn(), "can_report": communityRelayURL() != "", "my_id": getUserID(),
-			"total_users": 0, "total_tokens_today": 0,
+			"total_users": 0, "today_active_users": 0, "all_reporters": 0, "total_tokens_today": 0,
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
 	}
@@ -464,11 +490,11 @@ func getCommunityStats() map[string]interface{} {
 		return map[string]interface{}{
 			"error": "社区报告存在，但本次全部读取失败，请稍后重试", "data_status": "load_failed",
 			"opted_in": isOptedIn(), "can_report": token != "", "my_id": getUserID(),
-			"total_users": 0, "total_tokens_today": 0,
+			"total_users": 0, "today_active_users": 0, "all_reporters": 0, "total_tokens_today": 0,
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
 	}
-	reports = dedupeLegacyIdentityReports(reports)
+	reports = dedupeCommunityReportsByID(dedupeLegacyIdentityReports(reports))
 
 	// 只聚合今天的报告，避免离线用户昨天的数据被算进今天。
 	today := time.Now().Format("2006-01-02")
@@ -593,7 +619,8 @@ func getCommunityStats() map[string]interface{} {
 	}
 
 	result := map[string]interface{}{
-		"total_users":          len(activeReports),
+		"total_users":          len(reports),
+		"today_active_users":   len(activeReports),
 		"all_reporters":        len(reports),
 		"total_tokens_today":   totalTokensToday,
 		"total_tokens_all":     totalTokensToday * 30,

@@ -71,6 +71,18 @@ func TestDedupeLegacyIdentityReports(t *testing.T) {
 	}
 }
 
+func TestDedupeCommunityReportsByIDKeepsLatestReport(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_TEST1", ReportDate: "2026-07-13", UpdatedAt: "2026-07-13T08:00:00Z", TodayTokens: 100},
+		{ID: "User_TEST1", ReportDate: "2026-07-13", UpdatedAt: "2026-07-13T09:00:00Z", TodayTokens: 200},
+		{ID: "User_OTHER", ReportDate: "2026-07-13", UpdatedAt: "2026-07-13T08:30:00Z", TodayTokens: 10},
+	}
+	got := dedupeCommunityReportsByID(reports)
+	if len(got) != 2 || got[0].ID != "User_TEST1" || got[0].TodayTokens != 200 || got[1].ID != "User_OTHER" {
+		t.Fatalf("unexpected ID-deduplicated reports: %#v", got)
+	}
+}
+
 func TestActiveCommunityReportsExcludeZeroTokenStartupReports(t *testing.T) {
 	reports := []communityReportData{
 		{ID: "User_ACTIVE", TodayTokens: 123},

@@ -14,6 +14,7 @@ import datetime
 import hmac
 import http.server
 import json
+import multiprocessing
 import os
 import plistlib
 import socket
@@ -149,14 +150,33 @@ def _save_heatmap_snapshot(data):
     os.replace(temporary, HEATMAP_CACHE_PATH)
 
 
+def _build_heatmap_snapshot_worker(cache_path):
+    """在独立进程中生成全年快照，避免 CPU 密集扫描占住 Web 服务的 GIL。"""
+    try:
+        data = get_heatmap_data(HEATMAP_CACHE_DAYS)
+        directory = os.path.dirname(cache_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        temporary = cache_path + ".tmp"
+        with open(temporary, "w", encoding="utf-8") as stream:
+            json.dump({"saved_at": time.time(), "data": data}, stream, ensure_ascii=False)
+        os.replace(temporary, cache_path)
+    except OSError:
+        pass
+
+
 def _refresh_heatmap_snapshot():
     global _heatmap_refreshing
     try:
-        data = get_heatmap_data(HEATMAP_CACHE_DAYS)
-        try:
-            _save_heatmap_snapshot(data)
-        except OSError:
-            pass
+        # macOS 的全年扫描约需十余秒。让它运行在独立进程，详情请求不会被 GIL 卡住。
+        context = multiprocessing.get_context("fork" if os.name == "posix" else "spawn")
+        worker = context.Process(
+            target=_build_heatmap_snapshot_worker,
+            args=(HEATMAP_CACHE_PATH,),
+            daemon=True,
+        )
+        worker.start()
+        worker.join()
     finally:
         with _heatmap_cache_lock:
             _heatmap_refreshing = False
@@ -261,6 +281,14 @@ def get_cached_heatmap_detail(date, page=1, page_size=50):
 
     _start_heatmap_detail_refresh(date, page, page_size)
     return _empty_heatmap_detail(date, page, page_size)
+
+
+def _prewarm_recent_dashboard_data():
+    """详情优先预热；全年快照仅在缺失或过期时由缓存入口安排重建。"""
+    today = datetime.date.today()
+    for offset in range(2):
+        _refresh_heatmap_detail((today - datetime.timedelta(days=offset)).isoformat(), 1, 50)
+    get_cached_heatmap(HEATMAP_CACHE_DAYS)
 
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)
@@ -737,11 +765,8 @@ def main():
     print(f"[+] Token Monitor 仪表盘已启动: http://127.0.0.1:{PORT}")
     print(f"[+] 更新源 (TokenMonitorUpdateFeedURL): {feed_status}")
 
-    # 启动后预热全年快照；用户首次打开热力图时通常已可直接命中缓存。
-    threading.Thread(target=lambda: get_cached_heatmap(HEATMAP_CACHE_DAYS), daemon=True).start()
-    threading.Thread(
-        target=lambda: get_cached_heatmap_detail(datetime.date.today().isoformat()), daemon=True
-    ).start()
+    # 最近两天详情先完成；全年热力图随后在独立进程扫描，不能拖慢前台。
+    threading.Thread(target=_prewarm_recent_dashboard_data, daemon=True).start()
 
     # 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
     reporting_disabled = os.environ.get("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT", "").strip().lower()

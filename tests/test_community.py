@@ -186,6 +186,7 @@ class CommunityTests(unittest.TestCase):
             result = community.get_community_stats()
 
         self.assertEqual(result["total_users"], 2)
+        self.assertEqual(result["today_active_users"], 2)
         self.assertEqual(result["all_reporters"], 2)
         self.assertEqual(result["total_tokens_today"], 31_000_010)
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1", "User_OTHER"])
@@ -226,9 +227,29 @@ class CommunityTests(unittest.TestCase):
             result = community.get_community_stats()
 
         self.assertEqual(result["all_reporters"], 3)
-        self.assertEqual(result["total_users"], 1)
+        self.assertEqual(result["total_users"], 3)
+        self.assertEqual(result["today_active_users"], 1)
         self.assertEqual(result["rank_total"], 1)
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1"])
+
+    def test_duplicate_user_id_uses_only_its_latest_report(self):
+        today = datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_TEST1", "report_date": today, "updated_at": today + "T08:00:00Z", "today_tokens": 100, "by_tool": {"Codex": 100}},
+            {"id": "User_TEST1", "report_date": today, "updated_at": today + "T09:00:00Z", "today_tokens": 200, "by_tool": {"Codex": 200}},
+            {"id": "User_OTHER", "report_date": today, "updated_at": today + "T08:30:00Z", "today_tokens": 10, "by_tool": {"Claude": 10}},
+        ]
+        files = [{"name": f"report-{index}.json", "download_url": f"https://example.test/{index}"} for index in range(len(reports))]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        self.assertEqual(result["total_users"], 2)
+        self.assertEqual(result["today_active_users"], 2)
+        self.assertEqual(result["total_tokens_today"], 210)
+        self.assertEqual(result["leaderboard"][0]["tokens"], 200)
 
 
 if __name__ == "__main__":

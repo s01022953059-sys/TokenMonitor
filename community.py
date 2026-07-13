@@ -210,6 +210,27 @@ def _dedupe_legacy_identity_reports(reports):
     ]
 
 
+def _dedupe_reports_by_id(reports):
+    """每个匿名 ID 只保留最新报告，避免异常副本重复计入用户和用量。"""
+    unique = {}
+    for report in reports:
+        user_id = str(report.get("id") or "").strip()
+        if not user_id:
+            continue
+        previous = unique.get(user_id)
+        if previous is None or _report_recency_key(report) >= _report_recency_key(previous):
+            unique[user_id] = report
+    return list(unique.values())
+
+
+def _report_recency_key(report):
+    """报告以更新时间优先；旧格式缺失更新时间时再按报告日期判定。"""
+    return (
+        str(report.get("updated_at") or ""),
+        str(report.get("report_date") or ""),
+    )
+
+
 def _relay_request(report):
     """通过鹏帅的 VPS 中继提交匿名报告，不向客户端分发 GitCode token。"""
     body = json.dumps(report, ensure_ascii=False).encode("utf-8")
@@ -357,6 +378,8 @@ def get_community_stats():
             "can_report": bool(COMMUNITY_RELAY_URL),
             "my_id": get_user_id(),
             "total_users": 0,
+            "today_active_users": 0,
+            "all_reporters": 0,
             "total_tokens_today": 0,
             "leaderboard": [],
             "tool_distribution": {},
@@ -391,13 +414,15 @@ def get_community_stats():
             "can_report": bool(COMMUNITY_RELAY_URL),
             "my_id": get_user_id(),
             "total_users": 0,
+            "today_active_users": 0,
+            "all_reporters": 0,
             "total_tokens_today": 0,
             "leaderboard": [],
             "tool_distribution": {},
             "active_hours": [0] * 24,
         }
 
-    reports = _dedupe_legacy_identity_reports(reports)
+    reports = _dedupe_reports_by_id(_dedupe_legacy_identity_reports(reports))
 
     # 聚合
     my_id = get_user_id()
@@ -460,7 +485,10 @@ def get_community_stats():
     }
 
     result = {
-        "total_users": len(active_reports),
+        # 总用户和今日活跃用户是不同口径：前者按全部历史唯一匿名 ID，后者只算今天有用量的人。
+        "total_users": len(reports),
+        "today_active_users": len(active_reports),
+        # 保留旧字段，兼容尚未升级的客户端。
         "all_reporters": len(reports),
         "total_tokens_today": total_tokens_today,
         "total_tokens_all": total_tokens_today * 30,  # 粗估月度

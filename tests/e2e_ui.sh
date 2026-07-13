@@ -95,21 +95,23 @@ printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
 
 # 每日调用详情是 macOS 曾出现长时间卡住的路径：点击当天格子后不能一直停在加载态。
 "$PWCLI" eval "() => document.querySelector('.heatmap-cell-day[data-date=\"$EXPECTED_TODAY\"]').click()" >/dev/null
+DETAIL_TEXT=""
 for _ in {1..20}; do
-    SNAPSHOT=$("$PWCLI" snapshot)
-    if ! printf '%s\n' "$SNAPSHOT" | grep -q "加载中...\|正在整理当天明细"; then
+    DETAIL_TEXT=$("$PWCLI" eval "() => document.getElementById('heatmapDetailList').innerText")
+    if ! printf '%s\n' "$DETAIL_TEXT" | grep -q "加载中\|正在整理当天明细"; then
         break
     fi
     sleep 0.2
 done
-printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY 调用详情"
-! printf '%s\n' "$SNAPSHOT" | grep -q "加载中...\|正在整理当天明细"
+DETAIL_TITLE=$("$PWCLI" eval "() => document.getElementById('heatmapDetailTitle').innerText")
+printf '%s\n' "$DETAIL_TITLE" | grep -q "$EXPECTED_TODAY 调用详情"
+! printf '%s\n' "$DETAIL_TEXT" | grep -q "加载中\|正在整理当天明细"
 
 # About 必须展示当前版本的简短更新摘要，不能只依赖发布时人工目测。
 "$PWCLI" eval "() => document.getElementById('heatmapDetailModal').classList.remove('active')" >/dev/null
 "$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "本次更新"
-printf '%s\n' "$SNAPSHOT" | grep -q "每日调用详情按目标日期读取"
+printf '%s\n' "$SNAPSHOT" | grep -q "最近两天调用详情优先预热"
 
 echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要"

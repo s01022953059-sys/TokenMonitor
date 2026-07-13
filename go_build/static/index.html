@@ -119,6 +119,29 @@
             position: relative;
         }
 
+        /* 桌面 App 使用单一内容面：不在仪表盘外再叠一层页面外壳。 */
+        html[data-desktop-shell="true"],
+        html[data-desktop-shell="true"] body {
+            min-height: 100%;
+            background: var(--bg-card);
+        }
+        html[data-desktop-shell="true"] body {
+            display: block;
+            background-image: none !important;
+        }
+        html[data-desktop-shell="true"] .aurora-bg {
+            display: none;
+        }
+        html[data-desktop-shell="true"] .container {
+            width: 100%;
+            max-width: none;
+            min-height: 100vh;
+            max-height: none;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
         /* 浅色主题加柔和渐变背景纹理, 避免大片纯色空白 */
         :root[data-theme="light"] body {
             background-image:
@@ -2505,6 +2528,10 @@
             '1.4.33': [
                 '每日调用详情按目标日期读取，macOS 打开更快。',
                 'About 新增本次更新摘要，离线也能查看。'
+            ],
+            '1.4.34': [
+                '最近两天调用详情优先预热，全年热力图扫描不阻塞前台。',
+                '桌面界面改为单一内容面，Windows 托盘显示今日总量。'
             ]
         });
 
@@ -2643,6 +2670,9 @@
         })();
 
         window.addEventListener('DOMContentLoaded', () => {
+            const desktopShell = Boolean(window.__TOKEN_MONITOR_DESKTOP__) ||
+                new URLSearchParams(window.location.search).get('desktop') === '1';
+            if (desktopShell) document.documentElement.setAttribute('data-desktop-shell', 'true');
             // 初始化主题
             const savedTheme = getCurrentTheme();
             applyTheme(savedTheme);
@@ -3331,7 +3361,7 @@
             const activities = [];
             const leaderboard = data.leaderboard || [];
             const leader = leaderboard[0];
-            const totalUsers = Number(data.total_users || 0);
+            const totalUsers = Number(data.today_active_users || 0);
             const totalToday = Number(data.total_tokens_today || 0);
             const leadingTool = Object.entries(data.tool_distribution || {})[0];
 
@@ -3340,7 +3370,7 @@
                 activities.push('<span class="community-activity-count">' + escapeHtml(name) + '</span>&nbsp;暂居今日榜首，已使用&nbsp;<span class="community-activity-count">' + formatTokens(leader.tokens) + '</span>');
             }
             if (totalUsers > 0) {
-                activities.push('今天已有&nbsp;<span class="community-activity-count">' + totalUsers + '</span>&nbsp;位成员加入统计');
+                activities.push('今天有&nbsp;<span class="community-activity-count">' + totalUsers + '</span>&nbsp;位用户产生用量');
             }
             if (totalToday > 0) {
                 activities.push('社区今日累计用量达到&nbsp;<span class="community-activity-count">' + formatTokens(totalToday) + '</span>');
@@ -3389,7 +3419,7 @@
             const canReport = Boolean(data.can_report);
             const mySyncedToday = Boolean(data.my_synced_today);
             const totalUsers = data.total_users || 0;
-            const allReporters = data.all_reporters || 0;
+            const todayActiveUsers = data.today_active_users || 0;
             const totalToday = data.total_tokens_today || 0;
             const leaderboard = data.leaderboard || [];
             const toolDist = data.tool_distribution || {};
@@ -3399,7 +3429,7 @@
             const rankMessage = data.rank_message || '等待今日首次同步';
             const dataStatus = data.data_status || 'empty';
             const dataWarning = data.data_warning || '';
-            const rankTotal = data.rank_total || totalUsers;
+            const rankTotal = data.rank_total || todayActiveUsers;
             const activities = buildCommunityActivities(data);
             const activityStrip = activities.length ?
                 '<div id="communityActivityStrip" class="community-activity-strip" role="status" aria-live="polite">' +
@@ -3474,16 +3504,21 @@
                         '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">今日参与社区统计的数据</div>' +
                     '</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:10px;padding:16px;">' +
-                        '<div style="font-size:10px;color:var(--text-muted);">历史参与用户</div>' +
-                        '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + allReporters + '</div>' +
-                        '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">累计提交过社区数据的匿名 ID</div>' +
+                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%;">' +
+                            '<div><div style="font-size:10px;color:var(--text-muted);">总用户</div>' +
+                                '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + totalUsers + '</div>' +
+                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">去重后的匿名 ID</div></div>' +
+                            '<div style="border-left:1px solid var(--border-subtle);padding-left:14px;"><div style="font-size:10px;color:var(--text-muted);">今日活跃用户</div>' +
+                                '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + todayActiveUsers + '</div>' +
+                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">今日已产生用量</div></div>' +
+                        '</div>' +
                     '</div>' +
                 '</div>' +
                 '<div style="display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
                 '</div>' +
-                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日用量 Top 10</div>' +
+                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +

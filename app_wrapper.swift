@@ -115,7 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let config = WKWebViewConfiguration()
         // Swift 在 documentStart 注入 API 根地址，避免 JS 端硬编码端口
         let userContentController = WKUserContentController()
-        let injectionScript = "window.__API_BASE__ = '\(apiBaseURL)'; window.__LOCAL_API_TOKEN__ = '\(localAPIToken)';"
+        let injectionScript = "window.__API_BASE__ = '\(apiBaseURL)'; window.__LOCAL_API_TOKEN__ = '\(localAPIToken)'; window.__TOKEN_MONITOR_DESKTOP__ = true;"
         let apiBaseScript = WKUserScript(
             source: injectionScript,
             injectionTime: .atDocumentStart,
@@ -135,12 +135,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         
         window.contentView?.addSubview(webView)
         
-        // 使用 AutoLayout 约束，顶部预留出 28px 的原生标题栏拖拽区域
+        // Web 内容铺满宿主窗口；页面自身是唯一可见内容面，不再叠一层外壳。
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
-            webView.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 28)
+            webView.topAnchor.constraint(equalTo: window.contentView!.topAnchor)
         ])
         
         // 立即展示窗口，完全不卡主线程

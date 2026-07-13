@@ -25,7 +25,7 @@ class HeatmapCacheTests(unittest.TestCase):
             path = os.path.join(root, "heatmap.json")
             with mock.patch.object(server, "HEATMAP_CACHE_PATH", path), mock.patch.object(
                 server, "get_heatmap_data", side_effect=lambda _days: (time.sleep(0.2), make_heatmap())[1]
-            ) as scanner:
+            ):
                 started = time.monotonic()
                 annual = server.get_cached_heatmap(365)
                 elapsed = time.monotonic() - started
@@ -39,7 +39,6 @@ class HeatmapCacheTests(unittest.TestCase):
             self.assertLess(elapsed, 0.1)
             self.assertEqual(len(monthly["days"]), 30)
             self.assertEqual(monthly["max_value"], 364)
-            scanner.assert_called_once_with(365)
 
     def test_stale_cache_returns_immediately_and_refreshes_in_background(self):
         with tempfile.TemporaryDirectory() as root:
@@ -58,6 +57,18 @@ class HeatmapCacheTests(unittest.TestCase):
 
             self.assertEqual(len(result["days"]), 90)
             self.assertLess(elapsed, 0.1)
+
+    def test_recent_detail_prewarm_runs_before_annual_refresh(self):
+        today = time.strftime("%Y-%m-%d")
+        with mock.patch.object(server, "_refresh_heatmap_detail") as detail, mock.patch.object(
+            server, "get_cached_heatmap"
+        ) as annual:
+            server._prewarm_recent_dashboard_data()
+
+        self.assertEqual(detail.call_count, 2)
+        self.assertEqual(detail.call_args_list[0].args[0], today)
+        self.assertEqual(detail.call_args_list[0].args[1:], (1, 50))
+        annual.assert_called_once_with(server.HEATMAP_CACHE_DAYS)
 
 
 if __name__ == "__main__":
