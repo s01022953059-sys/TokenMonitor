@@ -670,6 +670,45 @@
             border: 1px solid var(--border-card);
             border-radius: 14px;
         }
+        .about-release-notes {
+            margin: -2px 0 16px;
+            padding: 10px 0 2px;
+            border-top: 1px solid var(--border-card);
+        }
+        .about-release-notes[hidden] {
+            display: none;
+        }
+        .about-release-notes-title {
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+        }
+        .about-release-notes-list {
+            display: grid;
+            gap: 4px;
+            margin: 6px 0 0;
+            padding: 0;
+            list-style: none;
+        }
+        .about-release-notes-list li {
+            position: relative;
+            padding-left: 12px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            line-height: 1.55;
+        }
+        .about-release-notes-list li::before {
+            content: '';
+            position: absolute;
+            top: 0.58em;
+            left: 0;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--modal-line-color);
+        }
         .version-field {
             min-width: 0;
         }
@@ -1606,6 +1645,10 @@
                         </div>
                     </div>
                 </div>
+                <section id="aboutReleaseHighlights" class="about-release-notes" aria-labelledby="aboutReleaseHighlightsTitle" hidden>
+                    <div id="aboutReleaseHighlightsTitle" class="about-release-notes-title">本次更新</div>
+                    <ul id="aboutReleaseHighlightsList" class="about-release-notes-list"></ul>
+                </section>
                 <div id="aboutUpdateActions" class="about-update-actions">
                     <button id="aboutUpdateBtn" class="primary-btn" style="display: none;">立即更新</button>
                     <button id="aboutSnoozeBtn" class="secondary-btn" style="display: none;">稍后</button>
@@ -2453,6 +2496,31 @@
             }
         }
 
+        // 每次发版为当前版本保留 1-2 条离线可见摘要；发布前静态契约会校验版本键存在。
+        const RELEASE_HIGHLIGHTS = Object.freeze({
+            '1.4.32': [
+                '社区用量改为每 5 分钟静默同步，首页与排行会自动收敛。',
+                '新增用量延迟说明，刚产生的数据会在数分钟内自动更新。'
+            ]
+        });
+
+        function renderAboutReleaseHighlights(version) {
+            const section = document.getElementById('aboutReleaseHighlights');
+            const list = document.getElementById('aboutReleaseHighlightsList');
+            if (!section || !list) return;
+            const key = String(version || '').replace(/^v/, '');
+            const highlights = RELEASE_HIGHLIGHTS[key];
+            if (!Array.isArray(highlights) || highlights.length === 0) {
+                list.textContent = '';
+                section.hidden = true;
+                return;
+            }
+            list.innerHTML = highlights.slice(0, 2).map(item =>
+                '<li>' + escapeHtml(item) + '</li>'
+            ).join('');
+            section.hidden = false;
+        }
+
         // 把 `/api/check-update` 的真实结果落到 About 弹窗里, 失败时显示 HTTP 码和原文片段。
         async function runUpdateCheck() {
             const stateEl = document.getElementById('aboutUpdateState');
@@ -2544,6 +2612,7 @@
 
                 document.getElementById('appVersionBadge').innerText = versionText;
                 document.getElementById('aboutVersionValue').innerText = versionText;
+                renderAboutReleaseHighlights(info.version);
 
                 if (!stateEl) return;
                 if (!updateEnabled) {
@@ -3539,8 +3608,9 @@
                     '<span class="heatmap-stat-sub">' + peakText + '</span>' +
                 '</div>';
         }
-        async function loadHeatmapDayDetail(date, page) {
+        async function loadHeatmapDayDetail(date, page, retryCount) {
             if (page === undefined) page = 1;
+            if (retryCount === undefined) retryCount = 0;
             _heatmapDetailState.date = date;
             _heatmapDetailState.page = page;
             _heatmapDetailState.pageSize = parseInt(document.getElementById('heatmapDetailPageSize').value);
@@ -3556,6 +3626,17 @@
             try {
                 const res = await fetch(API_BASE + '/api/heatmap_detail?date=' + date + '&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
                 const data = await res.json();
+                if (data.cache_state === 'warming') {
+                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">正在整理当天明细…</div>';
+                    if (retryCount < 12) {
+                        setTimeout(() => {
+                            if (modal.classList.contains('active') && _heatmapDetailState.date === date && _heatmapDetailState.page === page) {
+                                loadHeatmapDayDetail(date, page, retryCount + 1);
+                            }
+                        }, 500);
+                    }
+                    return;
+                }
                 const sessions = data.sessions || [];
                 if (sessions.length === 0) {
                     listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该日暂无调用记录</div>';

@@ -27,11 +27,13 @@
    - macOS 运行 `build_macos.sh`，确认 Swift 编译、图标、签名和版本读取成功
    - 本地 API 冒烟：今日 Token 非 0、热力图日期数量正确、会话分页有数据、check-update 选中正确平台资产
    - Playwright 实际验证 About 更新状态/进度/错误，至少覆盖桌面和移动端
+   - **About 当前版本摘要必填**：`index.html` 的 `RELEASE_HIGHLIGHTS` 必须为 `Info.plist` 当前版本提供 1–2 条用户可见短句；`tests/run_unit_tests.sh` 会静态校验，遗漏即阻断发布
    - 涉及 Windows 自启或自替换时，发布前在真实 Windows 机器做一次登录自启、关闭窗口驻留、更新替换重启验收
    - 自动化部分统一执行 `bash verify_release.sh`；`release_all.sh` 必须在任何 tag/Release 操作前调用它，验证失败立即中止
    - 上传后必须从 `gitcode.com/.../releases/download/...` 重新下载并校验 DMG 和 Windows Setup EXE；不能只相信 Release API 的附件列表
    - **测试分层**：Unit 数量最多且覆盖纯逻辑；API 契约测试必须充分，并同时覆盖 Python/macOS 与 Go/Windows 本地进程；E2E 只保留少量关键用户路径，不能用 E2E 数量替代 Unit/API 覆盖。总入口固定为 `bash verify_release.sh`，顺序为 Unit -> API -> E2E -> 构建。
 11. **统计口径不确定时优先参考 AgentsView**: 遇到新 Agent、字段语义、缓存口径、重复事件或会话格式不明确时，先查 [kenn-io/agentsview](https://github.com/kenn-io/agentsview) 对应 parser 和测试，再结合本机原始日志验证；禁止仅凭字段名猜测。
+12. **每日调用详情性能门禁**：macOS `/api/heatmap_detail?date=YYYY-MM-DD` 必须按目标自然日限界扫描，Codex rollout 仅查目标日相邻目录；服务启动后台预热当天详情，缓存命中立即返回、过期静默刷新。单元测试需覆盖慢扫描不阻塞，API 契约需覆盖响应阈值，E2E 必须覆盖“热力图点击当天格子后退出加载态”。
 
 ## 架构
 

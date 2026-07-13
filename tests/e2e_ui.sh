@@ -93,4 +93,23 @@ printf '%s\n' "$SNAPSHOT" | grep -q "近一年.*\[active\]"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_365 至"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
 
-echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围及最后一天"
+# 每日调用详情是 macOS 曾出现长时间卡住的路径：点击当天格子后不能一直停在加载态。
+"$PWCLI" eval "() => document.querySelector('.heatmap-cell-day[data-date=\"$EXPECTED_TODAY\"]').click()" >/dev/null
+for _ in {1..20}; do
+    SNAPSHOT=$("$PWCLI" snapshot)
+    if ! printf '%s\n' "$SNAPSHOT" | grep -q "加载中...\|正在整理当天明细"; then
+        break
+    fi
+    sleep 0.2
+done
+printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY 调用详情"
+! printf '%s\n' "$SNAPSHOT" | grep -q "加载中...\|正在整理当天明细"
+
+# About 必须展示当前版本的简短更新摘要，不能只依赖发布时人工目测。
+"$PWCLI" eval "() => document.getElementById('heatmapDetailModal').classList.remove('active')" >/dev/null
+"$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
+SNAPSHOT=$("$PWCLI" snapshot)
+printf '%s\n' "$SNAPSHOT" | grep -q "本次更新"
+printf '%s\n' "$SNAPSHOT" | grep -q "社区用量改为每 5 分钟静默同步"
+
+echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要"

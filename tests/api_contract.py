@@ -187,7 +187,9 @@ class APIContractTests(unittest.TestCase):
         self.assertGreaterEqual(sessions["total_pages"], 1)
 
         heatmap = self.get("/api/heatmap?days=30")
+        started = time.monotonic()
         detail = self.get(f"/api/heatmap_detail?date={heatmap['end_date']}&page=1&page_size=1")
+        self.assertLess(time.monotonic() - started, 0.5)
         for key in ("sessions", "total", "page", "page_size", "total_pages", "summary"):
             self.assertIn(key, detail)
         self.assertLessEqual(len(detail["sessions"]), 1)

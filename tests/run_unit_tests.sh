@@ -22,6 +22,10 @@ echo "[unit] 社区中继"
 echo "[unit] 前端源代码契约"
 node - <<'NODE'
 const fs = require('fs');
+const plist = fs.readFileSync('Info.plist', 'utf8');
+const versionMatch = plist.match(/<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/);
+if (!versionMatch) throw new Error('Info.plist: 无法读取当前版本');
+const currentVersion = versionMatch[1].trim();
 for (const file of ['index.html', 'go_build/static/index.html']) {
   const html = fs.readFileSync(file, 'utf8');
   const selected = html.match(/<button class="tab-btn active" data-days="(30|90|180|365)">近/);
@@ -36,6 +40,12 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
   }
   if (!html.includes("刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。")) {
     throw new Error(`${file}: 缺少社区数据短暂延迟的友好说明`);
+  }
+  const versionHighlight = new RegExp(`['\"]${currentVersion}['\"]\\s*:\\s*\\[\\s*['\"][^'\"]+['\"]`, 's');
+  if (!html.includes('id="aboutReleaseHighlights"') ||
+      !html.includes('function renderAboutReleaseHighlights') ||
+      !versionHighlight.test(html)) {
+    throw new Error(`${file}: 当前版本缺少 About 更新摘要`);
   }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));

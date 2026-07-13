@@ -251,11 +251,27 @@ def _parse_codex_timestamp(value):
         return 0
 
 
-def _scan_codex_rollouts(start_timestamp):
+def _scan_codex_rollouts(start_timestamp, end_timestamp=None):
     """旧版/精简版 Codex 没有 logs_2.sqlite 时，从 rollout JSONL 回退读取。"""
     files = []
     for root in (CODEX_SESSIONS_DIR, CODEX_ARCHIVED_SESSIONS_DIR):
         if not os.path.isdir(root):
+            continue
+        if end_timestamp:
+            # 日期详情只需要目标日及相邻两天的 rollout。完整递归 400MB+ 的
+            # session 目录会让 macOS 首次打开详情长时间停在“加载中”。
+            first_day = datetime.datetime.fromtimestamp(start_timestamp).date()
+            last_day = datetime.datetime.fromtimestamp(end_timestamp - 1).date()
+            candidate_days = {
+                first_day - datetime.timedelta(days=1),
+                first_day,
+                last_day,
+                last_day + datetime.timedelta(days=1),
+            }
+            for day in candidate_days:
+                files.extend(glob.glob(os.path.join(
+                    root, str(day.year), f"{day.month:02d}", f"{day.day:02d}", "*.jsonl"
+                )))
             continue
         for path in glob.iglob(os.path.join(root, "**", "*.jsonl"), recursive=True):
             try:
@@ -301,7 +317,9 @@ def _scan_codex_rollouts(start_timestamp):
                         previous_cumulative = cumulative_signature
                     usage = info.get("last_token_usage")
                     timestamp = _parse_codex_timestamp(item.get("timestamp"))
-                    if timestamp < start_timestamp:
+                    if timestamp < start_timestamp or (
+                        end_timestamp is not None and timestamp >= end_timestamp
+                    ):
                         continue
                     event = _codex_log_entry(timestamp, current_model, usage, session_id)
                     if event:
@@ -311,7 +329,7 @@ def _scan_codex_rollouts(start_timestamp):
     return _dedup_events(events)
 
 
-def scan_codex_tokens(start_timestamp):
+def scan_codex_tokens(start_timestamp, end_timestamp=None):
     """直接读取官方 Codex App 日志，不要求用户安装或启用 cc-switch。"""
     events = []
     seen_response_ids = set()
@@ -319,14 +337,19 @@ def scan_codex_tokens(start_timestamp):
         try:
             conn = _open_sqlite_readonly(CODEX_LOG_DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT ts, feedback_log_body, thread_id
                 FROM logs
                 WHERE ts >= ?
                   AND target = 'codex_api::sse::responses'
                   AND feedback_log_body LIKE '%response.completed%'
                 ORDER BY ts ASC, ts_nanos ASC
-            """, (start_timestamp,))
+            """
+            params = [start_timestamp]
+            if end_timestamp is not None:
+                query = query.replace("AND target", "AND ts < ?\n                  AND target")
+                params.append(end_timestamp)
+            cursor.execute(query, params)
             for ts, body, thread_id in cursor.fetchall():
                 if not body or not body.startswith("SSE event: "):
                     continue
@@ -354,7 +377,7 @@ def scan_codex_tokens(start_timestamp):
 
     # logs_2.sqlite 可能只保留当前 Codex 进程的一小段日志，不能把 rollout
     # 仅当成“数据库完全没有数据”时的回退。两者始终合并后去重，才能覆盖重启前记录。
-    return _dedup_events(events + _scan_codex_rollouts(start_timestamp))
+    return _dedup_events(events + _scan_codex_rollouts(start_timestamp, end_timestamp))
 
 def normalize_model_name(raw_model):
     """归一化 model 字符串, 合并 cc-switch 噪声变体。
@@ -565,7 +588,7 @@ def _workbuddy_usage_value(usage, *keys):
     return 0
 
 
-def _scan_workbuddy_projects(start_timestamp):
+def _scan_workbuddy_projects(start_timestamp, end_timestamp=None):
     """按 AgentsView 口径读取 WorkBuddy 会话 JSONL 中的逐请求 usage。"""
     if not os.path.isdir(WORKBUDDY_PROJECTS_DIR):
         return []
@@ -586,7 +609,9 @@ def _scan_workbuddy_projects(start_timestamp):
                         continue
                     timestamp_ms = int(item.get("timestamp") or 0)
                     timestamp = timestamp_ms // 1000
-                    if timestamp < start_timestamp:
+                    if timestamp < start_timestamp or (
+                        end_timestamp is not None and timestamp >= end_timestamp
+                    ):
                         continue
                     input_tokens = _workbuddy_usage_value(
                         usage, "inputTokens", "input_tokens", "prompt_tokens"
@@ -628,7 +653,7 @@ def _scan_workbuddy_projects(start_timestamp):
     return _dedup_events(events)
 
 
-def _scan_workbuddy_session_usage(today_start):
+def _scan_workbuddy_session_usage(today_start, end_timestamp=None):
     """兼容旧版 WorkBuddy：没有项目 JSONL 时用上下文占用量作近似值。"""
     logs_data = []
     if not os.path.exists(WORKBUDDY_DB_PATH):
@@ -638,19 +663,24 @@ def _scan_workbuddy_session_usage(today_start):
         cursor = conn.cursor()
         # sessions + session_usage 联查, created_at/updated_at 是毫秒时间戳
         today_start_ms = int(today_start) * 1000
-        cursor.execute("""
+        query = """
             SELECT s.id, s.model, s.created_at, s.updated_at, su.used
             FROM sessions s
             LEFT JOIN session_usage su ON s.id = su.session_id
             WHERE s.deleted_at IS NULL AND s.updated_at >= ?
             ORDER BY s.updated_at ASC
-        """, (today_start_ms,))
+        """
+        params = [today_start_ms]
+        if end_timestamp is not None:
+            query = query.replace("ORDER BY", "AND s.updated_at < ?\n            ORDER BY")
+            params.append(int(end_timestamp) * 1000)
+        cursor.execute(query, params)
         for sid, model, created_at, updated_at, used in cursor.fetchall():
             if not used or used <= 0:
                 continue
             # WorkBuddy 的 used 字段是总 token (input+output)
             ts = int((updated_at or created_at or 0) / 1000)
-            if ts < today_start:
+            if ts < today_start or (end_timestamp is not None and ts >= end_timestamp):
                 continue
             local_time = datetime.datetime.fromtimestamp(ts).strftime("%H:%M:%S")
             # model 格式可能是 "custom-local:MiniMax-M3" 或 "hy3"
@@ -672,11 +702,11 @@ def _scan_workbuddy_session_usage(today_start):
     return logs_data
 
 
-def scan_workbuddy_tokens(today_start):
+def scan_workbuddy_tokens(today_start, end_timestamp=None):
     """优先读取 WorkBuddy 项目 JSONL，旧版本缺失时才回退会话占用量。"""
     if os.path.isdir(WORKBUDDY_PROJECTS_DIR):
-        return _scan_workbuddy_projects(today_start)
-    return _scan_workbuddy_session_usage(today_start)
+        return _scan_workbuddy_projects(today_start, end_timestamp)
+    return _scan_workbuddy_session_usage(today_start, end_timestamp)
 
 def _dedup_events(events):
     """跨数据源去重: 把同一笔请求在多源里都被记录的事件合并为一条。
@@ -1360,6 +1390,10 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         except ValueError:
             pass
 
+    # 日期下钻只扫描这个自然日；旧的 weekday+hour 接口仍沿用请求范围。
+    scan_start_timestamp = date_start_ts if date_start_ts is not None else start_timestamp
+    scan_end_timestamp = date_end_ts if date_start_ts is not None else None
+
     events = []
 
     # --- cc-switch ---
@@ -1368,14 +1402,19 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         try:
             conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
                        cache_creation_tokens, app_type, model, provider_id,
                        data_source, latency_ms, session_id
                 FROM proxy_request_logs
                 WHERE created_at >= ? AND status_code = 200
                 ORDER BY created_at ASC
-            """, (start_timestamp,))
+            """
+            params = [scan_start_timestamp]
+            if scan_end_timestamp is not None:
+                query = query.replace("AND status_code", "AND created_at < ? AND status_code")
+                params.append(scan_end_timestamp)
+            cursor.execute(query, params)
             for row in cursor.fetchall():
                 created_at, input_t, output_t, cache_read, cache_creation, \
                     app_type, model, provider_id, data_source, latency_ms, sess_id = row
@@ -1416,7 +1455,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
             print(f"[-] heatmap_detail cc-switch 出错: {e}")
 
     # --- 官方 Codex App ---
-    for event in scan_codex_tokens(start_timestamp):
+    for event in scan_codex_tokens(scan_start_timestamp, scan_end_timestamp):
         dt = datetime.datetime.fromtimestamp(event["timestamp"])
         if date_start_ts is not None:
             if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
@@ -1432,14 +1471,19 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         try:
             conn = _open_sqlite_readonly(HERMES_DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT id, COALESCE(NULLIF(ended_at, 0), started_at) AS occurred_at,
                        model, input_tokens, output_tokens,
                        cache_read_tokens, cache_write_tokens
                 FROM sessions
                 WHERE COALESCE(NULLIF(ended_at, 0), started_at) >= ?
                 ORDER BY occurred_at ASC
-            """, (start_timestamp,))
+            """
+            params = [scan_start_timestamp]
+            if scan_end_timestamp is not None:
+                query = query.replace("ORDER BY", "AND COALESCE(NULLIF(ended_at, 0), started_at) < ?\n                ORDER BY")
+                params.append(scan_end_timestamp)
+            cursor.execute(query, params)
             for session_id, occurred_at, model, input_t, output_t, cache_read_t, cache_write_t in cursor.fetchall():
                 dt = datetime.datetime.fromtimestamp(occurred_at)
                 if date_start_ts is not None:
@@ -1473,7 +1517,7 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
             print(f"[-] heatmap_detail Hermes 出错: {e}")
 
     # --- WorkBuddy ---
-    for event in scan_workbuddy_tokens(start_timestamp):
+    for event in scan_workbuddy_tokens(scan_start_timestamp, scan_end_timestamp):
         dt = datetime.datetime.fromtimestamp(event["timestamp"])
         if date_start_ts is not None:
             if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:

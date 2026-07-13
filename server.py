@@ -79,8 +79,15 @@ HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
 )
+HEATMAP_DETAIL_CACHE_TTL = 5 * 60
+HEATMAP_DETAIL_CACHE_PATH = os.environ.get(
+    "TOKEN_MONITOR_HEATMAP_DETAIL_CACHE_FILE",
+    os.path.expanduser("~/.token_monitor/heatmap_detail_cache.json"),
+)
 _heatmap_cache_lock = threading.Lock()
 _heatmap_refreshing = False
+_heatmap_detail_cache_lock = threading.Lock()
+_heatmap_detail_refreshing = set()
 
 
 def _slice_heatmap(data, days):
@@ -179,6 +186,81 @@ def get_cached_heatmap(days):
 
     _start_heatmap_refresh()
     return _empty_heatmap(days)
+
+
+def _empty_heatmap_detail(date, page, page_size):
+    return {
+        "sessions": [], "total": 0, "page": page, "page_size": page_size,
+        "total_pages": 1,
+        "summary": {
+            "total_tokens": 0, "total_cached": 0, "call_count": 0,
+            "avg_latency_ms": 0, "max_latency_ms": 0,
+            "peak_tokens": 0, "peak_time": "",
+        },
+        "cache_state": "warming",
+        "date": date,
+    }
+
+
+def _load_heatmap_detail_cache():
+    try:
+        with open(HEATMAP_DETAIL_CACHE_PATH, "r", encoding="utf-8") as stream:
+            cached = json.load(stream)
+        return cached if isinstance(cached.get("entries"), dict) else {"entries": {}}
+    except (OSError, ValueError, TypeError):
+        return {"entries": {}}
+
+
+def _save_heatmap_detail_cache(cache):
+    directory = os.path.dirname(HEATMAP_DETAIL_CACHE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = HEATMAP_DETAIL_CACHE_PATH + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as stream:
+        json.dump(cache, stream, ensure_ascii=False)
+    os.replace(temporary, HEATMAP_DETAIL_CACHE_PATH)
+
+
+def _refresh_heatmap_detail(date, page, page_size):
+    cache_key = f"{date}:{page}:{page_size}"
+    try:
+        result = get_heatmap_detail(date=date, page=page, page_size=page_size)
+        cache = _load_heatmap_detail_cache()
+        cache["entries"][cache_key] = {"saved_at": time.time(), "data": result}
+        _save_heatmap_detail_cache(cache)
+    except (OSError, ValueError, TypeError):
+        pass
+    finally:
+        with _heatmap_detail_cache_lock:
+            _heatmap_detail_refreshing.discard(cache_key)
+
+
+def _start_heatmap_detail_refresh(date, page, page_size):
+    cache_key = f"{date}:{page}:{page_size}"
+    with _heatmap_detail_cache_lock:
+        if cache_key in _heatmap_detail_refreshing:
+            return
+        _heatmap_detail_refreshing.add(cache_key)
+        threading.Thread(
+            target=_refresh_heatmap_detail, args=(date, page, page_size), daemon=True
+        ).start()
+
+
+def get_cached_heatmap_detail(date, page=1, page_size=50):
+    """详情页优先返回本地快照，扫描仅在后台运行。"""
+    cache_key = f"{date}:{page}:{page_size}"
+    entry = _load_heatmap_detail_cache()["entries"].get(cache_key)
+    if entry and isinstance(entry.get("data"), dict):
+        result = dict(entry["data"])
+        if time.time() - float(entry.get("saved_at", 0)) > HEATMAP_DETAIL_CACHE_TTL:
+            result["cache_state"] = "stale"
+            _start_heatmap_detail_refresh(date, page, page_size)
+        else:
+            result["cache_state"] = "ready"
+        return result
+
+    _start_heatmap_detail_refresh(date, page, page_size)
+    return _empty_heatmap_detail(date, page, page_size)
 
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)
@@ -563,7 +645,10 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 page_size = int(qs.get("page_size", ["50"])[0])
                 weekday = int(weekday_str) if weekday_str is not None else None
                 hour = int(hour_str) if hour_str is not None else None
-                self._write_json(200, get_heatmap_detail(weekday=weekday, hour=hour, days=days, page=page, page_size=page_size, date=date))
+                if date:
+                    self._write_json(200, get_cached_heatmap_detail(date, page=page, page_size=page_size))
+                else:
+                    self._write_json(200, get_heatmap_detail(weekday=weekday, hour=hour, days=days, page=page, page_size=page_size))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
@@ -654,6 +739,9 @@ def main():
 
     # 启动后预热全年快照；用户首次打开热力图时通常已可直接命中缓存。
     threading.Thread(target=lambda: get_cached_heatmap(HEATMAP_CACHE_DAYS), daemon=True).start()
+    threading.Thread(
+        target=lambda: get_cached_heatmap_detail(datetime.date.today().isoformat()), daemon=True
+    ).start()
 
     # 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
     reporting_disabled = os.environ.get("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT", "").strip().lower()
