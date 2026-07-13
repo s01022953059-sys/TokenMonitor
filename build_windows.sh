@@ -44,9 +44,12 @@ GOOS=windows GOARCH=amd64 go build \
   -o "$SOURCE_ROOT/build/TokenMonitor-Setup.exe" "./$INSTALLER_DIR"
 SETUP_SIZE=$(du -h "$SOURCE_ROOT/build/TokenMonitor-Setup.exe" | cut -f1)
 echo "[build_windows]   TokenMonitor-Setup.exe ($SETUP_SIZE)"
+cp "$SOURCE_ROOT/build/TokenMonitor-Setup.exe" "$SOURCE_ROOT/build/TokenMonitor.exe"
+echo "[build_windows]   TokenMonitor.exe (旧版在线更新迁移入口)"
 
 rm -f "$INSTALLER_DIR/payload/TokenMonitor.exe" "$INSTALLER_DIR/rsrc.syso"
 rm -f TokenMonitor.exe version.txt
 
 echo "[build_windows] ✔ 完成"
 echo "  SETUP: $SOURCE_ROOT/build/TokenMonitor-Setup.exe"
+echo "  MIGRATION: $SOURCE_ROOT/build/TokenMonitor.exe"

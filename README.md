@@ -87,7 +87,7 @@
 - 发布前验证会覆盖 macOS 原地更新与无权限迁移两条路径，并检查更新脚本不含管理员提权调用
 - Windows：下载并校验 Release 中的 `TokenMonitor-Setup.exe`，由安装程序完成升级并重启
 - 所有更新入口统一打开“关于 Token Monitor”：进度条固定在更新区顶部，下方仅保留“立即更新”和“稍后”两个操作，不再使用独立更新弹窗
-- Windows 首次安装和应用内更新统一使用正式安装程序，不再发布 ZIP
+- Windows 首次安装和新版应用内更新统一使用正式安装程序，不再发布 ZIP；Release 中同内容的 `TokenMonitor.exe` 仅用于旧版本在线迁移，不作为手工下载入口
 - macOS 内嵌页面使用每次启动生成的临时凭据访问昵称写接口；所有非 HTTP(S) 的 WebKit 本地来源均需通过凭据鉴权，HTTP(S) 仅允许本机回环地址
 - About 更新状态使用短句展示，版本号不重复；详细错误保留在悬停提示，检查与更新过程中会清理过期按钮和进度状态
 
@@ -141,7 +141,7 @@ Windows 版用 Go 交叉编译，无需 Python。运行 `TokenMonitor-Setup.exe`
 |---|---|
 | **首次安全拦截** | macOS 端 Gatekeeper 会拦截未签名 app, Windows 端 SmartScreen 拦截未签名 EXE. 详见下文"绕过安全限制" |
 | **WebView2 依赖** | Windows 版使用系统 WebView2 Runtime；较新的 Windows 10/11 通常已内置，缺失时需先安装 Microsoft Edge WebView2 Runtime |
-| **Win 端自更新** | 应用内下载并校验 `TokenMonitor-Setup.exe`，交给同一安装链路升级；无需 ZIP，也不直接覆盖正在运行的程序 |
+| **Win 端自更新** | 新版下载 `TokenMonitor-Setup.exe`；v1.4.29 及更早版本通过同内容的 `TokenMonitor.exe` 迁移入口静默转交安装器，无需用户重新安装 |
 | **Antigravity 数据源** | Antigravity (冰茶 AI) 的统计数据路径是 macOS 专属的 (`~/Library/Application Support/`)，Windows 上该文件不存在，自动跳过 |
 | **单实例锁机制不同** | macOS 用 `fcntl.flock`，Windows 用 `LockFileEx` 独占文件锁 |
 | **开机自启** | 使用当前用户的 `HKCU\...\Run`，登录后以 `--autostart` 静默启动到托盘，不需要管理员权限；新版会清理旧快捷方式和旧计划任务 |

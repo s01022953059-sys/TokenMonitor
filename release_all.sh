@@ -217,6 +217,14 @@ else
     echo "[release] ✘ Windows 安装程序没生成" >&2
 fi
 
+# 兼容 v1.4.29 及更早客户端的在线更新资产。内容是迁移安装器，不是便携版。
+MIGRATION_PATH="$SOURCE_ROOT/build/TokenMonitor.exe"
+if [[ -f "$MIGRATION_PATH" ]]; then
+    upload_asset "$MIGRATION_PATH" "TokenMonitor.exe"
+else
+    echo "[release] ✘ Windows 旧版迁移入口没生成" >&2
+fi
+
 # ─── 3. 清理 build/ 目录 ───
 echo ""
 echo "=== [3/3] 清理构建产物 ==="
@@ -246,7 +254,9 @@ echo "=== 验证附件可真实下载 ==="
 VERIFY_DIR=$(mktemp -d)
 DOWNLOAD_BASE="https://gitcode.com/baggiopeng/TokenMonitor/releases/download/$TAG"
 curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor-Setup.exe" "$DOWNLOAD_BASE/TokenMonitor-Setup.exe"
+curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor.exe" "$DOWNLOAD_BASE/TokenMonitor.exe"
 file "$VERIFY_DIR/TokenMonitor-Setup.exe" | grep -q "PE32+ executable (GUI)"
+cmp -s "$VERIFY_DIR/TokenMonitor-Setup.exe" "$VERIFY_DIR/TokenMonitor.exe"
 if [[ "$(uname)" == "Darwin" ]]; then
     curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/Token-Monitor.dmg" "$DOWNLOAD_BASE/Token%20Monitor.dmg"
     hdiutil verify "$VERIFY_DIR/Token-Monitor.dmg" >/dev/null

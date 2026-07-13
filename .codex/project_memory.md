@@ -84,7 +84,7 @@
 ## Windows 限制 (README 中需维护)
 
 - WebView2 内嵌窗口 + 系统托盘，不打开外部浏览器
-- Windows 首次安装与应用内更新统一下载 Release 的 `TokenMonitor-Setup.exe`，不再发布 ZIP
+- Windows 首次安装与新版应用内更新统一下载 `TokenMonitor-Setup.exe`；Release 的同内容 `TokenMonitor.exe` 仅用于 v1.4.29 及更早客户端自动迁移，不再发布 ZIP
 - Antigravity 数据源不存在
 - 无代码签名 (SmartScreen 拦截)
 - 开机自启使用 HKCU Run + `--autostart`，启动后只驻留托盘
@@ -211,7 +211,7 @@
 - **Go 版用 modernc.org/sqlite**: 纯 Go 驱动, 无 CGO, 支持交叉编译
 - **会话详情 max_messages=500**: 防止超大 rollout 文件导致内存爆炸, 分页在前端做
 - **Windows 自启只保留一个入口**: HKCU Run 是唯一入口；启用/迁移时清理旧 Startup 快捷方式、计划任务和错误的 StartupApproved 值，避免重复启动
-- **Windows 安装与更新统一**: Release 只发布 `TokenMonitor-Setup.exe`；首次安装和应用内升级走同一用户级安装链路，不再发布 ZIP 或裸主程序
+- **Windows 安装与更新统一**: 首次安装和新版应用内升级走 `TokenMonitor-Setup.exe`；为保证旧客户在线升级，Release 还必须上传同内容的 `TokenMonitor.exe` 迁移入口。迁移入口先自复制为临时 Setup 再启动，避免旧替换脚本将其改名为主程序后被 `taskkill` 误杀；不再发布 ZIP 或便携版裸主程序
 - **更新 UI 单一入口**: 托盘和原生菜单的更新操作都打开 About 页；后台检查只刷新版本标记，下载进度和错误都在 About 内展示，不使用独立更新弹窗
 - **macOS 静默更新权限**: 禁止仅因目标位于 `/Applications` 就调用 `administrator privileges`。目录可写时直接替换；不可写时迁移到 `~/Applications`，注销旧 LaunchServices 记录并按新路径重启，避免每次更新索要密码和 bundle id 启动到旧副本
 - **macOS 更新权限必须回归验证**: 发版前运行 `tests/test_update_helper.sh`，覆盖可写目录原地替换、不可写目录迁移，并检查 helper 不含 `sudo` 或 AppleScript 管理员授权

@@ -30,6 +30,13 @@ func main() {
 		uninstall()
 		return
 	}
+	if strings.EqualFold(filepath.Base(os.Args[0]), appExeName) && !hasArg("--installer-child") {
+		if err := relaunchMigrationInstaller(); err != nil {
+			messageBox("更新失败", err.Error(), 0x10)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := install(); err != nil {
 		messageBox("安装失败", err.Error(), 0x10)
 		os.Exit(1)
@@ -37,6 +44,26 @@ func main() {
 	if !hasArg("--update") {
 		messageBox("安装完成", "Token Monitor 已安装并启动。", 0x40)
 	}
+}
+
+// 旧版客户端只识别 TokenMonitor.exe，并会用下载文件覆盖主程序。
+// 先复制为独立安装器再启动，避免后续 taskkill 误杀当前迁移进程。
+func relaunchMigrationInstaller() error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("读取迁移程序路径失败: %w", err)
+	}
+	target := filepath.Join(os.TempDir(), "TokenMonitor-Setup-migrate.exe")
+	_ = os.Remove(target)
+	if err := copyFile(self, target); err != nil {
+		return fmt.Errorf("准备安装程序失败: %w", err)
+	}
+	cmd := exec.Command(target, "--update", "--installer-child")
+	cmd.SysProcAttr = hiddenProcess()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动安装程序失败: %w", err)
+	}
+	return nil
 }
 
 func install() error {

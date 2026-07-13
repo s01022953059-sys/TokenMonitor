@@ -164,6 +164,8 @@ SERVER_PID=""
 echo "[verify] Windows 正式安装程序"
 bash build_windows.sh
 file build/TokenMonitor-Setup.exe | grep -q 'PE32+ executable (GUI)'
+file build/TokenMonitor.exe | grep -q 'PE32+ executable (GUI)'
+cmp -s build/TokenMonitor-Setup.exe build/TokenMonitor.exe
 test "$(stat -f%z build/TokenMonitor-Setup.exe 2>/dev/null || stat -c%s build/TokenMonitor-Setup.exe)" -gt 10000000
 
 if [[ "$(uname)" == "Darwin" ]]; then
