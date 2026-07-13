@@ -6,7 +6,7 @@
 # 流程:
 #   0. 清理 build/ 目录, 防止旧产物混入
 #   1. 构建 Mac .app + DMG, 上传到 GitCode Release
-#   2. 交叉编译 Windows EXE + ZIP, 上传到同一 Release
+#   2. 交叉编译 Windows 正式安装程序, 上传到同一 Release
 #   3. 清理 build/ 目录
 #
 # GitCode Release 上传附件 (两步):
@@ -205,23 +205,16 @@ else
     echo "[release] 非 macOS, 跳过 DMG 构建"
 fi
 
-# ─── 2. Windows EXE + ZIP (Go 交叉编译, 任何平台都能跑) ───
+# ─── 2. Windows Setup EXE (Go 交叉编译, 任何平台都能跑) ───
 echo ""
-echo "=== [2/3] Windows EXE + ZIP ==="
+echo "=== [2/3] Windows 安装程序 ==="
 bash build_windows.sh
 
-EXE_PATH="$SOURCE_ROOT/build/TokenMonitor.exe"
-if [[ -f "$EXE_PATH" ]]; then
-    upload_asset "$EXE_PATH" "TokenMonitor.exe"
+SETUP_PATH="$SOURCE_ROOT/build/TokenMonitor-Setup.exe"
+if [[ -f "$SETUP_PATH" ]]; then
+    upload_asset "$SETUP_PATH" "TokenMonitor-Setup.exe"
 else
-    echo "[release] ✘ Windows EXE 没生成" >&2
-fi
-
-ZIP_PATH="$SOURCE_ROOT/build/TokenMonitor-${APP_VERSION}-win.zip"
-if [[ -f "$ZIP_PATH" ]]; then
-    upload_asset "$ZIP_PATH" "TokenMonitor-win.zip"
-else
-    echo "[release] ✘ Windows ZIP 没生成" >&2
+    echo "[release] ✘ Windows 安装程序没生成" >&2
 fi
 
 # ─── 3. 清理 build/ 目录 ───
@@ -252,16 +245,14 @@ echo ""
 echo "=== 验证附件可真实下载 ==="
 VERIFY_DIR=$(mktemp -d)
 DOWNLOAD_BASE="https://gitcode.com/baggiopeng/TokenMonitor/releases/download/$TAG"
-curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor.exe" "$DOWNLOAD_BASE/TokenMonitor.exe"
-curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor-win.zip" "$DOWNLOAD_BASE/TokenMonitor-win.zip"
-file "$VERIFY_DIR/TokenMonitor.exe" | grep -q "PE32+ executable (GUI)"
-unzip -t "$VERIFY_DIR/TokenMonitor-win.zip" >/dev/null
+curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/TokenMonitor-Setup.exe" "$DOWNLOAD_BASE/TokenMonitor-Setup.exe"
+file "$VERIFY_DIR/TokenMonitor-Setup.exe" | grep -q "PE32+ executable (GUI)"
 if [[ "$(uname)" == "Darwin" ]]; then
     curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/Token-Monitor.dmg" "$DOWNLOAD_BASE/Token%20Monitor.dmg"
     hdiutil verify "$VERIFY_DIR/Token-Monitor.dmg" >/dev/null
 fi
 rm -rf "$VERIFY_DIR"
-echo "[release] ✔ DMG / EXE / ZIP 下载与文件校验通过"
+echo "[release] ✔ DMG / Windows 安装程序下载与文件校验通过"
 
 echo ""
 echo "============================================"

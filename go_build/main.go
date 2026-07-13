@@ -31,7 +31,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.29"
+var appVersion = "1.4.30"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1203,11 +1203,10 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 	if len(assetList) == 0 {
 		return ""
 	}
-	// 应用内更新必须选当前平台的可安装资产。Windows 优先直装 EXE，
-	// ZIP 只作为旧 release 的兼容回退；macOS 仍优先 DMG。
+	// 应用内更新必须选当前平台的可安装资产。
 	suffixes := []string{".dmg", ".zip"}
 	if targetOS == "windows" {
-		suffixes = []string{"tokenmonitor.exe", ".exe", "tokenmonitor-win.zip", ".zip"}
+		suffixes = []string{"tokenmonitor-setup.exe"}
 	}
 	for _, suffix := range suffixes {
 		for _, a := range assetList {
@@ -1218,6 +1217,9 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 				}
 			}
 		}
+	}
+	if targetOS == "windows" {
+		return ""
 	}
 	// 兜底: 第一个
 	if asset, ok := assetList[0].(map[string]interface{}); ok {

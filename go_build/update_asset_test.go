@@ -6,27 +6,27 @@ func TestPickAssetURLForOS(t *testing.T) {
 	payload := map[string]interface{}{
 		"assets": []interface{}{
 			map[string]interface{}{"name": "Token Monitor.dmg", "browser_download_url": "mac"},
-			map[string]interface{}{"name": "TokenMonitor-win.zip", "browser_download_url": "zip"},
-			map[string]interface{}{"name": "TokenMonitor.exe", "browser_download_url": "exe"},
+			map[string]interface{}{"name": "TokenMonitor.exe", "browser_download_url": "legacy"},
+			map[string]interface{}{"name": "TokenMonitor-Setup.exe", "browser_download_url": "setup"},
 		},
 	}
-	if got := pickAssetURLForOS(payload, "windows"); got != "exe" {
-		t.Fatalf("windows asset = %q, want exe", got)
+	if got := pickAssetURLForOS(payload, "windows"); got != "setup" {
+		t.Fatalf("windows asset = %q, want setup", got)
 	}
 	if got := pickAssetURLForOS(payload, "darwin"); got != "mac" {
 		t.Fatalf("darwin asset = %q, want mac", got)
 	}
 }
 
-func TestPickAssetURLForOSFallsBackToLegacyWindowsZip(t *testing.T) {
+func TestPickAssetURLForOSRejectsLegacyWindowsAssets(t *testing.T) {
 	payload := map[string]interface{}{
 		"assets": []interface{}{
 			map[string]interface{}{"name": "Token Monitor.dmg", "browser_download_url": "mac"},
-			map[string]interface{}{"name": "TokenMonitor-win.zip", "browser_download_url": "zip"},
+			map[string]interface{}{"name": "TokenMonitor.exe", "browser_download_url": "legacy"},
 		},
 	}
-	if got := pickAssetURLForOS(payload, "windows"); got != "zip" {
-		t.Fatalf("legacy windows asset = %q, want zip", got)
+	if got := pickAssetURLForOS(payload, "windows"); got != "" {
+		t.Fatalf("legacy windows asset = %q, want empty", got)
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 	"github.com/getlantern/systray"
 )
 
-const winReleaseEXEURLTemplate = "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor.exe"
+const winReleaseSetupURLTemplate = "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v%s/TokenMonitor-Setup.exe"
 
 var selfUpdateMu sync.Mutex
 var selfUpdateInProgress bool
@@ -29,8 +29,7 @@ func trySelfUpdate(port int) bool {
 	return trySelfUpdateWithProgress(port)
 }
 
-// trySelfUpdateWithProgress 直接下载并校验新的 PE 文件，再交给独立脚本替换。
-// ZIP 仍作为手动安装包发布，但不再参与应用内更新。
+// trySelfUpdateWithProgress 下载正式安装程序并交接更新。
 func trySelfUpdateWithProgress(port int) bool {
 	selfUpdateMu.Lock()
 	if selfUpdateInProgress {
@@ -70,49 +69,26 @@ func trySelfUpdateWithProgress(port int) bool {
 	}
 
 	downloadURL := strings.TrimSpace(data.DownloadURL)
-	if !strings.Contains(strings.ToLower(downloadURL), ".exe") {
-		downloadURL = fmt.Sprintf(winReleaseEXEURLTemplate, data.LatestVersion)
+	if !strings.HasSuffix(strings.ToLower(downloadURL), "tokenmonitor-setup.exe") {
+		downloadURL = fmt.Sprintf(winReleaseSetupURLTemplate, data.LatestVersion)
 	}
 	guiLog("trySelfUpdate: v%s url=%s", data.LatestVersion, downloadURL)
 	injectProgress(0, "准备下载 v"+data.LatestVersion)
 	systray.SetTooltip("Token Monitor - 正在下载 v" + data.LatestVersion)
 
-	tmpExe := filepath.Join(os.TempDir(), "TokenMonitor-update-"+data.LatestVersion+".exe")
-	_ = os.Remove(tmpExe)
-	if _, err := downloadWithFallback(downloadURL, tmpExe); err != nil {
-		_ = os.Remove(tmpExe)
+	tmpSetup := filepath.Join(os.TempDir(), "TokenMonitor-Setup-"+data.LatestVersion+".exe")
+	_ = os.Remove(tmpSetup)
+	if _, err := downloadWithFallback(downloadURL, tmpSetup); err != nil {
+		_ = os.Remove(tmpSetup)
 		return failWindowsUpdate("下载失败: " + err.Error())
 	}
-	if err := validateWindowsExecutable(tmpExe); err != nil {
-		_ = os.Remove(tmpExe)
+	if err := validateWindowsExecutable(tmpSetup); err != nil {
+		_ = os.Remove(tmpSetup)
 		return failWindowsUpdate("下载文件校验失败: " + err.Error())
 	}
 	injectProgress(100, "下载完成，正在准备安装")
 
-	currentExe, err := os.Executable()
-	if err != nil {
-		return failWindowsUpdate("无法读取当前程序路径: " + err.Error())
-	}
-	currentExe, _ = filepath.Abs(currentExe)
-	stagedExe := currentExe + ".new"
-	_ = os.Remove(stagedExe)
-	if err := copyFile(tmpExe, stagedExe); err != nil {
-		return failWindowsUpdate("无法写入安装目录: " + err.Error())
-	}
-	_ = os.Remove(tmpExe)
-	if err := validateWindowsExecutable(stagedExe); err != nil {
-		_ = os.Remove(stagedExe)
-		return failWindowsUpdate("安装前校验失败: " + err.Error())
-	}
-
-	scriptPath := filepath.Join(os.TempDir(), "TokenMonitor-update-"+data.LatestVersion+".cmd")
-	versionFile := filepath.Join(filepath.Dir(currentExe), "version.txt")
-	script := buildWindowsUpdateScript(currentExe, stagedExe, versionFile)
-	if err := os.WriteFile(scriptPath, []byte(script), 0600); err != nil {
-		return failWindowsUpdate("无法创建更新脚本: " + err.Error())
-	}
-
-	cmd := exec.Command("cmd.exe", "/C", scriptPath)
+	cmd := exec.Command(tmpSetup, "--update")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	if err := cmd.Start(); err != nil {
 		return failWindowsUpdate("无法启动安装程序: " + err.Error())

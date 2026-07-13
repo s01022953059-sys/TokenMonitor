@@ -161,17 +161,10 @@ kill "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 
-echo "[verify] Windows GUI EXE 与 ZIP"
+echo "[verify] Windows 正式安装程序"
 bash build_windows.sh
-file build/TokenMonitor.exe | grep -q 'PE32+ executable (GUI)'
-python3 - "$APP_VERSION" <<'PY'
-import sys
-import zipfile
-version = sys.argv[1]
-with zipfile.ZipFile(f"build/TokenMonitor-{version}-win.zip") as archive:
-    names = sorted(name for name in archive.namelist() if not name.endswith("/"))
-assert names == ["README.txt", "TokenMonitor.exe"], names
-PY
+file build/TokenMonitor-Setup.exe | grep -q 'PE32+ executable (GUI)'
+test "$(stat -f%z build/TokenMonitor-Setup.exe 2>/dev/null || stat -c%s build/TokenMonitor-Setup.exe)" -gt 10000000
 
 if [[ "$(uname)" == "Darwin" ]]; then
     echo "[verify] macOS App 构建"

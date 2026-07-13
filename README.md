@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.29**。
+当前发布版本：**v1.4.30**。
 
 ## 功能
 
@@ -85,9 +85,9 @@
 - macOS：下载发布包、构建并替换 `.app`，然后自动重启
 - macOS 更新不再请求管理员密码：目标目录可写时原地替换，不可写时自动迁移到 `~/Applications`，并按新路径重启
 - 发布前验证会覆盖 macOS 原地更新与无权限迁移两条路径，并检查更新脚本不含管理员提权调用
-- Windows：直接下载并校验 Release 中的 `TokenMonitor.exe`，退出旧进程后替换并重启
+- Windows：下载并校验 Release 中的 `TokenMonitor-Setup.exe`，由安装程序完成升级并重启
 - 所有更新入口统一打开“关于 Token Monitor”：进度条固定在更新区顶部，下方仅保留“立即更新”和“稍后”两个操作，不再使用独立更新弹窗
-- Release 同时保留 Windows ZIP，供首次安装或手动安装使用
+- Windows 首次安装和应用内更新统一使用正式安装程序，不再发布 ZIP
 - macOS 内嵌页面使用每次启动生成的临时凭据访问昵称写接口；所有非 HTTP(S) 的 WebKit 本地来源均需通过凭据鉴权，HTTP(S) 仅允许本机回环地址
 - About 更新状态使用短句展示，版本号不重复；详细错误保留在悬停提示，检查与更新过程中会清理过期按钮和进度状态
 
@@ -131,7 +131,7 @@ macOS 版使用 WKWebView 内嵌页面、状态栏菜单和 Dock 图标；更新
 | SQLite | modernc.org/sqlite (纯 Go, 无 CGO) | — |
 | 启动 | 单个 GUI EXE (WebView2 + 系统托盘) | `TokenMonitor.exe` |
 
-Windows 版用 Go 交叉编译产出单个 GUI EXE，无需 Python。双击 `TokenMonitor.exe` 后打开内嵌 WebView2 窗口，不打开外部浏览器，也不显示命令行窗口；关闭主窗口后应用留在系统托盘。
+Windows 版用 Go 交叉编译，无需 Python。运行 `TokenMonitor-Setup.exe` 后安装到当前用户目录，并创建开始菜单快捷方式和标准卸载入口；应用使用内嵌 WebView2 窗口，不打开外部浏览器，也不显示命令行窗口。
 
 **Go 版与 Python 版功能完全对齐**，包括：Codex 官方日志与其他本地数据源扫描、跨源去重、模型归一化、DeepSeek 余额语义匹配、check-update 端点、每次请求重读版本号。
 
@@ -141,7 +141,7 @@ Windows 版用 Go 交叉编译产出单个 GUI EXE，无需 Python。双击 `Tok
 |---|---|
 | **首次安全拦截** | macOS 端 Gatekeeper 会拦截未签名 app, Windows 端 SmartScreen 拦截未签名 EXE. 详见下文"绕过安全限制" |
 | **WebView2 依赖** | Windows 版使用系统 WebView2 Runtime；较新的 Windows 10/11 通常已内置，缺失时需先安装 Microsoft Edge WebView2 Runtime |
-| **Win 端自更新** | 应用内只下载 Release 的 `TokenMonitor.exe`，校验 PE 文件后替换；ZIP 仅供手动安装。旧 Release 没有直接 EXE 附件时不能走这条新链路 |
+| **Win 端自更新** | 应用内下载并校验 `TokenMonitor-Setup.exe`，交给同一安装链路升级；无需 ZIP，也不直接覆盖正在运行的程序 |
 | **Antigravity 数据源** | Antigravity (冰茶 AI) 的统计数据路径是 macOS 专属的 (`~/Library/Application Support/`)，Windows 上该文件不存在，自动跳过 |
 | **单实例锁机制不同** | macOS 用 `fcntl.flock`，Windows 用 `LockFileEx` 独占文件锁 |
 | **开机自启** | 使用当前用户的 `HKCU\...\Run`，登录后以 `--autostart` 静默启动到托盘，不需要管理员权限；新版会清理旧快捷方式和旧计划任务 |
@@ -193,7 +193,7 @@ sudo "$LSREGISTER" -f -R -trusted "/Applications/Token Monitor.app"
 
 #### Windows (SmartScreen)
 
-第一次双击 `TokenMonitor.exe` 可能会弹:
+第一次运行 `TokenMonitor-Setup.exe` 可能会弹:
 
 ```
 Windows 已保护你的电脑
@@ -217,7 +217,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -237,12 +237,12 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ### Windows
 
 ```bash
-# 下载 ZIP
-curl -L -o TokenMonitor-win.zip \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor-win.zip"
+# 下载安装程序
+curl -L -o TokenMonitor-Setup.exe \
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/TokenMonitor-Setup.exe"
 ```
 
-解压后双击 `TokenMonitor.exe`：
+双击 `TokenMonitor-Setup.exe`：
 - 打开独立 WebView2 仪表盘，不打开外部浏览器、不显示命令行窗口
 - 关闭窗口后继续驻留系统托盘，可从托盘重新显示或退出
 - 托盘菜单可启用“开机自启”，登录后只启动托盘
@@ -270,15 +270,15 @@ bash build_macos.sh    # 编译 Swift → 拼装 .app → 生成 icns → codesi
 bash build_dmg.sh      # hdiutil 打 DMG
 ```
 
-### 构建 Windows EXE
+### 构建 Windows 安装程序
 
 在 macOS 上直接交叉编译，不需要 Windows 机器：
 
 ```bash
-bash build_windows.sh  # GOOS=windows GOARCH=amd64 go build → 打 ZIP
+bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 ```
 
-产出：`build/TokenMonitor-<version>-win.zip`
+产出：`build/TokenMonitor-Setup.exe`
 
 ### 一键发布（Mac + Windows）
 
@@ -301,7 +301,7 @@ bash release_all.sh
 `release_all.sh` 做的事：
 1. 清空 `build/` 目录
 2. 构建 Mac .app → DMG → 上传到 GitCode Release
-3. Go 交叉编译 Windows EXE → ZIP → 上传到同一 Release
+3. Go 交叉编译 Windows 主程序与安装程序 → 上传到同一 Release
 4. 清空 `build/` 目录
 5. 验证 Release 附件
 
@@ -320,7 +320,7 @@ bash release_all.sh
 ├── update_helper.sh           # macOS 自更新 helper
 ├── build_macos.sh             # macOS .app 构建
 ├── build_dmg.sh               # macOS DMG 打包
-├── build_windows.sh           # Windows EXE 构建 (Go 交叉编译)
+├── build_windows.sh           # Windows 正式安装程序构建
 ├── release_all.sh             # 统一发布脚本 (Mac + Windows)
 ├── community_relay/           # VPS 匿名统计中继及 systemd/Nginx 部署模板
 ├── Info.plist                 # 版本号 + 端口 + 更新源 URL
@@ -361,11 +361,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.29](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.29)
+最新版本：[v1.4.30](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.30)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/Token%20Monitor.dmg)
-- Windows 自动更新: [TokenMonitor.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor.exe)
-- Windows 手动安装: [TokenMonitor-win.zip](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.29/TokenMonitor-win.zip)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -374,11 +373,15 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 启动本地服务验证今日总数、90 天热力图、会话分页、`/api/check-update` 的平台资产选择
 - 使用浏览器实际打开 About 页，验证更新检查、进度、错误状态以及桌面/移动端布局
 - Windows 注册表自启、退出替换和重启属于系统行为，正式发布前仍需在真实 Windows 机器完成一次验收
-- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG、EXE、ZIP，任一项失败就终止发布
+- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，任一项失败就终止发布
 - 社区功能变更还必须验证 VPS 健康检查、两个独立匿名用户的新建与更新、错误凭据拒绝，以及 GitCode `community-data` 分支可读回；任一项失败不发布
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.30 (2026-07-13)
+
+- Windows 改为正式用户级安装程序，统一处理首次安装、开始菜单快捷方式、系统卸载入口和应用内升级；新 Release 不再提供 ZIP。
 
 ### v1.4.29 (2026-07-13)
 

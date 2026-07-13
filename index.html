@@ -2681,7 +2681,7 @@
                     if (aboutSnoozeBtn) aboutSnoozeBtn.disabled = true;
                     showUpdateProgress(0, '准备更新');
                 } else if (typeof window.triggerWinUpdate === 'function') {
-                    // Windows WebView2: 调 Go 端直接下载并替换 EXE。
+                    // Windows WebView2: 调 Go 端下载正式安装程序并完成升级。
                     aboutUpdateBtn.disabled = true;
                     aboutUpdateBtn.innerText = '正在更新';
                     if (aboutSnoozeBtn) aboutSnoozeBtn.disabled = true;

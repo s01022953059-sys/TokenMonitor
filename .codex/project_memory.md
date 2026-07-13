@@ -5,7 +5,7 @@
 1. **称呼用户为"鹏帅"**
 2. **每次更新代码后同步刷新 README.md** — 新功能、新限制、版本号、下载地址都要更新
 3. **版本号两处同步**: `Info.plist` 的 `CFBundleShortVersionString` + `go_build/main.go` 的 `var appVersion`
-4. **发布流程**: 鹏帅明确要求发新版本后，bump 版本 → git commit + tag → `bash release_all.sh`（Mac DMG + Windows EXE/ZIP 一键构建上传）
+4. **发布流程**: 鹏帅明确要求发新版本后，bump 版本 → git commit + tag → `bash release_all.sh`（Mac DMG + Windows Setup EXE 一键构建上传）
 5. **GitCode token**: `ydMwBZbLaiex8hRqi-2cma3k`
 6. **GitCode 不支持删除 release 附件**, 每次发版用新 tag
 7. **发版前必须验证基本功能** (发版检查清单):
@@ -23,13 +23,13 @@
    - `python3 -m unittest discover -s tests -p 'test_*.py' -v`
    - `cd go_build && go test ./...`
    - 前端内联 JS 语法检查，并确认 `index.html` 与 `go_build/static/index.html` 完全同步
-   - Windows `GOOS=windows GOARCH=amd64` GUI EXE 完整编译，确认产物为 PE32+ GUI；检查 ZIP 只含 EXE 和说明
+   - Windows `GOOS=windows GOARCH=amd64` 主程序与安装器完整编译，确认 Setup 产物为 PE32+ GUI 且包含主程序
    - macOS 运行 `build_macos.sh`，确认 Swift 编译、图标、签名和版本读取成功
    - 本地 API 冒烟：今日 Token 非 0、热力图日期数量正确、会话分页有数据、check-update 选中正确平台资产
    - Playwright 实际验证 About 更新状态/进度/错误，至少覆盖桌面和移动端
    - 涉及 Windows 自启或自替换时，发布前在真实 Windows 机器做一次登录自启、关闭窗口驻留、更新替换重启验收
    - 自动化部分统一执行 `bash verify_release.sh`；`release_all.sh` 必须在任何 tag/Release 操作前调用它，验证失败立即中止
-   - 上传后必须从 `gitcode.com/.../releases/download/...` 重新下载并校验 DMG、PE EXE 和 ZIP；不能只相信 Release API 的附件列表
+   - 上传后必须从 `gitcode.com/.../releases/download/...` 重新下载并校验 DMG 和 Windows Setup EXE；不能只相信 Release API 的附件列表
 11. **统计口径不确定时优先参考 AgentsView**: 遇到新 Agent、字段语义、缓存口径、重复事件或会话格式不明确时，先查 [kenn-io/agentsview](https://github.com/kenn-io/agentsview) 对应 parser 和测试，再结合本机原始日志验证；禁止仅凭字段名猜测。
 
 ## 架构
@@ -84,7 +84,7 @@
 ## Windows 限制 (README 中需维护)
 
 - WebView2 内嵌窗口 + 系统托盘，不打开外部浏览器
-- 应用内更新直接下载 Release 的 `TokenMonitor.exe`；ZIP 仅供首次/手动安装
+- Windows 首次安装与应用内更新统一下载 Release 的 `TokenMonitor-Setup.exe`，不再发布 ZIP
 - Antigravity 数据源不存在
 - 无代码签名 (SmartScreen 拦截)
 - 开机自启使用 HKCU Run + `--autostart`，启动后只驻留托盘
@@ -109,7 +109,7 @@
 | release_all.sh | 一键发布 Mac + Windows |
 | build_macos.sh | macOS .app 构建 |
 | build_dmg.sh | macOS DMG 打包 |
-| build_windows.sh | Windows EXE 构建 (Go 交叉编译) |
+| build_windows.sh | Windows 主程序与正式安装程序构建 |
 | docs/PROJECT_STATUS.md | 详细项目状态 |
 
 ## Release Notes 规范
@@ -121,6 +121,11 @@
 - release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
+
+### v1.4.30 (2026-07-13)
+
+- Windows 改为用户级正式安装程序：安装到 LocalAppData、创建开始菜单快捷方式、注册标准卸载入口
+- 首次安装和应用内更新统一使用 `TokenMonitor-Setup.exe`，新 Release 不再生成或上传 ZIP
 
 ### v1.4.29 (2026-07-13)
 
@@ -206,7 +211,7 @@
 - **Go 版用 modernc.org/sqlite**: 纯 Go 驱动, 无 CGO, 支持交叉编译
 - **会话详情 max_messages=500**: 防止超大 rollout 文件导致内存爆炸, 分页在前端做
 - **Windows 自启只保留一个入口**: HKCU Run 是唯一入口；启用/迁移时清理旧 Startup 快捷方式、计划任务和错误的 StartupApproved 值，避免重复启动
-- **Windows 应用内更新不用 ZIP**: Release 同时发布 `TokenMonitor.exe` 与手动安装 ZIP；应用内更新只下载、校验、替换 EXE，并删除可能干扰版本判断的旧 `version.txt`
+- **Windows 安装与更新统一**: Release 只发布 `TokenMonitor-Setup.exe`；首次安装和应用内升级走同一用户级安装链路，不再发布 ZIP 或裸主程序
 - **更新 UI 单一入口**: 托盘和原生菜单的更新操作都打开 About 页；后台检查只刷新版本标记，下载进度和错误都在 About 内展示，不使用独立更新弹窗
 - **macOS 静默更新权限**: 禁止仅因目标位于 `/Applications` 就调用 `administrator privileges`。目录可写时直接替换；不可写时迁移到 `~/Applications`，注销旧 LaunchServices 记录并按新路径重启，避免每次更新索要密码和 bundle id 启动到旧副本
 - **macOS 更新权限必须回归验证**: 发版前运行 `tests/test_update_helper.sh`，覆盖可写目录原地替换、不可写目录迁移，并检查 helper 不含 `sudo` 或 AppleScript 管理员授权
