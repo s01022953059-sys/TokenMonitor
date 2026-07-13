@@ -10,6 +10,7 @@
 """
 
 import argparse
+import datetime
 import hmac
 import http.server
 import json
@@ -71,7 +72,8 @@ APP_VERSION = _read_app_version()
 USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/TokenMonitor)"
 
 HEATMAP_CACHE_DAYS = 365
-HEATMAP_CACHE_TTL = 300
+# 只在后台检查是否需要重建快照，避免频繁遍历历史日志。
+HEATMAP_CACHE_TTL = 900
 HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
@@ -89,6 +91,31 @@ def _slice_heatmap(data, days):
         "max_value": max((row.get("tokens", 0) for row in rows), default=0),
         "start_date": rows[0]["date"] if rows else "",
         "end_date": rows[-1]["date"] if rows else "",
+    }
+
+
+def _empty_heatmap(days):
+    """首次启动没有快照时也立即给前端完整日期网格，扫描留在后台。"""
+    requested = max(1, min(int(days), HEATMAP_CACHE_DAYS))
+    now = datetime.datetime.now()
+    start = now - datetime.timedelta(days=requested - 1)
+    start_midnight = datetime.datetime(start.year, start.month, start.day)
+    rows = []
+    for offset in range(requested):
+        current = start_midnight + datetime.timedelta(days=offset)
+        rows.append({
+            "date": current.strftime("%Y-%m-%d"),
+            "label": current.strftime("%m-%d"),
+            "weekday": current.weekday(),
+            "month": current.month,
+            "tokens": 0,
+        })
+    return {
+        "days": rows,
+        "max_value": 0,
+        "start_date": rows[0]["date"],
+        "end_date": rows[-1]["date"],
+        "cache_state": "warming",
     }
 
 
@@ -127,28 +154,30 @@ def _refresh_heatmap_snapshot():
             _heatmap_refreshing = False
 
 
+def _start_heatmap_refresh():
+    global _heatmap_refreshing
+    with _heatmap_cache_lock:
+        if _heatmap_refreshing:
+            return
+        _heatmap_refreshing = True
+        threading.Thread(target=_refresh_heatmap_snapshot, daemon=True).start()
+
+
 def get_cached_heatmap(days):
-    """旧快照立即返回，过期后后台更新；首次使用才同步生成。"""
+    """任何请求都立即返回快照；扫描和重建只在后台进行。"""
     global _heatmap_refreshing
     cached = _load_heatmap_snapshot()
     if cached:
+        result = _slice_heatmap(cached["data"], days)
         if time.time() - float(cached.get("saved_at", 0)) > HEATMAP_CACHE_TTL:
-            with _heatmap_cache_lock:
-                if not _heatmap_refreshing:
-                    _heatmap_refreshing = True
-                    threading.Thread(target=_refresh_heatmap_snapshot, daemon=True).start()
-        return _slice_heatmap(cached["data"], days)
+            result["cache_state"] = "stale"
+            _start_heatmap_refresh()
+        else:
+            result["cache_state"] = "ready"
+        return result
 
-    with _heatmap_cache_lock:
-        cached = _load_heatmap_snapshot()
-        if not cached:
-            data = get_heatmap_data(HEATMAP_CACHE_DAYS)
-            try:
-                _save_heatmap_snapshot(data)
-            except OSError:
-                pass
-            cached = {"data": data}
-    return _slice_heatmap(cached["data"], days)
+    _start_heatmap_refresh()
+    return _empty_heatmap(days)
 
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)

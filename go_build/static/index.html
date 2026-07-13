@@ -2253,6 +2253,7 @@
         const DASHBOARD_CACHE_PREFIX = 'tokenMonitorDashboardCacheV1:';
         let _historyRefreshPromise = null;
         const _heatmapRefreshPromises = new Map();
+        const _heatmapRetryTimers = new Map();
 
         function readDashboardCache(name, allowStale = false) {
             try {
@@ -2899,7 +2900,7 @@
             const request = fetch(API_BASE + '/api/heatmap?days=' + days, {cache: 'no-store'})
                 .then(response => response.json())
                 .then(data => {
-                    if (data && Array.isArray(data.days)) writeDashboardCache('heatmap:' + days, data);
+                    if (data && Array.isArray(data.days) && data.cache_state !== 'warming') writeDashboardCache('heatmap:' + days, data);
                     return data;
                 })
                 .finally(() => { _heatmapRefreshPromises.delete(days); });
@@ -2925,6 +2926,16 @@
                     } else {
                         container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
                         data = await refreshHeatmapData(days);
+                    }
+                }
+                if (data && (data.cache_state === 'warming' || data.cache_state === 'stale')) {
+                    if (!_heatmapRetryTimers.has(days)) {
+                        _heatmapRetryTimers.set(days, setTimeout(() => {
+                            _heatmapRetryTimers.delete(days);
+                            if (_heatmapDays === days && document.getElementById('heatmapModal').classList.contains('active')) {
+                                refreshHeatmapData(days).then(fresh => loadHeatmap(days, fresh)).catch(() => {});
+                            }
+                        }, 1500));
                     }
                 }
                 const dayList = data.days || [];

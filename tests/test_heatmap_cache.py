@@ -20,16 +20,23 @@ class HeatmapCacheTests(unittest.TestCase):
     def setUp(self):
         server._heatmap_refreshing = False
 
-    def test_canonical_cache_serves_all_ranges_without_rescan(self):
+    def test_cold_cache_returns_immediately_and_warms_in_background(self):
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "heatmap.json")
             with mock.patch.object(server, "HEATMAP_CACHE_PATH", path), mock.patch.object(
-                server, "get_heatmap_data", return_value=make_heatmap()
+                server, "get_heatmap_data", side_effect=lambda _days: (time.sleep(0.2), make_heatmap())[1]
             ) as scanner:
+                started = time.monotonic()
                 annual = server.get_cached_heatmap(365)
+                elapsed = time.monotonic() - started
+                deadline = time.monotonic() + 2
+                while server._heatmap_refreshing and time.monotonic() < deadline:
+                    time.sleep(0.02)
                 monthly = server.get_cached_heatmap(30)
 
             self.assertEqual(len(annual["days"]), 365)
+            self.assertEqual(annual["cache_state"], "warming")
+            self.assertLess(elapsed, 0.1)
             self.assertEqual(len(monthly["days"]), 30)
             self.assertEqual(monthly["max_value"], 364)
             scanner.assert_called_once_with(365)

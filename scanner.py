@@ -1036,6 +1036,13 @@ if __name__ == "__main__":
     print(json.dumps(get_today_usage(), indent=2))
 
 
+def _total_pages(total, page_size):
+    """空列表也保留第一页，前端分页状态无需处理 0 页特例。"""
+    if page_size <= 0:
+        return 1
+    return max(1, (total + page_size - 1) // page_size)
+
+
 def get_session_list(days=1, page=1, page_size=50):
     """获取最近 days 天内的会话事件列表 (去重后), 按时间倒序返回。
 
@@ -1158,7 +1165,7 @@ def get_session_list(days=1, page=1, page_size=50):
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+        "total_pages": _total_pages(total, page_size),
     }
 
 
@@ -1329,7 +1336,7 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+        "total_pages": _total_pages(total, page_size),
     }
 
 def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, date=None):
@@ -1510,6 +1517,6 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size if page_size > 0 else 1,
+        "total_pages": _total_pages(total, page_size),
         "summary": summary,
     }

@@ -10,6 +10,11 @@ import scanner
 
 
 class ScannerAccuracyTests(unittest.TestCase):
+    def test_total_pages_keeps_a_page_for_empty_results(self):
+        self.assertEqual(scanner._total_pages(0, 50), 1)
+        self.assertEqual(scanner._total_pages(51, 50), 2)
+        self.assertEqual(scanner._total_pages(5, 0), 1)
+
     def test_codex_session_keeps_event_model_after_provider_switch(self):
         provider_models = {"current-provider": "gpt-5.5"}
         self.assertEqual(

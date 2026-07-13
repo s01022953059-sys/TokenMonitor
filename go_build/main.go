@@ -38,10 +38,14 @@ var appVersion = "1.4.30"
 var feedURL = updateFeedURL
 
 const heatmapCacheDays = 365
-const heatmapCacheTTL = 5 * time.Minute
+
+// Snapshot expiry is checked in the background. Foreground requests must never scan logs.
+const heatmapCacheTTL = 15 * time.Minute
 
 var heatmapCacheMu sync.Mutex
 var heatmapRefreshRunning bool
+var heatmapCachePathOverride string
+var heatmapSnapshotBuilder = getHeatmapData
 
 // ───── 数据结构 (与 Python 版 JSON 输出完全对齐) ─────
 
@@ -115,6 +119,32 @@ type SessionListResponse struct {
 	Summary    map[string]interface{} `json:"summary,omitempty"`
 }
 
+func paginatedSessionList(sessions []SessionEntry, summary map[string]interface{}, page, pageSize int) SessionListResponse {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
+	}
+	total := len(sessions)
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return SessionListResponse{
+		Sessions: sessions[start:end], Total: total, Page: page, PageSize: pageSize,
+		TotalPages: totalPages, Summary: summary,
+	}
+}
+
 type HeatmapDay struct {
 	Date    string `json:"date"`
 	Label   string `json:"label"`
@@ -124,10 +154,11 @@ type HeatmapDay struct {
 }
 
 type HeatmapResponse struct {
-	Days      []HeatmapDay `json:"days"`
-	MaxValue  int64        `json:"max_value"`
-	StartDate string       `json:"start_date"`
-	EndDate   string       `json:"end_date"`
+	Days       []HeatmapDay `json:"days"`
+	MaxValue   int64        `json:"max_value"`
+	StartDate  string       `json:"start_date"`
+	EndDate    string       `json:"end_date"`
+	CacheState string       `json:"cache_state,omitempty"`
 }
 
 type heatmapCacheFile struct {
@@ -1571,7 +1602,7 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 			SessionID:     ev.SessionID,
 		})
 	}
-	return SessionListResponse{Sessions: sessions, Total: len(sessions)}
+	return paginatedSessionList(sessions, nil, page, pageSize)
 }
 
 // ───── API: /api/session_detail ─────
@@ -1591,7 +1622,13 @@ type SessionDetailResponse struct {
 }
 
 func getSessionDetail(sessionID string, page, pageSize int) SessionDetailResponse {
-	resp := SessionDetailResponse{SessionID: sessionID, Messages: []SessionMessage{}}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	resp := SessionDetailResponse{SessionID: sessionID, Messages: []SessionMessage{}, Page: page, PageSize: pageSize, TotalPages: 1}
 	if sessionID == "" {
 		return resp
 	}
@@ -1693,10 +1730,6 @@ func getSessionDetail(sessionID string, page, pageSize int) SessionDetailRespons
 	resp.Total = total
 	resp.Page = page
 	resp.PageSize = pageSize
-	if pageSize <= 0 {
-		pageSize = 20
-		resp.PageSize = 20
-	}
 	resp.TotalPages = (total + pageSize - 1) / pageSize
 	if resp.TotalPages < 1 {
 		resp.TotalPages = 1
@@ -1769,6 +1802,9 @@ func getHeatmapData(days int) HeatmapResponse {
 }
 
 func heatmapCachePath() string {
+	if heatmapCachePathOverride != "" {
+		return heatmapCachePathOverride
+	}
 	return filepath.Join(homeDir(), ".token_monitor", "heatmap_cache_go.json")
 }
 
@@ -1796,6 +1832,29 @@ func sliceHeatmap(data HeatmapResponse, days int) HeatmapResponse {
 		result.EndDate = rows[len(rows)-1].Date
 	}
 	return result
+}
+
+func emptyHeatmap(days int) HeatmapResponse {
+	if days < 1 {
+		days = 1
+	}
+	if days > heatmapCacheDays {
+		days = heatmapCacheDays
+	}
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, -(days - 1))
+	rows := make([]HeatmapDay, 0, days)
+	for index := 0; index < days; index++ {
+		current := start.AddDate(0, 0, index)
+		weekday := int(current.Weekday())
+		if weekday == 0 {
+			weekday = 6
+		} else {
+			weekday--
+		}
+		rows = append(rows, HeatmapDay{Date: current.Format("2006-01-02"), Label: current.Format("01-02"), Weekday: weekday, Month: int(current.Month())})
+	}
+	return HeatmapResponse{Days: rows, StartDate: rows[0].Date, EndDate: rows[len(rows)-1].Date, CacheState: "warming"}
 }
 
 func loadHeatmapCache() (heatmapCacheFile, bool) {
@@ -1831,34 +1890,38 @@ func saveHeatmapCache(data HeatmapResponse) error {
 }
 
 func refreshHeatmapCache() {
-	data := getHeatmapData(heatmapCacheDays)
+	data := heatmapSnapshotBuilder(heatmapCacheDays)
 	_ = saveHeatmapCache(data)
 	heatmapCacheMu.Lock()
 	heatmapRefreshRunning = false
 	heatmapCacheMu.Unlock()
 }
 
+func startHeatmapRefresh() {
+	heatmapCacheMu.Lock()
+	defer heatmapCacheMu.Unlock()
+	if heatmapRefreshRunning {
+		return
+	}
+	heatmapRefreshRunning = true
+	go refreshHeatmapCache()
+}
+
 func getCachedHeatmap(days int) HeatmapResponse {
 	cached, ok := loadHeatmapCache()
 	if ok {
+		result := sliceHeatmap(cached.Data, days)
 		if time.Since(cached.SavedAt) > heatmapCacheTTL {
-			heatmapCacheMu.Lock()
-			if !heatmapRefreshRunning {
-				heatmapRefreshRunning = true
-				go refreshHeatmapCache()
-			}
-			heatmapCacheMu.Unlock()
+			result.CacheState = "stale"
+			startHeatmapRefresh()
+		} else {
+			result.CacheState = "ready"
 		}
-		return sliceHeatmap(cached.Data, days)
+		return result
 	}
 
-	heatmapCacheMu.Lock()
-	defer heatmapCacheMu.Unlock()
-	if cached, ok = loadHeatmapCache(); !ok {
-		cached = heatmapCacheFile{SavedAt: time.Now(), Data: getHeatmapData(heatmapCacheDays)}
-		_ = saveHeatmapCache(cached.Data)
-	}
-	return sliceHeatmap(cached.Data, days)
+	startHeatmapRefresh()
+	return emptyHeatmap(days)
 }
 
 // ───── API: /api/heatmap_detail ─────
@@ -1933,7 +1996,15 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 	}
 
 	// 当天统计 (与 Python scanner.get_heatmap_detail 保持一致)
-	summary := map[string]interface{}{}
+	summary := map[string]interface{}{
+		"total_tokens":   0,
+		"total_cached":   0,
+		"call_count":     0,
+		"avg_latency_ms": 0,
+		"max_latency_ms": 0,
+		"peak_tokens":    0,
+		"peak_time":      "",
+	}
 	if len(filtered) > 0 {
 		var totalTokens, totalCached int64
 		peakIdx := 0
@@ -1954,9 +2025,7 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 		summary["max_latency_ms"] = 0
 	}
 
-	return SessionListResponse{
-		Sessions: sessions, Total: len(sessions), Summary: summary,
-	}
+	return paginatedSessionList(sessions, summary, page, pageSize)
 }
 
 func main() {
@@ -2068,6 +2137,23 @@ func main() {
 			pageSize = 50
 		}
 		writeJSON(w, 200, getSessionList(days, page, pageSize))
+	})
+
+	http.HandleFunc("/api/session_detail", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+		if pageSize < 1 {
+			pageSize = 20
+		}
+		writeJSON(w, 200, getSessionDetail(r.URL.Query().Get("session_id"), page, pageSize))
 	})
 
 	http.HandleFunc("/api/heatmap", func(w http.ResponseWriter, r *http.Request) {
