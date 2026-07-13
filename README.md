@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.31**。
+当前发布版本：**v1.4.32**。
 
 ## 功能
 
@@ -62,17 +62,18 @@
 ### 社区用量排行
 
 - 社区 Dashboard 内展示本机 `User_XXXXX` 匿名 ID、同步状态与排行，不再保留重复的独立 ID 入口
-- 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每小时同步；无需手动加入，“立即同步”仅用于网络失败重试
+- 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每 5 分钟静默同步；无需手动加入或手工刷新
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、历史参与用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
 - 自动初始化产生的 0 Token 身份只计入历史参与用户，不进入今日榜单或影响今日排名
 - 社区用量在启动后与每 5 分钟静默上报；打开社区页也会在后台按同样节流补报，因此不需要手工同步，展示可先用缓存、随后自动刷新
+- 社区页会友好说明：刚产生的用量可能短暂落后首页，通常几分钟内自动更新；不显示传输进度或手动同步入口
 - 趋势图和热力图同样使用缓存优先展示；热力图始终从同一份 365 天快照切片，冷启动也先显示完整日期网格，历史日志扫描仅在后台静默执行
 - 热力图月份轴、星期标签和日期格使用统一固定尺寸，保证 Windows WebView2 与 macOS 下上下对齐
 - 状态明确区分“等待首次同步”“今日第 N 名”“已同步但未进前十”和“无法上报”
-- 启动约 30 秒后首次自动上报，之后每小时一次；页面聚合结果最多缓存 5 分钟
+- 启动约 5 秒后首次自动上报，之后每 5 分钟一次；页面聚合结果最多缓存 5 分钟
 - 社区报告写入独立的 `community-data` 分支，不污染 `main` 代码提交历史
 - 匿名统计通过 `new.taqi.cc` 的 VPS 中继写入 GitCode；其他用户无需安装 Git，也无需配置或接触 GitCode 凭据
 - 每台设备首次生成仅保存在本机的随机凭据，用于保护匿名 ID，避免其他设备覆盖该用户的统计
@@ -223,7 +224,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -245,7 +246,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -367,10 +368,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.31](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.31)
+最新版本：[v1.4.32](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.32)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -386,6 +387,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.32 (2026-07-13)
+
+- 社区用量改为每 5 分钟静默同步，打开社区页也会自动补报；刚产生的用量可能短暂与首页不同，页面会提示其自动更新。
 
 ### v1.4.31 (2026-07-13)
 

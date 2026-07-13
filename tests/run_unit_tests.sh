@@ -34,6 +34,9 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       html.includes("data.rank_status !== 'pending' || !data.can_report")) {
     throw new Error(`${file}: 社区静默补报必须覆盖已上榜用户并保持 5 分钟节流`);
   }
+  if (!html.includes("刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。")) {
+    throw new Error(`${file}: 缺少社区数据短暂延迟的友好说明`);
+  }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
 }
