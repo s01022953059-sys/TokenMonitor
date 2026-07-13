@@ -35,6 +35,11 @@ node - <<'NODE'
 const fs = require('fs');
 for (const file of ['index.html', 'go_build/static/index.html']) {
   const html = fs.readFileSync(file, 'utf8');
+  const selected = html.match(/<button class="tab-btn active" data-days="(30|90|180|365)">近/);
+  const initial = html.match(/let _heatmapDays = (30|90|180|365);/);
+  if (!selected || !initial || selected[1] !== initial[1]) {
+    throw new Error(`${file}: 热力图默认 Tab 与请求范围不一致`);
+  }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
 }
@@ -61,7 +66,7 @@ print(s.getsockname()[1])
 s.close()
 PY
 )
-TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_LOCAL_API_TOKEN="verify-local-token" python3 server.py \
+TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_HEATMAP_CACHE_FILE="$TMP_DIR/heatmap.json" TOKEN_MONITOR_LOCAL_API_TOKEN="verify-local-token" python3 server.py \
     --port "$PORT" \
     --update-feed-url "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor/releases/latest" \
     >"$TMP_DIR/server.log" 2>&1 &
@@ -75,6 +80,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+import time
 
 port = int(sys.argv[1])
 def get(path):
@@ -83,8 +89,13 @@ def get(path):
 
 usage = get("/api/usage")
 assert usage["summary"]["total_tokens"] > 0, "今日 Token 为 0"
-heatmap = get("/api/heatmap?days=90")
-assert len(heatmap["days"]) == 90, "热力图不是 90 天"
+heatmap = get("/api/heatmap?days=365")
+assert len(heatmap["days"]) == 365, "近一年热力图不是 365 天"
+started = time.monotonic()
+heatmap_30 = get("/api/heatmap?days=30")
+elapsed = time.monotonic() - started
+assert len(heatmap_30["days"]) == 30, "近 30 天热力图不是 30 天"
+assert elapsed < 0.5, f"热力图缓存命中耗时过长: {elapsed:.3f}s"
 sessions = get("/api/sessions?days=7&page=1&page_size=20")
 assert sessions["page"] == 1 and sessions["page_size"] == 20, "会话分页异常"
 update = get("/api/check-update")
@@ -155,7 +166,7 @@ try:
     raise AssertionError("昵称接口接受了无效请求")
 except urllib.error.HTTPError as exc:
     assert exc.code == 400, f"macOS file:// 合法凭据未通过来源校验: {exc.code}"
-print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=90, sessions={len(sessions['sessions'])}")
+print(f"[verify] API OK: tokens={usage['summary']['total_tokens']}, heatmap=365, warm={elapsed:.3f}s, sessions={len(sessions['sessions'])}")
 PY
 kill "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true

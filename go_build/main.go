@@ -37,6 +37,12 @@ var appVersion = "1.4.30"
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
 var feedURL = updateFeedURL
 
+const heatmapCacheDays = 365
+const heatmapCacheTTL = 5 * time.Minute
+
+var heatmapCacheMu sync.Mutex
+var heatmapRefreshRunning bool
+
 // ───── 数据结构 (与 Python 版 JSON 输出完全对齐) ─────
 
 type LogEntry struct {
@@ -122,6 +128,11 @@ type HeatmapResponse struct {
 	MaxValue  int64        `json:"max_value"`
 	StartDate string       `json:"start_date"`
 	EndDate   string       `json:"end_date"`
+}
+
+type heatmapCacheFile struct {
+	SavedAt time.Time       `json:"saved_at"`
+	Data    HeatmapResponse `json:"data"`
 }
 
 // ───── 路径工具 (跨平台) ─────
@@ -1757,6 +1768,99 @@ func getHeatmapData(days int) HeatmapResponse {
 	}
 }
 
+func heatmapCachePath() string {
+	return filepath.Join(homeDir(), ".token_monitor", "heatmap_cache_go.json")
+}
+
+func sliceHeatmap(data HeatmapResponse, days int) HeatmapResponse {
+	if days < 1 {
+		days = 1
+	}
+	if days > heatmapCacheDays {
+		days = heatmapCacheDays
+	}
+	start := len(data.Days) - days
+	if start < 0 {
+		start = 0
+	}
+	rows := append([]HeatmapDay(nil), data.Days[start:]...)
+	var maxValue int64
+	for _, row := range rows {
+		if row.Tokens > maxValue {
+			maxValue = row.Tokens
+		}
+	}
+	result := HeatmapResponse{Days: rows, MaxValue: maxValue}
+	if len(rows) > 0 {
+		result.StartDate = rows[0].Date
+		result.EndDate = rows[len(rows)-1].Date
+	}
+	return result
+}
+
+func loadHeatmapCache() (heatmapCacheFile, bool) {
+	var cached heatmapCacheFile
+	raw, err := os.ReadFile(heatmapCachePath())
+	if err != nil || json.Unmarshal(raw, &cached) != nil || len(cached.Data.Days) != heatmapCacheDays {
+		return cached, false
+	}
+	return cached, true
+}
+
+func saveHeatmapCache(data HeatmapResponse) error {
+	path := heatmapCachePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(heatmapCacheFile{SavedAt: time.Now(), Data: data})
+	if err != nil {
+		return err
+	}
+	temporary := path + ".tmp"
+	if err := os.WriteFile(temporary, raw, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, path); err == nil {
+		return nil
+	}
+	// Windows 不能像 Unix 一样用 Rename 原子覆盖已有文件。
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(temporary, path)
+}
+
+func refreshHeatmapCache() {
+	data := getHeatmapData(heatmapCacheDays)
+	_ = saveHeatmapCache(data)
+	heatmapCacheMu.Lock()
+	heatmapRefreshRunning = false
+	heatmapCacheMu.Unlock()
+}
+
+func getCachedHeatmap(days int) HeatmapResponse {
+	cached, ok := loadHeatmapCache()
+	if ok {
+		if time.Since(cached.SavedAt) > heatmapCacheTTL {
+			heatmapCacheMu.Lock()
+			if !heatmapRefreshRunning {
+				heatmapRefreshRunning = true
+				go refreshHeatmapCache()
+			}
+			heatmapCacheMu.Unlock()
+		}
+		return sliceHeatmap(cached.Data, days)
+	}
+
+	heatmapCacheMu.Lock()
+	defer heatmapCacheMu.Unlock()
+	if cached, ok = loadHeatmapCache(); !ok {
+		cached = heatmapCacheFile{SavedAt: time.Now(), Data: getHeatmapData(heatmapCacheDays)}
+		_ = saveHeatmapCache(cached.Data)
+	}
+	return sliceHeatmap(cached.Data, days)
+}
+
 // ───── API: /api/heatmap_detail ─────
 func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) SessionListResponse {
 	now := time.Now()
@@ -1978,7 +2082,7 @@ func main() {
 				days = n
 			}
 		}
-		writeJSON(w, 200, getHeatmapData(days))
+		writeJSON(w, 200, getCachedHeatmap(days))
 	})
 	http.HandleFunc("/api/heatmap_detail", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -2118,6 +2222,9 @@ func main() {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	server := &http.Server{Addr: addr}
+
+	// 提前生成统一的全年快照，避免用户首次打开热力图才开始扫描。
+	go getCachedHeatmap(heatmapCacheDays)
 
 	// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
 	go func() {

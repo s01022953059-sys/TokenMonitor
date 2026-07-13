@@ -18,6 +18,8 @@ import plistlib
 import socket
 import socketserver
 import sys
+import threading
+import time
 try:
     import fcntl  # Unix
 except ImportError:
@@ -67,6 +69,86 @@ def _read_app_version() -> str:
 # 不让 About 弹窗显示过期版本)。
 APP_VERSION = _read_app_version()
 USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/TokenMonitor)"
+
+HEATMAP_CACHE_DAYS = 365
+HEATMAP_CACHE_TTL = 300
+HEATMAP_CACHE_PATH = os.environ.get(
+    "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
+    os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
+)
+_heatmap_cache_lock = threading.Lock()
+_heatmap_refreshing = False
+
+
+def _slice_heatmap(data, days):
+    """从统一的 365 天快照切出指定范围，保证各 Tab 口径一致。"""
+    requested = max(1, min(int(days), HEATMAP_CACHE_DAYS))
+    rows = list((data or {}).get("days") or [])[-requested:]
+    return {
+        "days": rows,
+        "max_value": max((row.get("tokens", 0) for row in rows), default=0),
+        "start_date": rows[0]["date"] if rows else "",
+        "end_date": rows[-1]["date"] if rows else "",
+    }
+
+
+def _load_heatmap_snapshot():
+    try:
+        with open(HEATMAP_CACHE_PATH, "r", encoding="utf-8") as stream:
+            cached = json.load(stream)
+        data = cached.get("data") or {}
+        if len(data.get("days") or []) != HEATMAP_CACHE_DAYS:
+            return None
+        return cached
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _save_heatmap_snapshot(data):
+    directory = os.path.dirname(HEATMAP_CACHE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = HEATMAP_CACHE_PATH + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as stream:
+        json.dump({"saved_at": time.time(), "data": data}, stream, ensure_ascii=False)
+    os.replace(temporary, HEATMAP_CACHE_PATH)
+
+
+def _refresh_heatmap_snapshot():
+    global _heatmap_refreshing
+    try:
+        data = get_heatmap_data(HEATMAP_CACHE_DAYS)
+        try:
+            _save_heatmap_snapshot(data)
+        except OSError:
+            pass
+    finally:
+        with _heatmap_cache_lock:
+            _heatmap_refreshing = False
+
+
+def get_cached_heatmap(days):
+    """旧快照立即返回，过期后后台更新；首次使用才同步生成。"""
+    global _heatmap_refreshing
+    cached = _load_heatmap_snapshot()
+    if cached:
+        if time.time() - float(cached.get("saved_at", 0)) > HEATMAP_CACHE_TTL:
+            with _heatmap_cache_lock:
+                if not _heatmap_refreshing:
+                    _heatmap_refreshing = True
+                    threading.Thread(target=_refresh_heatmap_snapshot, daemon=True).start()
+        return _slice_heatmap(cached["data"], days)
+
+    with _heatmap_cache_lock:
+        cached = _load_heatmap_snapshot()
+        if not cached:
+            data = get_heatmap_data(HEATMAP_CACHE_DAYS)
+            try:
+                _save_heatmap_snapshot(data)
+            except OSError:
+                pass
+            cached = {"data": data}
+    return _slice_heatmap(cached["data"], days)
 
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)
@@ -426,7 +508,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 parsed = urlparse(self.path)
                 qs = parse_qs(parsed.query)
                 days = int(qs.get("days", ["30"])[0])
-                self._write_json(200, get_heatmap_data(days))
+                self._write_json(200, get_cached_heatmap(days))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
@@ -532,8 +614,10 @@ def main():
     print(f"[+] Token Monitor 仪表盘已启动: http://127.0.0.1:{PORT}")
     print(f"[+] 更新源 (TokenMonitorUpdateFeedURL): {feed_status}")
 
+    # 启动后预热全年快照；用户首次打开热力图时通常已可直接命中缓存。
+    threading.Thread(target=lambda: get_cached_heatmap(HEATMAP_CACHE_DAYS), daemon=True).start()
+
     # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
-    import threading
     def _community_report_loop():
         import time as _time
         _time.sleep(5)

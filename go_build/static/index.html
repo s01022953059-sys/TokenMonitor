@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+    <link rel="icon" href="data:,">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Tokens 极简并列大屏</title>
@@ -2253,10 +2254,11 @@
         let _historyRefreshPromise = null;
         const _heatmapRefreshPromises = new Map();
 
-        function readDashboardCache(name) {
+        function readDashboardCache(name, allowStale = false) {
             try {
                 const cached = JSON.parse(localStorage.getItem(DASHBOARD_CACHE_PREFIX + name) || 'null');
-                if (!cached || cached.date !== communityTodayKey() || !cached.data) return null;
+                if (!cached || !cached.data) return null;
+                if (!allowStale && cached.date !== communityTodayKey()) return null;
                 return cached.data;
             } catch (_) {
                 return null;
@@ -2582,7 +2584,7 @@
             setTimeout(() => fetchCommunityData().catch(() => {}), 1200);
             // 常用统计页提前准备；打开时先显示当天缓存，再在后台更新。
             setTimeout(() => refreshHistoryData().catch(() => {}), 1600);
-            setTimeout(() => refreshHeatmapData(30).catch(() => {}), 2000);
+            setTimeout(() => refreshHeatmapData(365).catch(() => {}), 2000);
 
             // 首次启动快速重试：每 150ms 重试直到服务器就绪，然后切换为 3s 常规轮询
             let bootRetryTimer = setInterval(async () => {
@@ -2912,7 +2914,7 @@
             try {
                 let data = suppliedData;
                 if (!data) {
-                    const cached = readDashboardCache('heatmap:' + days);
+                    const cached = readDashboardCache('heatmap:' + days, true);
                     if (cached) {
                         data = cached;
                         refreshHeatmapData(days).then(fresh => {
