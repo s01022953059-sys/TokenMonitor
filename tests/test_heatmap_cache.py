@@ -85,7 +85,7 @@ class HeatmapCacheTests(unittest.TestCase):
 
         self.assertEqual(detail.call_count, 2)
         self.assertEqual(detail.call_args_list[0].args[0], today)
-        self.assertEqual(detail.call_args_list[0].args[1:], (1, 50))
+        self.assertEqual(detail.call_args_list[0].args[1:], ())
         annual.assert_called_once_with(server.HEATMAP_CACHE_DAYS)
 
 

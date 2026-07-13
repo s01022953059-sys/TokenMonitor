@@ -42,8 +42,12 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
     throw new Error(`${file}: 缺少社区数据短暂延迟的友好说明`);
   }
   if (!html.includes("今日活跃用户") || !html.includes("总用户") ||
+      !html.includes("去重后的用户数") || !html.includes("已产生用量的用户数") ||
       !html.includes("data.today_active_users") || !html.includes("data.total_users")) {
     throw new Error(`${file}: 社区总用户与今日活跃用户口径展示缺失`);
+  }
+  if (!html.includes("data.cache_state === 'failed'")) {
+    throw new Error(`${file}: 每日调用详情失败状态不能无限停在加载中`);
   }
   const versionHighlight = new RegExp(`['\"]${currentVersion}['\"]\\s*:\\s*\\[\\s*['\"][^'\"]+['\"]`, 's');
   if (!html.includes('id="aboutReleaseHighlights"') ||

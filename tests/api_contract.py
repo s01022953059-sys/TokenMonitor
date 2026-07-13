@@ -199,6 +199,19 @@ class APIContractTests(unittest.TestCase):
         self.assertEqual(detail["page_size"], 1)
         self.assertGreaterEqual(detail["total_pages"], 1)
 
+        # macOS 后端会先异步构建日快照；同一天切换每页条数必须直接复用，
+        # 不能再触发一次完整日志扫描。
+        deadline = time.monotonic() + 3
+        while detail.get("cache_state") == "warming" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            detail = self.get(f"/api/heatmap_detail?date={heatmap['end_date']}&page=1&page_size=1")
+        self.assertNotEqual(detail.get("cache_state"), "warming")
+        started = time.monotonic()
+        repaged = self.get(f"/api/heatmap_detail?date={heatmap['end_date']}&page=1&page_size=20")
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertNotEqual(repaged.get("cache_state"), "warming")
+        self.assertEqual(repaged["page_size"], 20)
+
         session_detail = self.get("/api/session_detail?session_id=missing-contract-session&page=1&page_size=1")
         self.assertIn("messages", session_detail)
 

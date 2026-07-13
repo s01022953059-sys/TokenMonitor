@@ -2606,6 +2606,10 @@
             '1.4.35': [
                 '修复 macOS 后台扫描触发 Python 崩溃的问题。',
                 '社区排行改为内部滚动，Windows 滚动条更轻量。'
+            ],
+            '1.4.36': [
+                '每日调用详情按日期复用快照，二次打开和切换分页更快。',
+                '社区用户指标说明改为去重用户数与已产生用量用户数。'
             ]
         });
 
@@ -3602,10 +3606,10 @@
                         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%;">' +
                             '<div><div style="font-size:10px;color:var(--text-muted);">总用户</div>' +
                                 '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + totalUsers + '</div>' +
-                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">去重后的匿名 ID</div></div>' +
+                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">去重后的用户数</div></div>' +
                             '<div style="border-left:1px solid var(--border-subtle);padding-left:14px;"><div style="font-size:10px;color:var(--text-muted);">今日活跃用户</div>' +
                                 '<div style="font-family:JetBrains Mono,monospace;font-size:22px;font-weight:800;margin-top:4px;white-space:nowrap;">' + todayActiveUsers + '</div>' +
-                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">今日已产生用量</div></div>' +
+                                '<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">已产生用量的用户数</div></div>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
@@ -3768,7 +3772,13 @@
                                 loadHeatmapDayDetail(date, page, retryCount + 1);
                             }
                         }, 500);
+                    } else {
+                        listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">明细仍在后台准备，稍后重新打开即可</div>';
                     }
+                    return;
+                }
+                if (data.cache_state === 'failed') {
+                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">当天明细暂时无法读取，请稍后重试</div>';
                     return;
                 }
                 const sessions = data.sessions || [];

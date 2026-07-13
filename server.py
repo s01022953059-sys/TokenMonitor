@@ -88,7 +88,8 @@ HEATMAP_DETAIL_CACHE_PATH = os.environ.get(
 _heatmap_cache_lock = threading.Lock()
 _heatmap_refreshing = False
 _heatmap_detail_cache_lock = threading.Lock()
-_heatmap_detail_refreshing = set()
+_heatmap_detail_refreshing = {}
+_heatmap_detail_failures = {}
 
 
 def _slice_heatmap(data, days):
@@ -245,45 +246,77 @@ def _save_heatmap_detail_cache(cache):
     os.replace(temporary, HEATMAP_DETAIL_CACHE_PATH)
 
 
-def _refresh_heatmap_detail(date, page, page_size):
-    cache_key = f"{date}:{page}:{page_size}"
+def _paginate_heatmap_detail_snapshot(snapshot, date, page, page_size):
+    """完整日快照只扫描一次，任意分页请求在内存中切片。"""
     try:
-        result = get_heatmap_detail(date=date, page=page, page_size=page_size)
-        cache = _load_heatmap_detail_cache()
-        cache["entries"][cache_key] = {"saved_at": time.time(), "data": result}
-        _save_heatmap_detail_cache(cache)
-    except (OSError, ValueError, TypeError):
-        pass
+        page = max(1, int(page))
+        page_size = max(1, int(page_size))
+    except (TypeError, ValueError):
+        page, page_size = 1, 50
+    sessions = list((snapshot or {}).get("sessions") or [])
+    total = len(sessions)
+    start = (page - 1) * page_size
+    return {
+        "sessions": sessions[start:start + page_size],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "summary": dict((snapshot or {}).get("summary") or {}),
+        "date": date,
+    }
+
+
+def _refresh_heatmap_detail(date):
+    try:
+        snapshot = get_heatmap_detail(date=date, include_all=True)
+        if not isinstance(snapshot, dict):
+            raise ValueError("heatmap detail snapshot is invalid")
+        with _heatmap_detail_cache_lock:
+            cache = _load_heatmap_detail_cache()
+            cache["entries"][date] = {"saved_at": time.time(), "data": snapshot}
+            _save_heatmap_detail_cache(cache)
+            _heatmap_detail_failures.pop(date, None)
+    except Exception as exc:
+        # 失败信息只留在本机内存，前端不展示原始路径/数据库错误。
+        with _heatmap_detail_cache_lock:
+            _heatmap_detail_failures[date] = time.time()
+        print(f"[-] heatmap_detail {date} 后台刷新失败: {exc}")
     finally:
         with _heatmap_detail_cache_lock:
-            _heatmap_detail_refreshing.discard(cache_key)
+            _heatmap_detail_refreshing.pop(date, None)
 
 
-def _start_heatmap_detail_refresh(date, page, page_size):
-    cache_key = f"{date}:{page}:{page_size}"
+def _start_heatmap_detail_refresh(date):
     with _heatmap_detail_cache_lock:
-        if cache_key in _heatmap_detail_refreshing:
+        if date in _heatmap_detail_refreshing:
             return
-        _heatmap_detail_refreshing.add(cache_key)
+        _heatmap_detail_refreshing[date] = time.time()
         threading.Thread(
-            target=_refresh_heatmap_detail, args=(date, page, page_size), daemon=True
+            target=_refresh_heatmap_detail, args=(date,), daemon=True
         ).start()
 
 
 def get_cached_heatmap_detail(date, page=1, page_size=50):
     """详情页优先返回本地快照，扫描仅在后台运行。"""
-    cache_key = f"{date}:{page}:{page_size}"
-    entry = _load_heatmap_detail_cache()["entries"].get(cache_key)
+    entry = _load_heatmap_detail_cache()["entries"].get(date)
     if entry and isinstance(entry.get("data"), dict):
-        result = dict(entry["data"])
+        result = _paginate_heatmap_detail_snapshot(entry["data"], date, page, page_size)
         if time.time() - float(entry.get("saved_at", 0)) > HEATMAP_DETAIL_CACHE_TTL:
             result["cache_state"] = "stale"
-            _start_heatmap_detail_refresh(date, page, page_size)
+            _start_heatmap_detail_refresh(date)
         else:
             result["cache_state"] = "ready"
         return result
 
-    _start_heatmap_detail_refresh(date, page, page_size)
+    with _heatmap_detail_cache_lock:
+        failed_at = _heatmap_detail_failures.get(date)
+    if failed_at and time.time() - failed_at < 60:
+        result = _empty_heatmap_detail(date, page, page_size)
+        result["cache_state"] = "failed"
+        return result
+
+    _start_heatmap_detail_refresh(date)
     return _empty_heatmap_detail(date, page, page_size)
 
 
@@ -291,7 +324,7 @@ def _prewarm_recent_dashboard_data():
     """详情优先预热；全年快照仅在缺失或过期时由缓存入口安排重建。"""
     today = datetime.date.today()
     for offset in range(2):
-        _refresh_heatmap_detail((today - datetime.timedelta(days=offset)).isoformat(), 1, 50)
+        _refresh_heatmap_detail((today - datetime.timedelta(days=offset)).isoformat())
     get_cached_heatmap(HEATMAP_CACHE_DAYS)
 
 _parser = argparse.ArgumentParser(add_help=False)

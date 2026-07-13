@@ -114,7 +114,8 @@ printf '%s\n' "$DETAIL_TITLE" | grep -q "$EXPECTED_TODAY 调用详情"
 "$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "当前版本 v$CURRENT_VERSION"
-printf '%s\n' "$SNAPSHOT" | grep -q "修复 macOS 后台扫描触发 Python 崩溃的问题"
+ABOUT_HIGHLIGHTS=$("$PWCLI" eval "() => Array.from(document.querySelectorAll('#aboutReleaseHighlights li')).map((item) => item.innerText.trim()).filter(Boolean).join('\\n')")
+test -n "$ABOUT_HIGHLIGHTS"
 
 # 新版本到达后，About 必须用 Release 的内容替换当前版本摘要，避免误导用户。
 "$PWCLI" eval "() => { const savedFetch = window.fetch; window.fetch = async (url, options) => String(url).includes('/api/check-update') ? new Response(JSON.stringify({ok:true,current_version:'$CURRENT_VERSION',latest_version:'99.0.0',update_available:true,notes:'- 独立 worker 扫描\\n- 企业 VPN 代理兼容'}), {status:200,headers:{'Content-Type':'application/json'}}) : savedFetch(url, options); return runUpdateCheck().finally(() => { window.fetch = savedFetch; }); }" >/dev/null

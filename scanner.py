@@ -44,6 +44,24 @@ def _open_sqlite_readonly(path, attempts=3):
                 time.sleep(0.05 * (attempt + 1))
     raise last_error
 
+
+def _has_sqlite_index(conn, index_name):
+    """判断外部数据库是否具备可选索引，旧版 schema 缺失时安全降级。"""
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?", (index_name,)
+        ).fetchone()
+        return row is not None
+    except sqlite3.Error:
+        return False
+
+
+def _cc_request_log_source(conn):
+    """优先按时间索引读取大体量 cc-switch 日志，避免 status 索引全表回表。"""
+    if _has_sqlite_index(conn, "idx_request_logs_created_at"):
+        return "proxy_request_logs INDEXED BY idx_request_logs_created_at"
+    return "proxy_request_logs"
+
 def get_today_midnight_timestamp():
     """获取今天本地时间零点的时间戳"""
     now = datetime.datetime.now()
@@ -168,11 +186,12 @@ def scan_cc_switch_logs(today_start):
     try:
         conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
         cursor = conn.cursor()
+        source = _cc_request_log_source(conn)
 
-        query = """
+        query = f"""
             SELECT created_at, app_type, model, input_tokens, output_tokens,
                    cache_read_tokens, cache_creation_tokens, provider_id, data_source
-            FROM proxy_request_logs
+            FROM {source}
             WHERE created_at >= ? AND status_code = 200
             ORDER BY created_at ASC
         """
@@ -1369,7 +1388,8 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
         "total_pages": _total_pages(total, page_size),
     }
 
-def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, date=None):
+def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, date=None,
+                       include_all=False):
     """返回某天 (date) 或某时段 (weekday+hour) 的 API 调用列表。
 
     如果 date 不为 None, 按 date 过滤; 否则按 weekday+hour 过滤。
@@ -1402,11 +1422,12 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         try:
             conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
             cursor = conn.cursor()
-            query = """
+            source = _cc_request_log_source(conn)
+            query = f"""
                 SELECT created_at, input_tokens, output_tokens, cache_read_tokens,
                        cache_creation_tokens, app_type, model, provider_id,
                        data_source, latency_ms, session_id
-                FROM proxy_request_logs
+                FROM {source}
                 WHERE created_at >= ? AND status_code = 200
                 ORDER BY created_at ASC
             """
@@ -1550,6 +1571,13 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
         "peak_tokens": peak_call.get("total_tokens", 0) if peak_call else 0,
         "peak_time": peak_call.get("time", "") if peak_call else "",
     }
+
+    if include_all:
+        # 服务端按日期缓存完整快照，切换每页条数时不能再次扫描全部本地日志。
+        return {
+            "sessions": events,
+            "summary": summary,
+        }
 
     # 分页
     total = len(events)
