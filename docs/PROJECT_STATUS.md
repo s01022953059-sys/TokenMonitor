@@ -6,6 +6,7 @@
 
 - 当前已发布版本: v1.4.28
 - 数据源已扩展为五类: Codex 官方日志 / cc-switch / Antigravity / Hermes / WorkBuddy；Codex 不再依赖 cc-switch，WorkBuddy 改读项目 JSONL 的逐请求 usage，Antigravity 汇总文件仅识别不重复累加
+- 首页今日统计支持本地时间与 UTC+0 切换；用于对照 DeepSeek 等按 UTC 归日的控制台，同时明确本机日志范围与账号全量的区别
 - 新增社区用量排行: 匿名 ID、今日聚合、完整个人排名、Top 10、工具占比；上报在后台自动完成，页面不暴露同步按钮、时间或传输状态
 - 社区页增加紧凑动态栏，根据已有匿名聚合结果轮播榜首、参与人数、今日总量和热门工具，不新增上报字段
 - 社区报告使用独立 `community-data` 分支, 避免自动上报污染 `main` 提交历史

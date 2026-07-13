@@ -10,6 +10,20 @@ import scanner
 
 
 class ScannerAccuracyTests(unittest.TestCase):
+    def test_today_window_supports_local_and_utc_bucketing(self):
+        local_zone = datetime.timezone(datetime.timedelta(hours=8), name="CST")
+        now = datetime.datetime(2026, 7, 13, 3, 30, tzinfo=local_zone)
+
+        utc_start, utc_date, utc_label = scanner._today_window("utc", now)
+        local_start, local_date, local_label = scanner._today_window("local", now)
+
+        self.assertEqual(utc_start, int(datetime.datetime(2026, 7, 12, tzinfo=datetime.timezone.utc).timestamp()))
+        self.assertEqual(utc_date, "2026-07-12")
+        self.assertEqual(utc_label, "UTC+0")
+        self.assertEqual(local_start, int(datetime.datetime(2026, 7, 13, tzinfo=local_zone).timestamp()))
+        self.assertEqual(local_date, "2026-07-13")
+        self.assertEqual(local_label, "CST")
+
     def test_codex_session_keeps_event_model_after_provider_switch(self):
         provider_models = {"current-provider": "gpt-5.5"}
         self.assertEqual(

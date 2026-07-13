@@ -65,10 +65,11 @@ type BalanceInfo struct {
 }
 
 type UsageResponse struct {
-	Summary      map[string]interface{} `json:"summary"`
-	ByTool       map[string]*ToolStats  `json:"by_tool"`
-	ByModel      map[string]int64       `json:"by_model"`
-	RecentEvents []LogEntry             `json:"recent_events"`
+	Summary         map[string]interface{} `json:"summary"`
+	ByTool          map[string]*ToolStats  `json:"by_tool"`
+	ByModel         map[string]int64       `json:"by_model"`
+	ByModelRequests map[string]int         `json:"by_model_requests"`
+	RecentEvents    []LogEntry             `json:"recent_events"`
 }
 
 type HistoryResponse struct {
@@ -171,9 +172,23 @@ func antigravityStatsPath() string {
 }
 
 func todayMidnight() int64 {
-	now := time.Now()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return midnight.Unix()
+	start, _, _ := todayWindow(false, time.Now())
+	return start
+}
+
+func todayWindow(useUTC bool, now time.Time) (int64, string, string) {
+	if useUTC {
+		now = now.UTC()
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		return midnight.Unix(), now.Format("2006-01-02"), "UTC+0"
+	}
+	local := now.In(time.Local)
+	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.Local)
+	label, _ := local.Zone()
+	if label == "" {
+		label = "本地时间"
+	}
+	return midnight.Unix(), local.Format("2006-01-02"), label
 }
 
 // ───── 模型名归一化 (对齐 scanner.py normalize_model_name) ─────
@@ -932,7 +947,11 @@ func dedupEvents(events []LogEntry) []LogEntry {
 // ───── API: /api/usage (对齐 scanner.py get_today_usage) ─────
 
 func getTodayUsage() UsageResponse {
-	todayStart := todayMidnight()
+	return getTodayUsageInTimezone(false)
+}
+
+func getTodayUsageInTimezone(useUTC bool) UsageResponse {
+	todayStart, reportDate, timezoneLabel := todayWindow(useUTC, time.Now())
 
 	// 三源并行扫描
 	var ccLogs, codexLogs, antigravityLogs, hermesLogs []LogEntry
@@ -954,6 +973,7 @@ func getTodayUsage() UsageResponse {
 	var totalTokens, inputTokens, outputTokens, inputCached, inputUncached int64
 	byTool := map[string]*ToolStats{}
 	byModel := map[string]int64{}
+	byModelRequests := map[string]int{}
 
 	for _, log := range allLogs {
 		totalTokens += log.TotalTokens
@@ -970,6 +990,7 @@ func getTodayUsage() UsageResponse {
 		byTool[log.Tool].OutputTokens += log.OutputTokens
 
 		byModel[log.Model] += log.TotalTokens
+		byModelRequests[log.Model]++
 	}
 
 	dsBalance := getCachedBalance()
@@ -986,16 +1007,20 @@ func getTodayUsage() UsageResponse {
 			"output_tokens":       outputTokens,
 			"input_cached":        inputCached,
 			"input_uncached":      inputUncached,
-			"date":                time.Now().Format("2006-01-02"),
+			"date":                reportDate,
+			"timezone_mode":       map[bool]string{true: "utc", false: "local"}[useUTC],
+			"timezone_label":      timezoneLabel,
+			"data_scope":          "本机已记录请求",
 			"deepseek_balance":    dsBalance.Balance,
 			"deepseek_currency":   dsBalance.Currency,
 			"deepseek_status":     dsBalance.Status,
 			"events_after_dedup":  len(allLogs),
 			"events_before_dedup": eventsBeforeDedup,
 		},
-		ByTool:       byTool,
-		ByModel:      byModel,
-		RecentEvents: recentEvents,
+		ByTool:          byTool,
+		ByModel:         byModel,
+		ByModelRequests: byModelRequests,
+		RecentEvents:    recentEvents,
 	}
 }
 
@@ -1892,7 +1917,7 @@ func main() {
 			w.WriteHeader(200)
 			return
 		}
-		data := getTodayUsage()
+		data := getTodayUsageInTimezone(strings.EqualFold(r.URL.Query().Get("timezone"), "utc"))
 		writeJSON(w, 200, data)
 	})
 

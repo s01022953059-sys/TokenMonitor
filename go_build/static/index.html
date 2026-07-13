@@ -224,6 +224,34 @@
             letter-spacing: 1px;
         }
 
+        .timezone-switch {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+            padding: 2px;
+            border: 1px solid var(--border-card);
+            border-radius: 6px;
+            background: var(--bg-subtle);
+            vertical-align: middle;
+        }
+        .timezone-option {
+            height: 20px;
+            padding: 0 7px;
+            border: 0;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-muted);
+            font: 700 9px 'JetBrains Mono', monospace;
+            letter-spacing: 0;
+            text-transform: none;
+            cursor: pointer;
+        }
+        .timezone-option.active {
+            background: var(--bg-subtle-hover);
+            color: var(--text-main);
+            box-shadow: 0 0 0 1px var(--border-subtle);
+        }
+
         /* 并列网格布局 */
         .dashboard-grid {
             display: flex;
@@ -394,6 +422,15 @@
             .dashboard-grid {
                 flex-direction: column;
                 gap: 45px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            header {
+                margin-top: 52px;
+            }
+            header p {
+                line-height: 24px;
             }
         }
 
@@ -1388,7 +1425,7 @@
         <span id="appVersionBadge" style="position: absolute; top: 32px; left: 75px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); opacity: 0.7; letter-spacing: 0.5px; cursor: pointer; user-select: none; transition: opacity 0.2s;" title="点击查看关于">v--</span>
         <header>
             <h1>今日 Token 消耗统计</h1>
-            <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span></p>
+            <p><span id="hdrDate" style="font-family: 'JetBrains Mono', monospace; font-weight: 700;">---- -- --</span> <span style="margin: 0 6px; opacity: 0.4;">·</span> <span id="hdrSaying">九万里风鹏正举</span><span id="timezoneSwitch" class="timezone-switch" title="UTC 可用于对照按 UTC+0 归日的供应商控制台；两种模式都只统计本机记录"><button class="timezone-option active" data-timezone="local">本地</button><button class="timezone-option" data-timezone="utc">UTC</button></span></p>
         </header>
 
         <!-- 工具/模型并列网格 -->
@@ -2023,9 +2060,18 @@
                 ? location.origin
                 : 'http://127.0.0.1:15723');
 
+        let usageTimezone = localStorage.getItem('tokenMonitorUsageTimezone') === 'utc' ? 'utc' : 'local';
+
+        function applyUsageTimezoneSelection() {
+            document.querySelectorAll('.timezone-option').forEach(button => {
+                button.classList.toggle('active', button.dataset.timezone === usageTimezone);
+                button.setAttribute('aria-pressed', button.dataset.timezone === usageTimezone ? 'true' : 'false');
+            });
+        }
+
         async function updateData() {
             try {
-                const response = await fetch(API_BASE + '/api/usage');
+                const response = await fetch(API_BASE + '/api/usage?timezone=' + usageTimezone);
                 const data = await response.json();
 
                 if (data.error) {
@@ -2040,6 +2086,10 @@
                 document.getElementById('modelTotTokens').innerText = formattedTotal;
                 document.getElementById('hdrDate').innerText = data.summary.date;
                 document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
+                document.getElementById('timezoneSwitch').title =
+                    (data.summary.timezone_label || (usageTimezone === 'utc' ? 'UTC+0' : '本地时间')) +
+                    ' · ' + (data.summary.data_scope || '本机已记录请求') +
+                    ' · ' + (data.summary.events_after_dedup || 0) + ' 次';
 
                 // 2. 更新总量级别灯
                 // 用原始 total_tokens 数值 (非 formatted) 映射颜色:
@@ -2112,15 +2162,22 @@
 
                 // 模型维度：< 1% 合并到 Other
                 const modelMajor = {};
+                const modelMajorRequests = {};
                 let modelOtherTotal = 0;
+                let modelOtherRequests = 0;
                 for (const m of Object.keys(data.by_model)) {
                     if (data.by_model[m] >= onePercent) {
                         modelMajor[m] = data.by_model[m];
+                        modelMajorRequests[m] = (data.by_model_requests || {})[m] || 0;
                     } else {
                         modelOtherTotal += data.by_model[m];
+                        modelOtherRequests += (data.by_model_requests || {})[m] || 0;
                     }
                 }
-                if (modelOtherTotal > 0) modelMajor['Other'] = (modelMajor['Other'] || 0) + modelOtherTotal;
+                if (modelOtherTotal > 0) {
+                    modelMajor['Other'] = (modelMajor['Other'] || 0) + modelOtherTotal;
+                    modelMajorRequests['Other'] = (modelMajorRequests['Other'] || 0) + modelOtherRequests;
+                }
 
                 const models = Object.keys(modelMajor);
                 models.sort((a, b) => modelMajor[b] - modelMajor[a]);
@@ -2137,6 +2194,7 @@
 
                     const item = document.createElement('div');
                     item.className = 'legend-item';
+                    item.title = (modelMajorRequests[model] || 0) + ' 次 · 本机已记录请求';
                     item.innerHTML = `
                         <div class="tool-info">
                             <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
@@ -2508,6 +2566,15 @@
 
             initCharts();
             loadAppInfo();
+            applyUsageTimezoneSelection();
+            document.getElementById('timezoneSwitch').addEventListener('click', event => {
+                const button = event.target.closest('.timezone-option');
+                if (!button || button.dataset.timezone === usageTimezone) return;
+                usageTimezone = button.dataset.timezone;
+                localStorage.setItem('tokenMonitorUsageTimezone', usageTimezone);
+                applyUsageTimezoneSelection();
+                updateData();
+            });
 
             // 首次启动快速重试：每 150ms 重试直到服务器就绪，然后切换为 3s 常规轮询
             let bootRetryTimer = setInterval(async () => {

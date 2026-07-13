@@ -46,9 +46,25 @@ def _open_sqlite_readonly(path, attempts=3):
 
 def get_today_midnight_timestamp():
     """获取今天本地时间零点的时间戳"""
-    now = datetime.datetime.now()
-    midnight = datetime.datetime(now.year, now.month, now.day, 0, 0, 0)
-    return int(midnight.timestamp())
+    return _today_window("local")[0]
+
+
+def _today_window(timezone_mode="local", now=None):
+    """返回指定时区口径的今日起点、日期和标签。"""
+    if str(timezone_mode).lower() == "utc":
+        current = now or datetime.datetime.now(datetime.timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=datetime.timezone.utc)
+        current = current.astimezone(datetime.timezone.utc)
+        midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+        return int(midnight.timestamp()), current.strftime("%Y-%m-%d"), "UTC+0"
+
+    current = now or datetime.datetime.now().astimezone()
+    if current.tzinfo is None:
+        current = current.astimezone()
+    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    label = current.tzname() or "本地时间"
+    return int(midnight.timestamp()), current.strftime("%Y-%m-%d"), label
 
 def estimate_tokens(text):
     """
@@ -706,13 +722,13 @@ def _dedup_events(events):
     return sorted(deduped, key=lambda x: x["timestamp"])
 
 
-def get_today_usage():
+def get_today_usage(timezone_mode="local"):
     """汇总今日所有的大模型 Token 消耗情况以及 DeepSeek 官方余额。
 
     三源 (cc-switch / 冰茶 Antigravity / Hermes) 加和后做跨源去重,
     避免同一笔请求被多个数据源重复计入。
     """
-    today_start = get_today_midnight_timestamp()
+    today_start, report_date, timezone_label = _today_window(timezone_mode)
 
     # 1. cc-switch 优先，官方 Codex 日志用于补全未安装 cc-switch 的用户。
     cc_logs = scan_cc_switch_logs(today_start)
@@ -736,6 +752,7 @@ def get_today_usage():
     # 初始化工具统计 (动态支持从日志中提取的各种客户端如 hermes, codex 等)
     by_tool = {}
     by_model = {}
+    by_model_requests = {}
 
     for log in all_logs:
         t_tokens = log["total_tokens"]
@@ -761,6 +778,7 @@ def get_today_usage():
 
         # 累加按模型
         by_model[model] = by_model.get(model, 0) + t_tokens
+        by_model_requests[model] = by_model_requests.get(model, 0) + 1
 
     # 获取 DeepSeek 官方实时余额
     ds_balance = get_deepseek_balance()
@@ -772,7 +790,10 @@ def get_today_usage():
             "output_tokens": output_tokens,
             "input_cached": input_cached,
             "input_uncached": input_uncached,
-            "date": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "date": report_date,
+            "timezone_mode": "utc" if str(timezone_mode).lower() == "utc" else "local",
+            "timezone_label": timezone_label,
+            "data_scope": "本机已记录请求",
             "deepseek_balance": ds_balance.get("balance", "0.00"),
             "deepseek_currency": ds_balance.get("currency", "CNY"),
             "deepseek_status": ds_balance.get("status", "Offline"),
@@ -782,6 +803,7 @@ def get_today_usage():
         },
         "by_tool": by_tool,
         "by_model": by_model,
+        "by_model_requests": by_model_requests,
         # 最新 30 条事件日志
         "recent_events": all_logs[-30:]
     }
