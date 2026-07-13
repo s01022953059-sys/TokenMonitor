@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.30**。
+当前发布版本：**v1.4.31**。
 
 ## 功能
 
@@ -221,7 +221,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -243,7 +243,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -365,10 +365,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.30](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.30)
+最新版本：[v1.4.31](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.31)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.30/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.31/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -385,10 +385,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
-### 开发中
+### v1.4.31 (2026-07-13)
 
-- 热力图改为持久化 365 天统一快照，30/90/180/365 天从同一份数据切片；旧缓存先展示、后台刷新，避免切换范围时反复扫描历史日志。
-- 发布验证新增热力图范围一致性、365 个日格和缓存命中低于 500ms 的硬性检查；本节功能尚未发布。
+- 热力图前台立即渲染缓存或完整日期网格，历史日志扫描与刷新全部转到后台静默执行。
+- 发布流程升级为 Unit、API 契约、E2E、双平台构建四层门禁，防止等待页面和接口不一致进入正式包。
 
 ### v1.4.30 (2026-07-13)
 
