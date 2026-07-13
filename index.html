@@ -140,6 +140,8 @@
             border: 0;
             border-radius: 0;
             box-shadow: none;
+            padding: 42px clamp(34px, 5vw, 88px);
+            justify-content: center;
         }
 
         /* 浅色主题加柔和渐变背景纹理, 避免大片纯色空白 */
@@ -228,7 +230,10 @@
 
         header {
             text-align: center;
-            margin-bottom: 30px;
+            width: 100%;
+            margin-bottom: 24px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border-card);
         }
 
         header h1 {
@@ -250,21 +255,30 @@
 
         /* 并列网格布局 */
         .dashboard-grid {
-            display: flex;
-            gap: 40px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0;
             width: 100%;
-            margin-bottom: 10px;
-            flex: 1;
+            margin-bottom: 0;
+            flex: none;
             min-height: 0;
         }
 
         .dashboard-col {
-            flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             min-width: 0;
             min-height: 0;
+        }
+
+        .dashboard-col:first-child {
+            padding-right: clamp(24px, 4vw, 56px);
+            border-right: 1px solid var(--border-card);
+        }
+
+        .dashboard-col:last-child {
+            padding-left: clamp(24px, 4vw, 56px);
         }
 
         .col-title {
@@ -279,10 +293,10 @@
         /* 环形图和数据叠合的主体区域 */
         .chart-section {
             position: relative;
-            width: 250px;
-            height: 250px;
-            min-height: 250px;
-            margin-bottom: 25px;
+            width: 228px;
+            height: 228px;
+            min-height: 228px;
+            margin-bottom: 20px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -361,10 +375,10 @@
             width: 100%;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            flex: 1;
+            gap: 8px;
+            flex: none;
             min-height: 0;
-            overflow-y: auto;
+            overflow-y: visible;
         }
 
         .legend-item {
@@ -376,6 +390,7 @@
             justify-content: space-between;
             align-items: center;
             transition: all 0.2s ease;
+            min-height: 48px;
         }
 
         .legend-item:hover {
@@ -417,7 +432,13 @@
             }
             .dashboard-grid {
                 flex-direction: column;
+                display: flex;
                 gap: 45px;
+            }
+            .dashboard-col:first-child,
+            .dashboard-col:last-child {
+                padding: 0;
+                border: 0;
             }
         }
 
@@ -513,6 +534,50 @@
             right: 0;
             height: 2px;
             background: linear-gradient(90deg, transparent, var(--modal-line-color), transparent);
+        }
+
+        /* 社区页使用内部滚动区，避免 Windows 原生滚动条贴在整张弹窗边缘。 */
+        #communityModal .modal-content {
+            display: flex;
+            flex-direction: column;
+            width: min(94vw, 880px);
+            max-height: min(90vh, 820px);
+            padding: 0;
+            overflow: hidden;
+        }
+        #communityModal .modal-header {
+            flex: none;
+            margin: 0;
+            padding: 28px 30px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .community-scroll-region {
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+            padding: 20px 24px 24px 30px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+        }
+        .community-scroll-region::-webkit-scrollbar {
+            width: 10px;
+        }
+        .community-scroll-region::-webkit-scrollbar-track {
+            margin: 12px 0;
+            background: transparent;
+        }
+        .community-scroll-region::-webkit-scrollbar-thumb {
+            border: 3px solid transparent;
+            border-radius: 999px;
+            background: rgba(100, 116, 139, 0.36);
+            background-clip: content-box;
+        }
+        .community-scroll-region:hover::-webkit-scrollbar-thumb {
+            background-color: rgba(100, 116, 139, 0.58);
+        }
+        .community-scroll-region::-webkit-scrollbar-thumb:active {
+            background-color: var(--modal-line-color);
         }
 
         .modal-header {
@@ -912,6 +977,9 @@
         }
 
 		@media (max-width: 520px) {
+			#communityModal .modal-content { width: calc(100% - 24px); }
+			#communityModal .modal-header { padding: 20px 20px 16px; }
+			.community-scroll-region { padding: 16px 16px 20px 20px; }
 			.community-name-editor { grid-template-columns: minmax(0, 1fr) 28px 28px; }
 			.community-name { max-width: 220px; }
 			.community-activity-strip { grid-template-columns: auto minmax(0, 1fr); }
@@ -1600,12 +1668,12 @@
 
     <!-- 社区 Dashboard 弹窗 -->
     <div id="communityModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 880px; width: 94vw; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-content">
             <div class="modal-header">
                 <h3>社区用量排行</h3>
                 <button id="communityCloseBtn" class="close-btn">&times;</button>
             </div>
-            <div id="communityContainer" style="padding: 16px 20px;">
+            <div id="communityContainer" class="community-scroll-region">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>
             </div>
         </div>
@@ -2162,8 +2230,9 @@
                 }
                 if (toolOtherTotal > 0) toolMajor['Other'] = (toolMajor['Other'] || 0) + toolOtherTotal;
 
-                const tools = Object.keys(toolMajor);
-                tools.sort((a, b) => toolMajor[b] - toolMajor[a]);
+                const tools = Object.keys(toolMajor).sort((a, b) =>
+                    toolMajor[b] - toolMajor[a] || a.localeCompare(b, 'zh-CN')
+                );
 
                 const toolLabels = tools;
                 const toolValues = tools.map(t => toolMajor[t]);
@@ -2221,8 +2290,9 @@
                     modelMajorRequests['Other'] = (modelMajorRequests['Other'] || 0) + modelOtherRequests;
                 }
 
-                const models = Object.keys(modelMajor);
-                models.sort((a, b) => modelMajor[b] - modelMajor[a]);
+                const models = Object.keys(modelMajor).sort((a, b) =>
+                    modelMajor[b] - modelMajor[a] || a.localeCompare(b, 'zh-CN')
+                );
 
                 const modelLabels = models;
                 const modelValues = models.map(m => modelMajor[m]);
@@ -2532,20 +2602,35 @@
             '1.4.34': [
                 '最近两天调用详情优先预热，全年热力图扫描不阻塞前台。',
                 '桌面界面改为单一内容面，Windows 托盘显示今日总量。'
+            ],
+            '1.4.35': [
+                '修复 macOS 后台扫描触发 Python 崩溃的问题。',
+                '社区排行改为内部滚动，Windows 滚动条更轻量。'
             ]
         });
 
-        function renderAboutReleaseHighlights(version) {
+        function parseReleaseHighlights(notes) {
+            if (!notes) return [];
+            return String(notes).split(/\r?\n/).map(line => line
+                .replace(/^\s*(?:[-*+]\s+|\d+[.)]\s*)/, '')
+                .replace(/^#+\s*/, '').trim()
+            ).filter(line => line && !/^token monitor\s*$/i.test(line)).slice(0, 2);
+        }
+
+        function renderAboutReleaseHighlights(version, options = {}) {
             const section = document.getElementById('aboutReleaseHighlights');
             const list = document.getElementById('aboutReleaseHighlightsList');
-            if (!section || !list) return;
+            const title = document.getElementById('aboutReleaseHighlightsTitle');
+            if (!section || !list || !title) return;
             const key = String(version || '').replace(/^v/, '');
-            const highlights = RELEASE_HIGHLIGHTS[key];
+            const remoteHighlights = parseReleaseHighlights(options.notes);
+            const highlights = remoteHighlights.length ? remoteHighlights : RELEASE_HIGHLIGHTS[key];
             if (!Array.isArray(highlights) || highlights.length === 0) {
                 list.textContent = '';
                 section.hidden = true;
                 return;
             }
+            title.textContent = options.title || `当前版本 v${key}`;
             list.innerHTML = highlights.slice(0, 2).map(item =>
                 '<li>' + escapeHtml(item) + '</li>'
             ).join('');
@@ -2577,6 +2662,10 @@
                     const latest = data.latest_version || '?';
                     const current = data.current_version || '?';
                     if (data.update_available) {
+                        renderAboutReleaseHighlights(latest, {
+                            title: `新版本 v${latest}`,
+                            notes: data.notes
+                        });
                         // v1.4.11: 检查是否被 snooze (用户点了"稍后")
                         const snoozed = localStorage.getItem('tm_snoozed_version');
                         if (snoozed === latest) {
@@ -2600,6 +2689,10 @@
                             badge.style.opacity = '1';
                         }
                     } else {
+                        renderAboutReleaseHighlights(current, {
+                            title: `当前版本 v${current}`,
+                            notes: data.notes
+                        });
                         stateEl.innerText = '已是最新';
                         // 隐藏按钮
                         var ub2 = document.getElementById('aboutUpdateBtn');
@@ -2643,7 +2736,9 @@
 
                 document.getElementById('appVersionBadge').innerText = versionText;
                 document.getElementById('aboutVersionValue').innerText = versionText;
-                renderAboutReleaseHighlights(info.version);
+                renderAboutReleaseHighlights(info.version, {
+                    title: `当前版本 ${versionText}`
+                });
 
                 if (!stateEl) return;
                 if (!updateEnabled) {

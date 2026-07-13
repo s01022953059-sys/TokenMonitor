@@ -34,6 +34,10 @@
    - **测试分层**：Unit 数量最多且覆盖纯逻辑；API 契约测试必须充分，并同时覆盖 Python/macOS 与 Go/Windows 本地进程；E2E 只保留少量关键用户路径，不能用 E2E 数量替代 Unit/API 覆盖。总入口固定为 `bash verify_release.sh`，顺序为 Unit -> API -> E2E -> 构建。
 11. **统计口径不确定时优先参考 AgentsView**: 遇到新 Agent、字段语义、缓存口径、重复事件或会话格式不明确时，先查 [kenn-io/agentsview](https://github.com/kenn-io/agentsview) 对应 parser 和测试，再结合本机原始日志验证；禁止仅凭字段名猜测。
 12. **每日调用详情性能门禁**：macOS `/api/heatmap_detail?date=YYYY-MM-DD` 必须按目标自然日限界扫描，Codex rollout 仅查目标日相邻目录；服务启动后台预热当天详情，缓存命中立即返回、过期静默刷新。单元测试需覆盖慢扫描不阻塞，API 契约需覆盖响应阈值，E2E 必须覆盖“热力图点击当天格子后退出加载态”。
+13. **macOS 禁止在多线程服务内 fork**：2026-07-13 v1.4.34 的全年热力图 worker 使用 `multiprocessing` 的 `fork`，macOS 崩溃日志明确记录 `*** multi-threaded process forked ***`，子进程在 SQLite 打开时 SIGSEGV。后台重扫描必须以全新 `server.py --heatmap-worker` 进程执行；测试同时覆盖前台立即返回、worker 写入快照和启动命令不走 fork。
+14. **企业网络兼容**：所有外部更新、社区同步、昵称请求都必须遵循系统代理与 `HTTP(S)_PROXY`/`NO_PROXY`；Windows Go 统一使用 `newProxyHTTPClient`，macOS Python 显式使用 `urllib` 的系统代理 opener。不得把本机回环 API 经代理转发。
+15. **About 更新摘要规则**：无新版本时显示当前版本摘要；发现新版本后必须显示新版本号与该 Release 的 `notes/body`，不能继续展示旧版本更新内容。
+16. **社区弹窗滚动体验**：社区排行必须使用固定标题栏和独立内容滚动区，禁止让原生滚动条附着在整个弹窗右侧。Windows Chromium 使用细轨道、透明轨道与高对比悬停态，同时保留滚轮、拖拽、键盘和触摸板滚动。
 
 ## 架构
 
@@ -124,6 +128,10 @@
 - release_all.sh 已改为: 创建 release 时自动取 `git log -1 --format=%s $TAG` 作为 body
 
 ## 功能演进历史
+
+### v1.4.35 (2026-07-13)
+- 修复 v1.4.34 macOS 后台热力图 worker 在多线程 Python 服务内 `fork`，导致 SQLite 打开时 SIGSEGV 的崩溃问题；改由全新启动的 `server.py --heatmap-worker` 进程生成快照。
+- 社区排行采用固定标题栏和内部内容滚动区，Windows 滚动条收进内容面；更新与社区外部请求兼容系统代理、`HTTP(S)_PROXY` 与 `NO_PROXY`。
 
 ### v1.4.33 (2026-07-13)
 - macOS 每日调用详情按目标自然日限界扫描，Codex rollout 仅读取相邻日期目录；服务启动后台预热并缓存详情，实测本机扫描从约 6.5 秒降至约 0.06 秒。

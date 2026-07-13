@@ -14,11 +14,11 @@ import datetime
 import hmac
 import http.server
 import json
-import multiprocessing
 import os
 import plistlib
 import socket
 import socketserver
+import subprocess
 import sys
 import threading
 import time
@@ -151,7 +151,7 @@ def _save_heatmap_snapshot(data):
 
 
 def _build_heatmap_snapshot_worker(cache_path):
-    """在独立进程中生成全年快照，避免 CPU 密集扫描占住 Web 服务的 GIL。"""
+    """在全新 Python 进程中生成全年快照，避免扫描占住 Web 服务。"""
     try:
         data = get_heatmap_data(HEATMAP_CACHE_DAYS)
         directory = os.path.dirname(cache_path)
@@ -168,15 +168,19 @@ def _build_heatmap_snapshot_worker(cache_path):
 def _refresh_heatmap_snapshot():
     global _heatmap_refreshing
     try:
-        # macOS 的全年扫描约需十余秒。让它运行在独立进程，详情请求不会被 GIL 卡住。
-        context = multiprocessing.get_context("fork" if os.name == "posix" else "spawn")
-        worker = context.Process(
-            target=_build_heatmap_snapshot_worker,
-            args=(HEATMAP_CACHE_PATH,),
-            daemon=True,
+        # 不能从已启动的多线程 Web 服务 fork：macOS 会在子进程打开 SQLite 时崩溃。
+        # 直接 exec 一次 server.py，让子进程从干净运行时开始，只执行快照任务。
+        subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--heatmap-worker", HEATMAP_CACHE_PATH],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            close_fds=False,
+            timeout=180,
         )
-        worker.start()
-        worker.join()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     finally:
         with _heatmap_cache_lock:
             _heatmap_refreshing = False
@@ -293,6 +297,7 @@ def _prewarm_recent_dashboard_data():
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)
 _parser.add_argument("--update-feed-url", type=str, default="")
+_parser.add_argument("--heatmap-worker", type=str, default="")
 _args, _ = _parser.parse_known_args()
 
 PORT = _args.port
@@ -483,6 +488,7 @@ def _check_update_remote():
         "error": None,
         "raw_excerpt": None,
         "title": None,
+        "notes": None,
         "download_url": None,
     }
     if not UPDATE_FEED_URL:
@@ -498,7 +504,7 @@ def _check_update_remote():
     )
 
     try:
-        with urlrequest.urlopen(req, timeout=8) as response:
+        with _open_external_request(req, timeout=8) as response:
             result["http_status"] = response.status
             body = response.read(64 * 1024)
     except urlerror.HTTPError as exc:
@@ -535,10 +541,22 @@ def _check_update_remote():
 
     result["latest_version"] = info["version"]
     result["title"] = info["title"]
+    result["notes"] = info["notes"]
     result["download_url"] = info["download_url"] or None
     result["update_available"] = _compare_versions(info["version"], _read_app_version()) > 0
     result["ok"] = True
     return result
+
+
+def _open_external_request(request, timeout):
+    """访问更新与社区服务时显式遵循系统和环境代理设置。
+
+    公司内网、VPN 客户端常把 HTTPS 代理配置在系统层；显式创建 opener 可让
+    macOS 的系统代理与 HTTP(S)_PROXY/NO_PROXY 配置都参与解析，同时不影响本地 API。
+    """
+    proxies = urlrequest.getproxies()
+    opener = urlrequest.build_opener(urlrequest.ProxyHandler(proxies))
+    return opener.open(request, timeout=timeout)
 
 
 class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
@@ -754,6 +772,10 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 def main():
+    if _args.heatmap_worker:
+        _build_heatmap_snapshot_worker(_args.heatmap_worker)
+        return
+
     if not _acquire_singleton_lock():
         print(
             f"[server] 已有 Token Monitor 实例在运行 (单实例锁 {SINGLETON_LOCK_PATH} 被占用), 退出本次启动。",

@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.34**。
+当前发布版本：**v1.4.35**。
 
 ## 功能
 
@@ -36,6 +36,8 @@
 
 - 双圆环图（donut）：左侧按工具，右侧按模型
 - 按排名固定色盘（top1 红 → top2 橙 → top3 黄 → ...）
+- 工具与模型图例统一按今日 Token 用量降序排列；同量时按名称稳定排序，圆环颜色与列表顺序一致
+- 首页使用紧凑双栏数据面板：标题分割线、工具/模型竖向分隔和等高图例行让少量数据也保持完整布局
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
 - 历史趋势弹窗：7/14/30 天，工具和模型两个维度
 - About 弹窗：版本号、更新状态与当前版本 1–2 条简短更新摘要（离线可见）
@@ -47,7 +49,7 @@
 - 按天展示每日 Token 消耗量，颜色深浅 = 消耗量（GitHub 5 档绿色色阶）
 - **每格右下角**叠加当天 token 短标签（如 `1.2M` / `234K`），不用悬停也能直观看出数量级
 - 顶部 3 个统计卡片：总消耗 / 活跃天数（X/Y + 覆盖率）/ 最高单日（值 + 日期）
-- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；macOS 启动后优先预热最近两天详情，全年热力图扫描使用独立进程，已缓存结果立即展示，过期后静默刷新
+- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；macOS 启动后优先预热最近两天详情，全年热力图扫描通过全新启动的独立 Python worker 执行，绝不从多线程服务 `fork`，已缓存结果立即展示，过期后静默刷新
 - Tab 切换时间窗口：30 / 90 / 180 / 365 天（默认 365 天，跨年看全年趋势）
 - 横轴标月份，每格代表一天
 
@@ -66,6 +68,7 @@
 - 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每 5 分钟静默同步；无需手动加入或手工刷新
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
+- 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
 - 自动初始化产生的 0 Token 身份计入总用户，但不计入今日活跃用户、今日榜单或今日排名；同一匿名 ID 的重复报告只取最新一份，避免人数和用量重复统计
@@ -96,6 +99,8 @@
 - Windows 首次安装和新版应用内更新统一使用正式安装程序，不再发布 ZIP；Release 中同内容的 `TokenMonitor.exe` 仅用于旧版本在线迁移，不作为手工下载入口
 - macOS 内嵌页面使用每次启动生成的临时凭据访问昵称写接口；所有非 HTTP(S) 的 WebKit 本地来源均需通过凭据鉴权，HTTP(S) 仅允许本机回环地址
 - About 更新状态使用短句展示，版本号不重复；详细错误保留在悬停提示，检查与更新过程中会清理过期按钮和进度状态
+- About 会显示“当前版本”摘要；发现新版本时自动切换为“新版本 vX.Y.Z”及该 Release 的更新内容，避免继续展示旧版本说明
+- macOS 与 Windows 的更新检查、社区上报和昵称服务均遵循系统代理、`HTTP(S)_PROXY` 与 `NO_PROXY`，适配企业内网和 VPN 环境
 
 ### API 接口
 
@@ -369,10 +374,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.34](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.34)
+最新版本：[v1.4.35](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.35)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.34/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.34/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.35/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.35/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -388,6 +393,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.35 (2026-07-13)
+
+- 修复 macOS 后台全年扫描在多线程服务内 `fork` 导致 Python 崩溃的问题，改为全新启动的独立 worker。
+- 社区排行改为固定标题栏和内部滚动区，Windows 使用更低对比的细滚动条；更新与社区请求兼容企业代理。
 
 ### v1.4.34 (2026-07-13)
 

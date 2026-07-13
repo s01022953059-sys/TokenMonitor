@@ -75,6 +75,8 @@ import datetime
 print(datetime.date.today().isoformat())
 PY
 )
+CURRENT_VERSION=$(sed -n '/<key>CFBundleShortVersionString<\/key>/{n;s/.*<string>\([^<]*\)<\/string>.*/\1/;p;}' "$ROOT/Info.plist")
+test -n "$CURRENT_VERSION"
 
 "$PWCLI" open "http://127.0.0.1:$PORT" --browser msedge --headed >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
@@ -111,7 +113,17 @@ printf '%s\n' "$DETAIL_TITLE" | grep -q "$EXPECTED_TODAY 调用详情"
 "$PWCLI" eval "() => document.getElementById('heatmapDetailModal').classList.remove('active')" >/dev/null
 "$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
-printf '%s\n' "$SNAPSHOT" | grep -q "本次更新"
-printf '%s\n' "$SNAPSHOT" | grep -q "最近两天调用详情优先预热"
+printf '%s\n' "$SNAPSHOT" | grep -q "当前版本 v$CURRENT_VERSION"
+printf '%s\n' "$SNAPSHOT" | grep -q "修复 macOS 后台扫描触发 Python 崩溃的问题"
 
-echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要"
+# 新版本到达后，About 必须用 Release 的内容替换当前版本摘要，避免误导用户。
+"$PWCLI" eval "() => { const savedFetch = window.fetch; window.fetch = async (url, options) => String(url).includes('/api/check-update') ? new Response(JSON.stringify({ok:true,current_version:'$CURRENT_VERSION',latest_version:'99.0.0',update_available:true,notes:'- 独立 worker 扫描\\n- 企业 VPN 代理兼容'}), {status:200,headers:{'Content-Type':'application/json'}}) : savedFetch(url, options); return runUpdateCheck().finally(() => { window.fetch = savedFetch; }); }" >/dev/null
+SNAPSHOT=$("$PWCLI" snapshot)
+printf '%s\n' "$SNAPSHOT" | grep -q "新版本 v99.0.0"
+printf '%s\n' "$SNAPSHOT" | grep -q "独立 worker 扫描"
+
+# 社区页必须由内部内容区滚动，避免 Windows 原生滚动条紧贴整张弹窗边缘。
+SCROLL_STYLE=$("$PWCLI" eval "() => { document.getElementById('communityModal').classList.add('active'); const panel = document.querySelector('#communityModal .modal-content'); const header = panel.querySelector('.modal-header'); const body = document.getElementById('communityContainer'); body.innerHTML = '<div style=\"height:1500px\"></div>'; return [getComputedStyle(panel).overflowY, getComputedStyle(body).overflowY, getComputedStyle(body).scrollbarGutter, body.scrollHeight > body.clientHeight, Math.abs(panel.getBoundingClientRect().top - header.getBoundingClientRect().top) < 2].join('|'); }")
+printf '%s\n' "$SCROLL_STYLE" | grep -q 'hidden|auto|stable|true|true'
+
+echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要 -> 社区内部滚动"

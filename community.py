@@ -45,6 +45,14 @@ def _ensure_dir():
     os.makedirs(COMMUNITY_DIR, exist_ok=True)
 
 
+def _open_external_request(request, timeout):
+    """显式使用 macOS/Windows 系统代理及 HTTP(S)_PROXY，适配内网 VPN。"""
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler(urllib.request.getproxies())
+    )
+    return opener.open(request, timeout=timeout)
+
+
 def _read_app_version():
     """从源码目录或 .app bundle 读取当前版本号。"""
     module_dir = os.path.dirname(os.path.abspath(__file__))
@@ -148,7 +156,7 @@ def _gitcode_api(method, path, data=None, token=None, require_auth=True):
         body = None
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with _open_external_request(req, timeout=15) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         return {"error": e.code, "body": e.read().decode()[:200]}
@@ -163,7 +171,7 @@ def _read_remote_json(url, token=None):
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with _open_external_request(req, timeout=8) as resp:
             return json.loads(resp.read()), None
     except urllib.error.HTTPError as exc:
         return None, f"HTTP {exc.code}"
@@ -245,7 +253,7 @@ def _relay_request(report):
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with _open_external_request(request, timeout=20) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         try:
@@ -270,7 +278,7 @@ def _profile_request(payload):
         headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown")},
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with _open_external_request(request, timeout=20) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         try:

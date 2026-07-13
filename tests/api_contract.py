@@ -33,6 +33,7 @@ class ReleaseFixture(BaseHTTPRequestHandler):
         payload = {
             "tag_name": "v99.0.0",
             "name": "Token Monitor v99.0.0",
+            "body": "- 独立 worker 扫描\n- 企业 VPN 代理兼容",
             "assets": [
                 {"name": "Token Monitor.dmg", "browser_download_url": base + "/Token-Monitor.dmg"},
                 {"name": "TokenMonitor-Setup.exe", "browser_download_url": base + "/TokenMonitor-Setup.exe"},
@@ -144,6 +145,7 @@ class APIContractTests(unittest.TestCase):
         self.assertTrue(update["update_available"], update)
         self.assertEqual(update["latest_version"], "99.0.0")
         self.assertTrue(update["download_url"].endswith("Token-Monitor.dmg"), update)
+        self.assertIn("独立 worker", update["notes"])
 
     def test_usage_and_history_shapes(self):
         usage = self.get("/api/usage")

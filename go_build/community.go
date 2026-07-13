@@ -294,7 +294,7 @@ func sendCommunityRelay(report map[string]interface{}) communityRelayResponse {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := newProxyHTTPClient(20)
 	resp, err := client.Do(req)
 	if err != nil {
 		return communityRelayResponse{Status: "relay_unavailable", Message: "社区中继暂时不可用：" + err.Error()}
@@ -372,7 +372,7 @@ func updateCommunityProfile(displayName string) CommunityProfileResult {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	resp, err := newProxyHTTPClient(20).Do(req)
 	if err != nil {
 		return CommunityProfileResult{Status: "relay_unavailable", Message: "昵称服务暂时不可用：" + err.Error()}
 	}
@@ -440,7 +440,7 @@ func getCommunityStats() map[string]interface{} {
 			"leaderboard": []interface{}{}, "tool_distribution": map[string]interface{}{},
 		}
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := newProxyHTTPClient(8)
 
 	// 批量读取每个用户的 report
 	var reports []communityReportData
@@ -669,7 +669,7 @@ func gitcodeGetDetailed(path, token string) (interface{}, int, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newProxyHTTPClient(15)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err
@@ -690,7 +690,7 @@ func gitcodeWrite(method, path string, data map[string]interface{}, token string
 	req, _ := http.NewRequest(method, url, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newProxyHTTPClient(15)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err

@@ -37,6 +37,20 @@ class CommunityTests(unittest.TestCase):
     def test_new_user_id_is_always_eight_characters(self):
         self.assertRegex(community._new_user_id(), r"^User_[A-Z0-9]{8}$")
 
+    def test_external_community_requests_follow_system_proxy(self):
+        request = community.urllib.request.Request("https://community.example.test/report")
+        response = mock.MagicMock()
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+        with mock.patch.object(community.urllib.request, "getproxies", return_value={"https": "http://127.0.0.1:7890"}), mock.patch.object(
+            community.urllib.request, "build_opener", return_value=opener
+        ) as build_opener:
+            self.assertIs(community._open_external_request(request, 20), response)
+
+        proxy_handler = build_opener.call_args.args[0]
+        self.assertEqual(proxy_handler.proxies["https"], "http://127.0.0.1:7890")
+        opener.open.assert_called_once_with(request, timeout=20)
+
     def test_legacy_opt_out_is_migrated_to_automatic_membership(self):
         with open(self.optin_file, "w") as stream:
             stream.write("false")

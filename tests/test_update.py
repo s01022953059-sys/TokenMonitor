@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 import server
 
@@ -46,6 +47,20 @@ class UpdateFeedTests(unittest.TestCase):
             info["download_url"],
             "https://gitcode.com/acme/app/releases/download/v9.9.9/Token Monitor.dmg",
         )
+
+    def test_update_request_respects_system_proxy_settings(self):
+        request = server.urlrequest.Request("https://updates.example.test/latest")
+        response = mock.MagicMock()
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+        with mock.patch.object(server.urlrequest, "getproxies", return_value={"https": "http://127.0.0.1:7890"}), mock.patch.object(
+            server.urlrequest, "build_opener", return_value=opener
+        ) as build_opener:
+            self.assertIs(server._open_external_request(request, 8), response)
+
+        proxy_handler = build_opener.call_args.args[0]
+        self.assertEqual(proxy_handler.proxies["https"], "http://127.0.0.1:7890")
+        opener.open.assert_called_once_with(request, timeout=8)
 
 
 if __name__ == "__main__":

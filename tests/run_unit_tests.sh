@@ -55,6 +55,12 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('window.__TOKEN_MONITOR_DESKTOP__')) {
     throw new Error(`${file}: 双端单一内容面标识缺失`);
   }
+  if (!html.includes('class="community-scroll-region"') ||
+      !html.includes('#communityModal .modal-content') ||
+      !html.includes('scrollbar-gutter: stable') ||
+      !html.includes('overflow-y: auto')) {
+    throw new Error(`${file}: 社区弹窗缺少内部滚动区或跨平台滚动条样式`);
+  }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
 }
