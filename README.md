@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.32**。
+当前发布版本：**v1.4.33**。
 
 ## 功能
 
@@ -368,10 +368,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.32](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.32)
+最新版本：[v1.4.33](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.33)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.33/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.33/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -387,6 +387,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.33 (2026-07-13)
+
+- 每日调用详情按目标日期读取并后台预热，修复 macOS 打开明细长时间等待；About 会显示当前版本的简短更新摘要。
 
 ### v1.4.32 (2026-07-13)
 

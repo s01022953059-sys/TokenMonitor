@@ -110,6 +110,6 @@ printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY 调用详情"
 "$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "本次更新"
-printf '%s\n' "$SNAPSHOT" | grep -q "社区用量改为每 5 分钟静默同步"
+printf '%s\n' "$SNAPSHOT" | grep -q "每日调用详情按目标日期读取"
 
 echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要"
