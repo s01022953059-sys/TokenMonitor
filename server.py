@@ -74,6 +74,7 @@ USER_AGENT = f"TokenMonitor/{APP_VERSION} (+https://gitcode.com/baggiopeng/Token
 HEATMAP_CACHE_DAYS = 365
 # 只在后台检查是否需要重建快照，避免频繁遍历历史日志。
 HEATMAP_CACHE_TTL = 900
+COMMUNITY_SYNC_INTERVAL_SECONDS = 5 * 60
 HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
@@ -456,6 +457,14 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        # 社区页的静默补报使用 POST；此前仅处理了昵称接口，导致 macOS 补报始终 404。
+        if self.path == "/api/community/report":
+            try:
+                result = report_community_stats(get_today_usage())
+                self._write_json(200, result)
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
+            return
         if self.path != "/api/community/profile":
             self._write_json(404, {"ok": False, "status": "not_found", "message": "接口不存在"})
             return
@@ -649,7 +658,7 @@ def main():
     # 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
     reporting_disabled = os.environ.get("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT", "").strip().lower()
     if reporting_disabled not in {"1", "true", "yes"}:
-        # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
+        # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每 5 分钟后台同步。
         def _community_report_loop():
             import time as _time
             _time.sleep(5)
@@ -658,7 +667,7 @@ def main():
                     report_community_stats(get_today_usage())
                 except Exception:
                     pass
-                _time.sleep(3600)  # 每小时
+                _time.sleep(COMMUNITY_SYNC_INTERVAL_SECONDS)
         threading.Thread(target=_community_report_loop, daemon=True).start()
 
     try:

@@ -3115,6 +3115,8 @@
 
         // ===== 社区 Dashboard =====
         const COMMUNITY_CACHE_KEY = 'tokenMonitorCommunityCacheV1';
+        const COMMUNITY_SYNC_KEY = 'tokenMonitorCommunitySyncV1';
+        const COMMUNITY_SYNC_INTERVAL_MS = 5 * 60 * 1000;
         let _communityFetchPromise = null;
         let _communityPresencePromise = null;
         let _communityActivityTimer = null;
@@ -3149,6 +3151,26 @@
             }
         }
 
+        function communitySyncDue() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(COMMUNITY_SYNC_KEY) || 'null');
+                return !saved || saved.date !== communityTodayKey() ||
+                    (Date.now() - Number(saved.saved_at || 0)) >= COMMUNITY_SYNC_INTERVAL_MS;
+            } catch (_) {
+                return true;
+            }
+        }
+
+        function markCommunitySync() {
+            try {
+                localStorage.setItem(COMMUNITY_SYNC_KEY, JSON.stringify({
+                    date: communityTodayKey(), saved_at: Date.now()
+                }));
+            } catch (_) {
+                // WebView 禁用本地存储时，由服务端的 5 分钟后台任务兜底。
+            }
+        }
+
         function fetchCommunityData() {
             if (_communityFetchPromise) return _communityFetchPromise;
             _communityFetchPromise = fetch(API_BASE + '/api/community', {cache: 'no-store'})
@@ -3162,7 +3184,8 @@
         }
 
         function ensureCommunityPresence(data) {
-            if (!data || data.rank_status !== 'pending' || !data.can_report || _communityPresencePromise) return;
+            // 无论是否已上榜，都按节流规则静默补报，避免社区数值长期落后首页。
+            if (!data || !data.can_report || _communityPresencePromise || !communitySyncDue()) return;
             _communityPresencePromise = fetch(API_BASE + '/api/community/report', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -3171,6 +3194,7 @@
                 .then(response => response.json())
                 .then(result => {
                     if (!result.ok) return null;
+                    markCommunitySync();
                     localStorage.removeItem(COMMUNITY_CACHE_KEY);
                     return fetchCommunityData();
                 })

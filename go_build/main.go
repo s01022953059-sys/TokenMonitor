@@ -2255,6 +2255,10 @@ func main() {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "status": "name_invalid", "message": "昵称请求格式不正确"})
 			return
 		}
+		if strings.TrimSpace(payload.DisplayName) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "status": "name_invalid", "message": "昵称不能为空"})
+			return
+		}
 		result := updateCommunityProfile(payload.DisplayName)
 		status := http.StatusOK
 		if !result.OK {
@@ -2314,13 +2318,13 @@ func main() {
 
 	// 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
 	if communityReportingEnabled() {
-		// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每小时同步。
+		// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每 5 分钟后台同步。
 		go func() {
 			time.Sleep(5 * time.Second)
 			for {
 				usage := getTodayUsage()
 				reportCommunityStats(&usage)
-				time.Sleep(1 * time.Hour)
+				time.Sleep(communitySyncInterval)
 			}
 		}()
 	}

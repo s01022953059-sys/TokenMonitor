@@ -48,6 +48,18 @@ class ReleaseFixture(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
+    def do_POST(self):
+        # API contract tests never touch the real VPS; community reports terminate here.
+        length = int(self.headers.get("Content-Length", "0"))
+        if length:
+            self.rfile.read(length)
+        body = json.dumps({"ok": True, "status": "synced", "message": "fixture synced"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
 
 class Backend:
     def __init__(self, kind, tempdir, feed_url):
@@ -62,6 +74,7 @@ class Backend:
             "TOKEN_MONITOR_HEATMAP_CACHE_FILE": str(self.tempdir / f"{kind}-heatmap.json"),
             "TOKEN_MONITOR_LOCAL_API_TOKEN": "api-contract-token",
             "TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT": "1",
+            "TOKEN_MONITOR_COMMUNITY_RELAY_URL": feed_url + "/community-report",
         })
         pathlib.Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
         if kind == "python":
@@ -201,6 +214,12 @@ class APIContractTests(unittest.TestCase):
 
         status, _ = request_json(self.backend.base + "/api/does-not-exist")
         self.assertEqual(status, 404)
+
+    def test_community_report_post_is_available_for_existing_members(self):
+        status, report = request_json(self.backend.base + "/api/community/report", method="POST", payload={})
+        self.assertEqual(status, 200, report)
+        self.assertTrue(report.get("ok"), report)
+        self.assertEqual(report.get("status"), "synced")
 
 
 def run_backend(kind, tempdir, feed_url):

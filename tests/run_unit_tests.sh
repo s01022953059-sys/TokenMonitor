@@ -29,6 +29,11 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
   if (!selected || !initial || selected[1] !== initial[1]) {
     throw new Error(`${file}: 热力图默认 Tab 与请求范围不一致`);
   }
+  if (!html.includes("const COMMUNITY_SYNC_INTERVAL_MS = 5 * 60 * 1000;") ||
+      !html.includes("function communitySyncDue()") ||
+      html.includes("data.rank_status !== 'pending' || !data.can_report")) {
+    throw new Error(`${file}: 社区静默补报必须覆盖已上榜用户并保持 5 分钟节流`);
+  }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
 }

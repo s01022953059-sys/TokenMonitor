@@ -33,7 +33,10 @@ var (
 	communityCacheMu sync.Mutex
 )
 
-const communityLeaderboardLimit = 10
+const (
+	communityLeaderboardLimit = 10
+	communitySyncInterval     = 5 * time.Minute
+)
 
 type CommunityReportResult struct {
 	OK         bool   `json:"ok"`
