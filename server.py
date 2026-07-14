@@ -287,14 +287,21 @@ def _refresh_heatmap_detail(date):
             _heatmap_detail_refreshing.pop(date, None)
 
 
-def _start_heatmap_detail_refresh(date):
+def _claim_heatmap_detail_refresh(date):
+    """同一自然日只允许一个刷新任务，包含启动预热的同步路径。"""
     with _heatmap_detail_cache_lock:
         if date in _heatmap_detail_refreshing:
-            return
+            return False
         _heatmap_detail_refreshing[date] = time.time()
-        threading.Thread(
-            target=_refresh_heatmap_detail, args=(date,), daemon=True
-        ).start()
+        return True
+
+
+def _start_heatmap_detail_refresh(date):
+    if not _claim_heatmap_detail_refresh(date):
+        return
+    threading.Thread(
+        target=_refresh_heatmap_detail, args=(date,), daemon=True
+    ).start()
 
 
 def get_cached_heatmap_detail(date, page=1, page_size=50):
@@ -324,7 +331,9 @@ def _prewarm_recent_dashboard_data():
     """详情优先预热；全年快照仅在缺失或过期时由缓存入口安排重建。"""
     today = datetime.date.today()
     for offset in range(2):
-        _refresh_heatmap_detail((today - datetime.timedelta(days=offset)).isoformat())
+        date = (today - datetime.timedelta(days=offset)).isoformat()
+        if _claim_heatmap_detail_refresh(date):
+            _refresh_heatmap_detail(date)
     get_cached_heatmap(HEATMAP_CACHE_DAYS)
 
 _parser = argparse.ArgumentParser(add_help=False)

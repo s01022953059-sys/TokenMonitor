@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -31,13 +32,14 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.36"
+var appVersion = "1.4.37"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
 var feedURL = updateFeedURL
 
 const heatmapCacheDays = 365
+const sessionDetailCacheLimit = 12
 
 // Snapshot expiry is checked in the background. Foreground requests must never scan logs.
 const heatmapCacheTTL = 15 * time.Minute
@@ -46,6 +48,19 @@ var heatmapCacheMu sync.Mutex
 var heatmapRefreshRunning bool
 var heatmapCachePathOverride string
 var heatmapSnapshotBuilder = getHeatmapData
+
+type sessionDetailCacheKey struct {
+	Path    string
+	ModTime int64
+	Size    int64
+	Limit   int
+}
+
+var sessionDetailCacheMu sync.Mutex
+var sessionDetailCache = map[sessionDetailCacheKey][]SessionMessage{}
+var sessionDetailCacheOrder []sessionDetailCacheKey
+var sessionDetailInflight = map[sessionDetailCacheKey]chan struct{}{}
+var sessionDetailParser = parseSessionMessages
 
 // ───── 数据结构 (与 Python 版 JSON 输出完全对齐) ─────
 
@@ -1623,6 +1638,121 @@ type SessionDetailResponse struct {
 	TotalPages int              `json:"total_pages"`
 }
 
+func parseSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
+	file, err := os.Open(rolloutPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	messages := make([]SessionMessage, 0, maxMessages)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+	for scanner.Scan() {
+		if len(messages) >= maxMessages {
+			break
+		}
+		line := scanner.Bytes()
+		if len(line) == 0 || !bytes.Contains(line, []byte(`"response_item"`)) || !bytes.Contains(line, []byte(`"role"`)) {
+			continue
+		}
+
+		var obj map[string]interface{}
+		if err := json.Unmarshal(line, &obj); err != nil {
+			continue
+		}
+		objType, _ := obj["type"].(string)
+		if objType != "response_item" {
+			continue
+		}
+		payload, ok := obj["payload"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		role, _ := payload["role"].(string)
+		if role != "user" && role != "assistant" {
+			continue
+		}
+
+		content, _ := payload["content"]
+		var text string
+		switch c := content.(type) {
+		case []interface{}:
+			var parts []string
+			for _, item := range c {
+				if m, ok := item.(map[string]interface{}); ok {
+					if value, ok := m["text"].(string); ok && value != "" {
+						parts = append(parts, value)
+					}
+				} else if value, ok := item.(string); ok {
+					parts = append(parts, value)
+				}
+			}
+			text = strings.Join(parts, "\n")
+		case string:
+			text = c
+		}
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if len(text) > 5000 {
+			text = text[:5000] + "\n...(内容过长已截断)"
+		}
+		timestamp, _ := payload["timestamp"].(string)
+		messages = append(messages, SessionMessage{Role: role, Text: text, Timestamp: timestamp})
+	}
+	return messages, scanner.Err()
+}
+
+func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
+	stat, err := os.Stat(rolloutPath)
+	if err != nil {
+		return nil, err
+	}
+	key := sessionDetailCacheKey{Path: rolloutPath, ModTime: stat.ModTime().UnixNano(), Size: stat.Size(), Limit: maxMessages}
+
+	sessionDetailCacheMu.Lock()
+	if cached, ok := sessionDetailCache[key]; ok {
+		sessionDetailCacheMu.Unlock()
+		return cached, nil
+	}
+	if wait, ok := sessionDetailInflight[key]; ok {
+		sessionDetailCacheMu.Unlock()
+		<-wait
+		sessionDetailCacheMu.Lock()
+		cached := sessionDetailCache[key]
+		sessionDetailCacheMu.Unlock()
+		return cached, nil
+	}
+	wait := make(chan struct{})
+	sessionDetailInflight[key] = wait
+	sessionDetailCacheMu.Unlock()
+
+	messages, parseErr := sessionDetailParser(rolloutPath, maxMessages)
+	sessionDetailCacheMu.Lock()
+	if parseErr == nil {
+		filtered := sessionDetailCacheOrder[:0]
+		for _, oldKey := range sessionDetailCacheOrder {
+			if oldKey.Path == rolloutPath {
+				delete(sessionDetailCache, oldKey)
+				continue
+			}
+			filtered = append(filtered, oldKey)
+		}
+		sessionDetailCacheOrder = append(filtered, key)
+		sessionDetailCache[key] = messages
+		for len(sessionDetailCacheOrder) > sessionDetailCacheLimit {
+			oldest := sessionDetailCacheOrder[0]
+			sessionDetailCacheOrder = sessionDetailCacheOrder[1:]
+			delete(sessionDetailCache, oldest)
+		}
+	}
+	delete(sessionDetailInflight, key)
+	close(wait)
+	sessionDetailCacheMu.Unlock()
+	return messages, parseErr
+}
+
 func getSessionDetail(sessionID string, page, pageSize int) SessionDetailResponse {
 	if page < 1 {
 		page = 1
@@ -1652,80 +1782,12 @@ func getSessionDetail(sessionID string, page, pageSize int) SessionDetailRespons
 		return resp
 	}
 
-	file, err := os.Open(rolloutPath)
+	maxMessages := 500
+	messages, err := cachedSessionMessages(rolloutPath, maxMessages)
 	if err != nil {
 		return resp
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	maxMessages := 500
-	for scanner.Scan() {
-		if len(resp.Messages) >= maxMessages {
-			break
-		}
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
-		}
-
-		var obj map[string]interface{}
-		if err := json.Unmarshal(line, &obj); err != nil {
-			continue
-		}
-
-		objType, _ := obj["type"].(string)
-		if objType != "response_item" {
-			continue
-		}
-
-		payload, ok := obj["payload"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		role, _ := payload["role"].(string)
-		if role != "user" && role != "assistant" {
-			continue
-		}
-
-		content, _ := payload["content"]
-		var text string
-		switch c := content.(type) {
-		case []interface{}:
-			var parts []string
-			for _, item := range c {
-				if m, ok := item.(map[string]interface{}); ok {
-					if t, ok := m["text"].(string); ok && t != "" {
-						parts = append(parts, t)
-					}
-				} else if s, ok := item.(string); ok {
-					parts = append(parts, s)
-				}
-			}
-			text = strings.Join(parts, "\n")
-		case string:
-			text = c
-		}
-
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-
-		if len(text) > 5000 {
-			text = text[:5000] + "\n...(内容过长已截断)"
-		}
-
-		timestamp, _ := payload["timestamp"].(string)
-
-		resp.Messages = append(resp.Messages, SessionMessage{
-			Role:      role,
-			Text:      text,
-			Timestamp: timestamp,
-		})
-	}
+	resp.Messages = messages
 
 	// 分页
 	total := len(resp.Messages)

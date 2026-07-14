@@ -3,6 +3,8 @@ import json
 import os
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -10,6 +12,11 @@ import scanner
 
 
 class ScannerAccuracyTests(unittest.TestCase):
+    def setUp(self):
+        with scanner._session_detail_cache_condition:
+            scanner._session_detail_cache.clear()
+            scanner._session_detail_inflight.clear()
+
     def test_total_pages_keeps_a_page_for_empty_results(self):
         self.assertEqual(scanner._total_pages(0, 50), 1)
         self.assertEqual(scanner._total_pages(51, 50), 2)
@@ -25,6 +32,73 @@ class ScannerAccuracyTests(unittest.TestCase):
             scanner._resolve_cc_model("current-provider", "gpt-declared", provider_models),
             "gpt-5.5",
         )
+
+    def test_session_detail_skips_large_non_message_rows_and_reuses_snapshot(self):
+        session_id = "019f0000-1111-2222-3333-444444444444"
+        with tempfile.TemporaryDirectory() as root:
+            day = os.path.join(root, "2026", "07", "14")
+            os.makedirs(day)
+            path = os.path.join(day, f"rollout-test-{session_id}.jsonl")
+            huge_event = json.dumps({
+                "type": "event_msg",
+                "payload": {"type": "tool_output", "data": "x" * 2_000_000},
+            })
+            messages = [
+                json.dumps({
+                    "type": "response_item",
+                    "payload": {"role": "user", "content": [{"text": f"message-{index}"}]},
+                })
+                for index in range(30)
+            ]
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(huge_event + "\n")
+                stream.write("\n".join(messages) + "\n")
+
+            original_loads = scanner.json.loads
+            with mock.patch.object(scanner, "CODEX_SESSIONS_DIR", root), mock.patch.object(
+                scanner.json, "loads", wraps=original_loads
+            ) as loads:
+                started = time.monotonic()
+                first = scanner.get_session_detail(session_id, page=1, page_size=20)
+                first_elapsed = time.monotonic() - started
+                first_load_count = loads.call_count
+                second = scanner.get_session_detail(session_id, page=2, page_size=20)
+
+        self.assertLess(first_elapsed, 0.5)
+        self.assertEqual(first["total"], 30)
+        self.assertEqual(len(first["messages"]), 20)
+        self.assertEqual(len(second["messages"]), 10)
+        self.assertEqual(first_load_count, 30)
+        self.assertEqual(loads.call_count, first_load_count)
+
+    def test_session_detail_coalesces_concurrent_first_read(self):
+        session_id = "019f0000-aaaa-bbbb-cccc-555555555555"
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, f"rollout-test-{session_id}.jsonl")
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write("{}\n")
+            parsed = [{"role": "user", "text": "hello", "timestamp": ""}]
+            results = []
+
+            def slow_parse(*_args):
+                time.sleep(0.15)
+                return parsed
+
+            def read_detail():
+                results.append(scanner.get_session_detail(session_id))
+
+            with mock.patch.object(scanner, "CODEX_SESSIONS_DIR", root), mock.patch.object(
+                scanner, "_parse_session_messages", side_effect=slow_parse
+            ) as parser:
+                threads = [threading.Thread(target=read_detail) for _ in range(3)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join(timeout=2)
+
+        self.assertEqual(parser.call_count, 1)
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all(item["messages"] == parsed for item in results))
 
     def test_cc_switch_handles_anthropic_and_openai_cache_semantics(self):
         anthropic = scanner._cc_token_breakdown("claude", 100, 30, 500, 20)

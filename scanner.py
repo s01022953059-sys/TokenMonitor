@@ -7,6 +7,8 @@ import urllib.request
 import re
 import glob
 import time
+import threading
+from collections import OrderedDict
 
 # 数据源路径
 # 注: 历史上还设过 ANTIGRAVITY_BRAIN_DIR = ~/.gemini/antigravity/brain,
@@ -28,6 +30,13 @@ CODEX_ARCHIVED_SESSIONS_DIR = os.path.expanduser("~/.codex/archived_sessions")
 # 2 秒足够覆盖"客户端 → 代理 → 数据库落盘"的端到端抖动,
 # 又不至于把两次独立的相邻请求合并掉。
 DEDUP_WINDOW_SECONDS = 2
+
+# 会话详情可能来自数百 MB 的 Codex rollout。缓存按文件指纹保存完整消息快照，
+# 分页和二次打开只做内存切片；Condition 合并同一文件的并发首次读取。
+SESSION_DETAIL_CACHE_LIMIT = 12
+_session_detail_cache = OrderedDict()
+_session_detail_inflight = set()
+_session_detail_cache_condition = threading.Condition()
 
 
 def _open_sqlite_readonly(path, attempts=3):
@@ -1271,6 +1280,100 @@ def get_heatmap_data(days=30):
     }
 
 
+def _empty_session_detail(session_id, page, page_size):
+    return {
+        "session_id": session_id or "", "messages": [], "total": 0,
+        "page": page, "page_size": page_size, "total_pages": 1,
+    }
+
+
+def _parse_session_messages(rollout_path, max_messages):
+    """只解析对话行，跳过 rollout 中体积最大的工具结果和统计事件。"""
+    messages = []
+    with open(rollout_path, "r", encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            # rollout 中绝大多数行是 token、工具输出或图片元数据。先做廉价筛选，
+            # 避免对这些可能达到数 MB 的行执行 json.loads。
+            if "response_item" not in line or '"role"' not in line:
+                continue
+            try:
+                obj = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if obj.get("type") != "response_item":
+                continue
+
+            payload = obj.get("payload") or {}
+            role = payload.get("role", "")
+            if role not in ("user", "assistant"):
+                continue
+
+            content_field = payload.get("content", [])
+            text = ""
+            if isinstance(content_field, list) and content_field:
+                parts = []
+                for item in content_field:
+                    if isinstance(item, dict):
+                        value = item.get("text", "")
+                        if value:
+                            parts.append(value)
+                    elif isinstance(item, str):
+                        parts.append(item)
+                text = "\n".join(parts)
+            elif isinstance(content_field, str):
+                text = content_field
+            if not text.strip():
+                continue
+            if len(text) > 5000:
+                text = text[:5000] + "\n...(内容过长已截断)"
+            messages.append({
+                "role": role,
+                "text": text,
+                "timestamp": payload.get("timestamp", ""),
+            })
+            if len(messages) >= max_messages:
+                break
+    return messages
+
+
+def _cached_session_messages(rollout_path, max_messages):
+    stat = os.stat(rollout_path)
+    key = (rollout_path, stat.st_mtime_ns, stat.st_size, max_messages)
+
+    with _session_detail_cache_condition:
+        cached = _session_detail_cache.get(key)
+        if cached is not None:
+            _session_detail_cache.move_to_end(key)
+            return cached
+        while key in _session_detail_inflight:
+            _session_detail_cache_condition.wait()
+            cached = _session_detail_cache.get(key)
+            if cached is not None:
+                _session_detail_cache.move_to_end(key)
+                return cached
+        _session_detail_inflight.add(key)
+
+    parsed = None
+    try:
+        parsed = _parse_session_messages(rollout_path, max_messages)
+        return parsed
+    finally:
+        with _session_detail_cache_condition:
+            if parsed is not None:
+                # 文件增长后删除同路径旧指纹，避免活跃会话长期占用多份缓存。
+                stale_keys = [item for item in _session_detail_cache if item[0] == rollout_path]
+                for stale_key in stale_keys:
+                    _session_detail_cache.pop(stale_key, None)
+                _session_detail_cache[key] = parsed
+                _session_detail_cache.move_to_end(key)
+                while len(_session_detail_cache) > SESSION_DETAIL_CACHE_LIMIT:
+                    _session_detail_cache.popitem(last=False)
+            _session_detail_inflight.discard(key)
+            _session_detail_cache_condition.notify_all()
+
+
 def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, page_size=20):
     """根据 session_id 从 Codex rollout JSONL 文件中提取对话内容。
 
@@ -1279,11 +1382,11 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
     用 timestamp 近似匹配最近的 rollout 文件。
     返回: { "session_id": str, "messages": [ {role, text, timestamp}, ...] }
     """
-    sessions_dir = os.path.expanduser("~/.codex/sessions")
+    sessions_dir = CODEX_SESSIONS_DIR
     messages = []
 
     if not os.path.isdir(sessions_dir):
-        return {"session_id": session_id or "", "messages": messages}
+        return _empty_session_detail(session_id, page, page_size)
 
     # 递归查找包含 session_id 的 rollout 文件
     rollout_files = []
@@ -1315,62 +1418,14 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
             pass
 
     if not rollout_files:
-        return {"session_id": session_id, "messages": messages}
+        return _empty_session_detail(session_id, page, page_size)
 
     # 按修改时间排序，取最新的
     rollout_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
     rollout_path = rollout_files[0]
 
     try:
-        with open(rollout_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                if obj.get("type") != "response_item":
-                    continue
-
-                payload = obj.get("payload", {})
-                role = payload.get("role", "")
-                if role not in ("user", "assistant"):
-                    continue
-
-                content_field = payload.get("content", [])
-                text = ""
-                if isinstance(content_field, list) and content_field:
-                    parts = []
-                    for item in content_field:
-                        if isinstance(item, dict):
-                            t = item.get("text", "")
-                            if t:
-                                parts.append(t)
-                        elif isinstance(item, str):
-                            parts.append(item)
-                    text = "\n".join(parts)
-                elif isinstance(content_field, str):
-                    text = content_field
-
-                if not text.strip():
-                    continue
-
-                # 截断过长的消息
-                if len(text) > 5000:
-                    text = text[:5000] + "\n...(内容过长已截断)"
-
-                timestamp_str = payload.get("timestamp", "")
-
-                messages.append({
-                    "role": role,
-                    "text": text,
-                    "timestamp": timestamp_str,
-                })
-
-                if len(messages) >= max_messages:
-                    break
+        messages = _cached_session_messages(rollout_path, max_messages)
     except Exception as e:
         print(f"[-] session_detail 出错: {e}")
 

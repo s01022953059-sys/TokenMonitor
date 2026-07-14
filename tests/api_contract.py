@@ -78,6 +78,19 @@ class Backend:
             "TOKEN_MONITOR_COMMUNITY_RELAY_URL": feed_url + "/community-report",
         })
         pathlib.Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        sessions = pathlib.Path(env["HOME"]) / ".codex" / "sessions" / "2026" / "07" / "14"
+        sessions.mkdir(parents=True, exist_ok=True)
+        rollout = sessions / "rollout-contract-019f0000-1111-2222-3333-444444444444.jsonl"
+        with rollout.open("w", encoding="utf-8") as stream:
+            stream.write(json.dumps({
+                "type": "event_msg",
+                "payload": {"type": "tool_output", "data": "x" * 512_000},
+            }) + "\n")
+            for index in range(30):
+                stream.write(json.dumps({
+                    "type": "response_item",
+                    "payload": {"role": "user", "content": [{"text": f"message-{index}"}]},
+                }) + "\n")
         if kind == "python":
             command = [sys.executable, "server.py", "--port", str(self.port), "--update-feed-url", feed_url]
         else:
@@ -212,8 +225,17 @@ class APIContractTests(unittest.TestCase):
         self.assertNotEqual(repaged.get("cache_state"), "warming")
         self.assertEqual(repaged["page_size"], 20)
 
-        session_detail = self.get("/api/session_detail?session_id=missing-contract-session&page=1&page_size=1")
-        self.assertIn("messages", session_detail)
+        session_id = "019f0000-1111-2222-3333-444444444444"
+        started = time.monotonic()
+        session_detail = self.get(f"/api/session_detail?session_id={session_id}&page=1&page_size=20")
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertEqual(len(session_detail["messages"]), 20)
+        self.assertEqual(session_detail["total"], 30)
+
+        started = time.monotonic()
+        second_page = self.get(f"/api/session_detail?session_id={session_id}&page=2&page_size=20")
+        self.assertLess(time.monotonic() - started, 0.3)
+        self.assertEqual(len(second_page["messages"]), 10)
 
     def test_profile_rejects_invalid_and_cross_origin_requests(self):
         headers = {"Content-Type": "application/json"}

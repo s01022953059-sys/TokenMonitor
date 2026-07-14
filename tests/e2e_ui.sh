@@ -15,6 +15,7 @@ test -x "$PWCLI"
 test -x "$EDGE"
 
 TMP_DIR=$(mktemp -d /tmp/token-monitor-e2e.XXXXXX)
+SESSION_ID="019f-test-session-detail-cache"
 PORT=$(python3 - <<'PY'
 import socket
 s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()
@@ -51,6 +52,30 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump({"saved_at": time.time(), "data": {"days": rows}}, stream)
 PY
 
+# 构造带大体积无关事件的 Codex 会话，覆盖 macOS 单条调用详情的真实慢路径。
+python3 - "$TMP_DIR/home" "$SESSION_ID" <<'PY'
+import json
+import os
+import sys
+
+home, session_id = sys.argv[1:]
+rollout_dir = os.path.join(home, ".codex", "sessions", "2026", "07", "14")
+os.makedirs(rollout_dir, exist_ok=True)
+rollout_path = os.path.join(rollout_dir, f"rollout-2026-07-14T00-00-00-{session_id}.jsonl")
+with open(rollout_path, "w", encoding="utf-8") as stream:
+    stream.write(json.dumps({"type": "event_msg", "payload": {"blob": "x" * (512 * 1024)}}) + "\n")
+    for index in range(30):
+        role = "user" if index % 2 == 0 else "assistant"
+        stream.write(json.dumps({
+            "type": "response_item",
+            "payload": {
+                "role": role,
+                "content": [{"type": "input_text", "text": f"E2E message {index}"}],
+                "timestamp": f"2026-07-14T00:00:{index:02d}Z",
+            },
+        }) + "\n")
+PY
+
 HOME="$TMP_DIR/home" TOKEN_MONITOR_LOCK_FILE="$TMP_DIR/server.lock" TOKEN_MONITOR_HEATMAP_CACHE_FILE="$TMP_DIR/heatmap.json" TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT=1 \
     python3 "$ROOT/server.py" --port "$PORT" --update-feed-url "" >"$TMP_DIR/server.log" 2>&1 &
 SERVER_PID=$!
@@ -79,10 +104,7 @@ CURRENT_VERSION=$(sed -n '/<key>CFBundleShortVersionString<\/key>/{n;s/.*<string
 test -n "$CURRENT_VERSION"
 
 "$PWCLI" open "http://127.0.0.1:$PORT" --browser msedge --headed >/dev/null
-SNAPSHOT=$("$PWCLI" snapshot)
-HEATMAP_REF=$(printf '%s\n' "$SNAPSHOT" | sed -nE 's/.*button "活动热力图".*\[ref=([^]]+)\].*/\1/p' | head -1)
-test -n "$HEATMAP_REF"
-"$PWCLI" click "$HEATMAP_REF" >/dev/null
+"$PWCLI" eval "() => document.getElementById('heatmapOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_30 至"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
@@ -109,8 +131,13 @@ DETAIL_TITLE=$("$PWCLI" eval "() => document.getElementById('heatmapDetailTitle'
 printf '%s\n' "$DETAIL_TITLE" | grep -q "$EXPECTED_TODAY 调用详情"
 ! printf '%s\n' "$DETAIL_TEXT" | grep -q "加载中\|正在整理当天明细"
 
+# 单条调用详情必须复用服务端快照；首次和再次打开都要走完整 UI 渲染路径。
+"$PWCLI" eval "async () => { const started = performance.now(); await loadChatDetail('$SESSION_ID', null, 1); const elapsed = performance.now() - started; const content = document.getElementById('chatDetailContent').innerText; return elapsed < 1000 && content.includes('E2E message 0') && content.includes('E2E message 19'); }" | grep -q 'true'
+"$PWCLI" eval "() => document.getElementById('chatDetailModal').classList.remove('active')" >/dev/null
+"$PWCLI" eval "async () => { const started = performance.now(); await loadChatDetail('$SESSION_ID', null, 1); const elapsed = performance.now() - started; const content = document.getElementById('chatDetailContent').innerText; return elapsed < 300 && content.includes('E2E message 0') && content.includes('E2E message 19'); }" | grep -q 'true'
+
 # About 必须展示当前版本的简短更新摘要，不能只依赖发布时人工目测。
-"$PWCLI" eval "() => document.getElementById('heatmapDetailModal').classList.remove('active')" >/dev/null
+"$PWCLI" eval "() => { document.getElementById('chatDetailModal').classList.remove('active'); document.getElementById('heatmapDetailModal').classList.remove('active'); }" >/dev/null
 "$PWCLI" eval "() => document.getElementById('aboutOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "当前版本 v$CURRENT_VERSION"
@@ -127,4 +154,4 @@ printf '%s\n' "$SNAPSHOT" | grep -q "独立 worker 扫描"
 SCROLL_STYLE=$("$PWCLI" eval "() => { document.getElementById('communityModal').classList.add('active'); const panel = document.querySelector('#communityModal .modal-content'); const header = panel.querySelector('.modal-header'); const body = document.getElementById('communityContainer'); body.innerHTML = '<div style=\"height:1500px\"></div>'; return [getComputedStyle(panel).overflowY, getComputedStyle(body).overflowY, getComputedStyle(body).scrollbarGutter, body.scrollHeight > body.clientHeight, Math.abs(panel.getBoundingClientRect().top - header.getBoundingClientRect().top) < 2].join('|'); }")
 printf '%s\n' "$SCROLL_STYLE" | grep -q 'hidden|auto|stable|true|true'
 
-echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> About 更新摘要 -> 社区内部滚动"
+echo "[e2e] PASS: 首页 -> 热力图 -> 近一年范围 -> 当日调用详情 -> 单条详情二次打开 -> About 更新摘要 -> 社区内部滚动"

@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.36**。
+当前发布版本：**v1.4.37**。
 
 ## 功能
 
@@ -57,6 +57,7 @@
 
 - 会话列表展示最近的 API 调用会话，含模型、Token 消耗、时间戳
 - **点击任意会话行**查看完整对话内容（用户消息 + 助手回复）
+- macOS/Python 与 Windows/Go 都会先跳过 rollout 中与对话无关的大体积工具/统计行，再按文件指纹缓存消息快照；同一会话并发打开只解析一次，翻页和二次打开直接复用
 - 会话列表、热力图下钻、对话内容三个弹窗均支持分页
 - 分页数量可定制: 20/50/100/200 条每页 (列表) 或 10/20/50/100 条每页 (对话)
 - 每个弹窗底部显示总条数和当前页码
@@ -374,10 +375,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.36](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.36)
+最新版本：[v1.4.37](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.37)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.36/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.36/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.37/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.37/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -389,16 +390,23 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，任一项失败就终止发布
 - 热力图发布前必须验证默认选中范围与请求参数一致、近一年返回 365 个日格、四个范围切换后的起止日期正确，以及缓存命中低于 500ms
 - 发布验证采用三层门禁：充分的单元测试、Python/macOS 与 Go/Windows 双后端 API 契约测试、少量关键用户路径 E2E；详见 [`tests/README.md`](tests/README.md)
+- 单条调用详情 E2E 使用带大体积无关事件的 Codex 会话夹具，必须验证首次打开低于 1 秒、再次打开低于 300ms，并确认真实消息已完成渲染
 - 社区功能变更还必须验证 VPS 健康检查、两个独立匿名用户的新建与更新、错误凭据拒绝，以及 GitCode `community-data` 分支可读回；任一项失败不发布
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.37 (2026-07-14)
+
+- 修复大型 Codex 会话详情首次打开过慢：跳过无关大日志，并按文件指纹缓存消息快照。
+- macOS 与 Windows 统一复用翻页、二次打开和并发请求结果，补齐 Unit、API 与真实浏览器性能门禁。
 
 ### v1.4.36 (2026-07-14)
 
 - 每日调用详情改为按自然日保存完整快照，切换分页数量或再次打开时直接从快照切片，不会重复扫描本地日志。
 - 大型 cc-switch 数据库优先按时间索引读取；明细后台读取异常或耗时过长会结束加载态并提供可重试提示。
 - 社区用户指标说明调整为“去重后的用户数”和“已产生用量的用户数”，避免把匿名 ID 或当天动作误读为统计口径。
+- 后续修正 macOS 单条会话详情：大日志快速筛选、文件指纹缓存、并发首次读取合并；最近两天预热也严格保持每个自然日一个刷新任务。
 
 ### v1.4.35 (2026-07-13)
 

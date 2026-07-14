@@ -19,6 +19,8 @@ def make_heatmap(days=365):
 class HeatmapCacheTests(unittest.TestCase):
     def setUp(self):
         server._heatmap_refreshing = False
+        with server._heatmap_detail_cache_lock:
+            server._heatmap_detail_refreshing.clear()
 
     def test_cold_cache_returns_immediately_and_warms_in_background(self):
         with tempfile.TemporaryDirectory() as root:
@@ -87,6 +89,28 @@ class HeatmapCacheTests(unittest.TestCase):
         self.assertEqual(detail.call_args_list[0].args[0], today)
         self.assertEqual(detail.call_args_list[0].args[1:], ())
         annual.assert_called_once_with(server.HEATMAP_CACHE_DAYS)
+
+    def test_recent_detail_prewarm_and_request_share_one_refresh_slot(self):
+        date = time.strftime("%Y-%m-%d")
+        entered = __import__("threading").Event()
+        release = __import__("threading").Event()
+
+        def slow_refresh(_date):
+            entered.set()
+            release.wait(timeout=2)
+            with server._heatmap_detail_cache_lock:
+                server._heatmap_detail_refreshing.pop(_date, None)
+
+        with mock.patch.object(server, "_refresh_heatmap_detail", side_effect=slow_refresh) as refresh:
+            server._start_heatmap_detail_refresh(date)
+            self.assertTrue(entered.wait(timeout=1))
+            server._start_heatmap_detail_refresh(date)
+            release.set()
+            deadline = time.monotonic() + 1
+            while server._heatmap_detail_refreshing and time.monotonic() < deadline:
+                time.sleep(0.01)
+
+        refresh.assert_called_once_with(date)
 
 
 if __name__ == "__main__":
