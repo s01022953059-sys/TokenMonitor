@@ -74,6 +74,11 @@ if (!swift.includes('window.__TOKEN_MONITOR_DESKTOP__ = true') ||
     !swift.includes('webView.topAnchor.constraint(equalTo: window.contentView!.topAnchor)')) {
   throw new Error('macOS: 单一内容面宿主约束缺失');
 }
+if (!swift.includes('proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")') ||
+    !swift.includes('func applicationWillTerminate') ||
+    !swift.includes('stopLocalServer()')) {
+  throw new Error('macOS: Python 后端必须由主进程直接托管并在退出时回收');
+}
 if (!windowsGUI.includes('/?desktop=1') ||
     !windowsGUI.includes('func startTrayUsageLoop') ||
     !windowsGUI.includes('systray.SetTitle("🔥" + formatTrayTokens')) {

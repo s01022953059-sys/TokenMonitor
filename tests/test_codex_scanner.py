@@ -74,6 +74,26 @@ class CodexScannerTests(unittest.TestCase):
         self.assertEqual(events[0]["input_cached"], 60)
         self.assertEqual(events[0]["session_id"], "thread-test")
 
+    def test_sqlite_events_restrict_rollout_scan_to_date_directories(self):
+        self.create_log_db()
+        with mock.patch.object(scanner, "_scan_codex_rollouts", return_value=[]) as rollout:
+            scanner.scan_codex_tokens(1_700_000_000)
+
+        self.assertEqual(rollout.call_args.args[0], 1_700_000_000)
+        self.assertIsNotNone(rollout.call_args.args[1])
+
+    def test_explicit_range_reads_every_date_directory(self):
+        start = 1_800_000_000
+        first = __import__("datetime").datetime.fromtimestamp(start).date()
+        os.makedirs(self.sessions_dir)
+        with mock.patch.object(scanner.glob, "glob", return_value=[]) as glob_files:
+            scanner._scan_codex_rollouts(start, start + 4 * 86400)
+
+        visited = "\n".join(call.args[0] for call in glob_files.call_args_list)
+        for offset in range(4):
+            day = first + __import__("datetime").timedelta(days=offset)
+            self.assertIn(f"/{day.year}/{day.month:02d}/{day.day:02d}/", visited)
+
     def test_today_usage_includes_codex_without_cc_switch(self):
         self.create_log_db()
 

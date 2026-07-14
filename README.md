@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.37**。
+当前发布版本：**v1.4.38**。
 
 ## 功能
 
@@ -49,7 +49,7 @@
 - 按天展示每日 Token 消耗量，颜色深浅 = 消耗量（GitHub 5 档绿色色阶）
 - **每格右下角**叠加当天 token 短标签（如 `1.2M` / `234K`），不用悬停也能直观看出数量级
 - 顶部 3 个统计卡片：总消耗 / 活跃天数（X/Y + 覆盖率）/ 最高单日（值 + 日期）
-- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；macOS 启动后优先预热最近两天详情，全年热力图扫描通过全新启动的独立 Python worker 执行，绝不从多线程服务 `fork`，已缓存结果立即展示，过期后静默刷新
+- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；每日详情按需读取持久快照，全年热力图扫描通过全新启动的独立 Python worker 执行，绝不从多线程服务 `fork`，已缓存结果立即展示，过期后静默刷新
 - Tab 切换时间窗口：30 / 90 / 180 / 365 天（默认 365 天，跨年看全年趋势）
 - 横轴标月份，每格代表一天
 
@@ -75,7 +75,8 @@
 - 自动初始化产生的 0 Token 身份计入总用户，但不计入今日活跃用户、今日榜单或今日排名；同一匿名 ID 的重复报告只取最新一份，避免人数和用量重复统计
 - 社区用量在启动后与每 5 分钟静默上报；打开社区页也会在后台按同样节流补报，因此不需要手工同步，展示可先用缓存、随后自动刷新
 - 社区页会友好说明：刚产生的用量可能短暂落后首页，通常几分钟内自动更新；不显示传输进度或手动同步入口
-- 趋势图和热力图同样使用缓存优先展示；热力图始终从同一份 365 天快照切片，冷启动也先显示完整日期网格，历史日志扫描仅在后台静默执行
+- 首页今日用量、趋势图和热力图都使用缓存优先展示；高频网页与托盘轮询只读取持久快照，今日用量每 30 秒最多安排一次后台刷新且同一时刻只扫描一次
+- 热力图始终从同一份 365 天快照切片，冷启动也先显示完整日期网格，历史日志扫描仅在后台静默执行
 - 热力图月份轴、星期标签和日期格使用统一固定尺寸，保证 Windows WebView2 与 macOS 下上下对齐
 - 状态明确区分“等待首次同步”“今日第 N 名”“已同步但未进前十”和“无法上报”
 - 启动约 5 秒后首次自动上报，之后每 5 分钟一次；页面聚合结果最多缓存 5 分钟
@@ -258,7 +259,7 @@ curl -L -o TokenMonitor-Setup.exe \
 
 双击 `TokenMonitor-Setup.exe`：
 - 打开独立 WebView2 仪表盘，不打开外部浏览器、不显示命令行窗口
-- 关闭窗口后继续驻留系统托盘，可从托盘重新显示或退出
+- 关闭窗口后继续驻留系统托盘，可从托盘重新显示；选择“退出应用”会同步回收 Python 后端与本地端口
 - 托盘菜单可启用“开机自启”，登录后只启动托盘
 - “关于 Token Monitor”内统一检查、更新和展示进度；菜单栏“检查更新…”也直接进入该窗口
 
@@ -375,10 +376,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.37](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.37)
+最新版本：[v1.4.38](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.38)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.37/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.37/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.38/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.38/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -395,6 +396,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.38 (2026-07-14)
+
+- 首页、托盘和社区同步统一读取今日用量快照，后台刷新单飞执行；本机完整统计从接近一分钟降至约 0.28 秒。
+- macOS 直接托管 Python 后端，退出应用和自更新前可靠回收进程与 `15723` 端口。
 
 ### v1.4.37 (2026-07-14)
 

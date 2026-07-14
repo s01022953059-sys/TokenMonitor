@@ -286,16 +286,16 @@ def _scan_codex_rollouts(start_timestamp, end_timestamp=None):
         if not os.path.isdir(root):
             continue
         if end_timestamp:
-            # 日期详情只需要目标日及相邻两天的 rollout。完整递归 400MB+ 的
-            # session 目录会让 macOS 首次打开详情长时间停在“加载中”。
+            # 有明确时间范围时只访问范围覆盖的日期目录及两侧相邻日。
+            # 不能只取首尾四天：30/365 天历史区间会漏掉中间日期。
             first_day = datetime.datetime.fromtimestamp(start_timestamp).date()
             last_day = datetime.datetime.fromtimestamp(end_timestamp - 1).date()
-            candidate_days = {
-                first_day - datetime.timedelta(days=1),
-                first_day,
-                last_day,
-                last_day + datetime.timedelta(days=1),
-            }
+            candidate_days = []
+            current_day = first_day - datetime.timedelta(days=1)
+            final_day = last_day + datetime.timedelta(days=1)
+            while current_day <= final_day:
+                candidate_days.append(current_day)
+                current_day += datetime.timedelta(days=1)
             for day in candidate_days:
                 files.extend(glob.glob(os.path.join(
                     root, str(day.year), f"{day.month:02d}", f"{day.day:02d}", "*.jsonl"
@@ -403,9 +403,14 @@ def scan_codex_tokens(start_timestamp, end_timestamp=None):
         except Exception as e:
             print(f"[-] 扫描 Codex 日志数据库出错: {e}")
 
-    # logs_2.sqlite 可能只保留当前 Codex 进程的一小段日志，不能把 rollout
-    # 仅当成“数据库完全没有数据”时的回退。两者始终合并后去重，才能覆盖重启前记录。
-    return _dedup_events(events + _scan_codex_rollouts(start_timestamp, end_timestamp))
+    # SQLite 已覆盖查询范围时，rollout 仍用于补全旧记录，但只访问日期目录。
+    # 活跃的超大旧会话文件会持续更新 mtime；若继续按 mtime 递归选择，每次首页
+    # 轮询都会从头解析数百 MB。SQLite 没有任何事件时才保留旧版递归回退。
+    rollout_end = end_timestamp
+    if rollout_end is None and events:
+        latest_event = max(int(event.get("timestamp") or 0) for event in events)
+        rollout_end = max(time.time() + 1, latest_event + 1)
+    return _dedup_events(events + _scan_codex_rollouts(start_timestamp, rollout_end))
 
 def normalize_model_name(raw_model):
     """归一化 model 字符串, 合并 cc-switch 噪声变体。

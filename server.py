@@ -76,6 +76,11 @@ HEATMAP_CACHE_DAYS = 365
 # 只在后台检查是否需要重建快照，避免频繁遍历历史日志。
 HEATMAP_CACHE_TTL = 900
 COMMUNITY_SYNC_INTERVAL_SECONDS = 5 * 60
+USAGE_CACHE_TTL = 30
+USAGE_CACHE_PATH = os.environ.get(
+    "TOKEN_MONITOR_USAGE_CACHE_FILE",
+    os.path.expanduser("~/.token_monitor/usage_cache.json"),
+)
 HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
@@ -90,6 +95,98 @@ _heatmap_refreshing = False
 _heatmap_detail_cache_lock = threading.Lock()
 _heatmap_detail_refreshing = {}
 _heatmap_detail_failures = {}
+_usage_cache_lock = threading.Lock()
+_usage_refreshing = False
+_usage_refresh_failed_at = 0.0
+
+
+def _empty_usage_snapshot():
+    return {
+        "summary": {
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "input_cached": 0,
+            "input_uncached": 0,
+            "date": datetime.date.today().isoformat(),
+            "deepseek_balance": "0.00",
+            "deepseek_currency": "CNY",
+            "deepseek_status": "Offline",
+            "events_after_dedup": 0,
+            "events_before_dedup": 0,
+        },
+        "by_tool": {},
+        "by_model": {},
+        "by_model_requests": {},
+        "recent_events": [],
+        "cache_state": "warming",
+    }
+
+
+def _load_usage_snapshot():
+    try:
+        with open(USAGE_CACHE_PATH, "r", encoding="utf-8") as stream:
+            cached = json.load(stream)
+        data = cached.get("data")
+        if not isinstance(data, dict):
+            return None
+        if (data.get("summary") or {}).get("date") != datetime.date.today().isoformat():
+            return None
+        return cached
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _save_usage_snapshot(data):
+    directory = os.path.dirname(USAGE_CACHE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = USAGE_CACHE_PATH + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as stream:
+        json.dump({"saved_at": time.time(), "data": data}, stream, ensure_ascii=False)
+    os.replace(temporary, USAGE_CACHE_PATH)
+
+
+def _refresh_usage_snapshot():
+    global _usage_refreshing, _usage_refresh_failed_at
+    try:
+        data = get_today_usage()
+        _save_usage_snapshot(data)
+        _usage_refresh_failed_at = 0.0
+    except Exception as exc:
+        _usage_refresh_failed_at = time.time()
+        print(f"[-] usage 后台刷新失败: {exc}")
+    finally:
+        with _usage_cache_lock:
+            _usage_refreshing = False
+
+
+def _start_usage_refresh():
+    global _usage_refreshing
+    with _usage_cache_lock:
+        if _usage_refreshing:
+            return False
+        if _usage_refresh_failed_at and time.time() - _usage_refresh_failed_at < 30:
+            return False
+        _usage_refreshing = True
+    threading.Thread(target=_refresh_usage_snapshot, daemon=True).start()
+    return True
+
+
+def get_cached_usage():
+    """轮询只读取小快照；昂贵扫描在后台单飞执行。"""
+    cached = _load_usage_snapshot()
+    if cached:
+        result = dict(cached["data"])
+        if time.time() - float(cached.get("saved_at", 0)) > USAGE_CACHE_TTL:
+            result["cache_state"] = "stale"
+            _start_usage_refresh()
+        else:
+            result["cache_state"] = "ready"
+        return result
+
+    _start_usage_refresh()
+    return _empty_usage_snapshot()
 
 
 def _slice_heatmap(data, days):
@@ -328,12 +425,8 @@ def get_cached_heatmap_detail(date, page=1, page_size=50):
 
 
 def _prewarm_recent_dashboard_data():
-    """详情优先预热；全年快照仅在缺失或过期时由缓存入口安排重建。"""
-    today = datetime.date.today()
-    for offset in range(2):
-        date = (today - datetime.timedelta(days=offset)).isoformat()
-        if _claim_heatmap_detail_refresh(date):
-            _refresh_heatmap_detail(date)
+    """仅安排今日用量与全年快照，详情由用户打开时按需刷新。"""
+    get_cached_usage()
     get_cached_heatmap(HEATMAP_CACHE_DAYS)
 
 _parser = argparse.ArgumentParser(add_help=False)
@@ -630,7 +723,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
         # 社区页的静默补报使用 POST；此前仅处理了昵称接口，导致 macOS 补报始终 404。
         if self.path == "/api/community/report":
             try:
-                result = report_community_stats(get_today_usage())
+                result = report_community_stats(get_cached_usage())
                 self._write_json(200, result)
             except Exception as exc:
                 self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
@@ -663,7 +756,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/usage":
             try:
-                self._write_json(200, get_today_usage())
+                self._write_json(200, get_cached_usage())
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return
@@ -773,7 +866,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 report_result = None
                 if enabled:
                     try:
-                        report_result = report_community_stats(get_today_usage())
+                        report_result = report_community_stats(get_cached_usage())
                     except Exception as exc:
                         report_result = {"ok": False, "status": "error", "message": str(exc)}
                 self._write_json(200, {
@@ -788,7 +881,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == "/api/community/report":
             try:
-                result = report_community_stats(get_today_usage())
+                result = report_community_stats(get_cached_usage())
                 self._write_json(200, result)
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
@@ -802,6 +895,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 32
 
     def server_bind(self):
         """跳过 socket.getfqdn() 反向 DNS 查询,避免在受限网络环境下卡 30s。"""
@@ -841,7 +935,9 @@ def main():
             _time.sleep(5)
             while True:
                 try:
-                    report_community_stats(get_today_usage())
+                    usage = get_cached_usage()
+                    if usage.get("cache_state") != "warming":
+                        report_community_stats(usage)
                 except Exception:
                     pass
                 _time.sleep(COMMUNITY_SYNC_INTERVAL_SECONDS)

@@ -192,16 +192,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         try? cleanupProc.run()
         cleanupProc.waitUntilExit()
 
-        var cmd = "/usr/bin/python3 \"\(resourceDir)/server.py\" --port \(apiPort)"
+        var arguments = ["\(resourceDir)/server.py", "--port", "\(apiPort)"]
         if let feedURLString = configuredUpdateFeedURL()?.absoluteString,
            !feedURLString.isEmpty {
-            cmd += " --update-feed-url \"\(feedURLString)\""
+            arguments.append(contentsOf: ["--update-feed-url", feedURLString])
         }
-        cmd += " &"
 
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
-        proc.arguments = ["-c", cmd]
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        proc.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["TOKEN_MONITOR_LOCAL_API_TOKEN"] = localAPIToken
         proc.environment = environment
@@ -226,6 +225,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        stopLocalServer()
+    }
+
+    private func stopLocalServer() {
+        guard let process = serverProcess, process.isRunning else {
+            serverProcess = nil
+            return
+        }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+        serverProcess = nil
     }
 
     @objc func checkForUpdatesFromMenu() {
@@ -962,7 +981,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     private func performAppReplacement(stagedApp: String, update: UpdateInfo) {
         // 杀掉自己启动的 server.py 子进程, 否则 update_helper 替换 .app 时
         // 仍然有 python 在跑 (虽然不影响, 但保持干净)。
-        self.serverProcess?.terminate()
+        stopLocalServer()
 
         // helper 路径优先用 stagedApp (新版本) 里的, 而不是当前 app (旧版本) 里的。
         // 原因: 自更新代码会"自我升级", 旧 .app 里的 helper 不知道新代码的设计

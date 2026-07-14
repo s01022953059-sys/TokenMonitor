@@ -78,17 +78,15 @@ class HeatmapCacheTests(unittest.TestCase):
         self.assertEqual(command[3], server.HEATMAP_CACHE_PATH)
         self.assertTrue(run.call_args.kwargs["close_fds"] is False)
 
-    def test_recent_detail_prewarm_runs_before_annual_refresh(self):
-        today = time.strftime("%Y-%m-%d")
-        with mock.patch.object(server, "_refresh_heatmap_detail") as detail, mock.patch.object(
+    def test_startup_prewarm_only_schedules_cached_dashboards(self):
+        with mock.patch.object(server, "get_cached_usage") as usage, mock.patch.object(
             server, "get_cached_heatmap"
-        ) as annual:
+        ) as annual, mock.patch.object(server, "_refresh_heatmap_detail") as detail:
             server._prewarm_recent_dashboard_data()
 
-        self.assertEqual(detail.call_count, 2)
-        self.assertEqual(detail.call_args_list[0].args[0], today)
-        self.assertEqual(detail.call_args_list[0].args[1:], ())
+        usage.assert_called_once_with()
         annual.assert_called_once_with(server.HEATMAP_CACHE_DAYS)
+        detail.assert_not_called()
 
     def test_recent_detail_prewarm_and_request_share_one_refresh_slot(self):
         date = time.strftime("%Y-%m-%d")
