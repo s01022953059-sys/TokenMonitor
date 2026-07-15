@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.38**。
+当前发布版本：**v1.4.39**。
 
 ## 功能
 
@@ -49,7 +49,7 @@
 - 按天展示每日 Token 消耗量，颜色深浅 = 消耗量（GitHub 5 档绿色色阶）
 - **每格右下角**叠加当天 token 短标签（如 `1.2M` / `234K`），不用悬停也能直观看出数量级
 - 顶部 3 个统计卡片：总消耗 / 活跃天数（X/Y + 覆盖率）/ 最高单日（值 + 日期）
-- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；每日详情按需读取持久快照，全年热力图扫描通过全新启动的独立 Python worker 执行，绝不从多线程服务 `fork`，已缓存结果立即展示，过期后静默刷新
+- **点击任意单元格**查看该日的完整调用列表（模型、Token、缓存命中、延迟）；每日详情按需读取持久快照，分页只在同一份日快照上切片，全年热力图扫描通过全新启动的独立 Python worker 执行，绝不从多线程服务 `fork`，已缓存结果立即展示，过期后静默刷新
 - Tab 切换时间窗口：30 / 90 / 180 / 365 天（默认 365 天，跨年看全年趋势）
 - 横轴标月份，每格代表一天
 
@@ -66,15 +66,16 @@
 ### 社区用量排行
 
 - 社区 Dashboard 内展示本机 `User_XXXXX` 匿名 ID、同步状态与排行，不再保留重复的独立 ID 入口
-- 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每 5 分钟静默同步；无需手动加入或手工刷新
+- 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每 5 分钟静默同步；无需手动加入，需要时可点击标题栏“刷新”获取最新聚合
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
-- 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动同步按钮或传输状态
+- 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动上报入口，仅保留“刷新”按钮
 - 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
+- 社区报告采用最多 8 路有限并发读取，避免加载时间随用户数线性增加；标题栏提供“刷新”按钮，可绕过 5 分钟缓存获取最新排行
 - 自动初始化产生的 0 Token 身份计入总用户，但不计入今日活跃用户、今日榜单或今日排名；同一匿名 ID 的重复报告只取最新一份，避免人数和用量重复统计
 - 社区用量在启动后与每 5 分钟静默上报；打开社区页也会在后台按同样节流补报，因此不需要手工同步，展示可先用缓存、随后自动刷新
-- 社区页会友好说明：刚产生的用量可能短暂落后首页，通常几分钟内自动更新；不显示传输进度或手动同步入口
+- 社区页会友好说明：刚产生的用量可能短暂落后首页，通常几分钟内自动更新；不显示传输进度或手动同步入口，刷新只请求最新聚合数据
 - 首页今日用量、趋势图和热力图都使用缓存优先展示；高频网页与托盘轮询只读取持久快照，今日用量每 30 秒最多安排一次后台刷新且同一时刻只扫描一次
 - 热力图始终从同一份 365 天快照切片，冷启动也先显示完整日期网格，历史日志扫描仅在后台静默执行
 - 热力图月份轴、星期标签和日期格使用统一固定尺寸，保证 Windows WebView2 与 macOS 下上下对齐
@@ -232,7 +233,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.39/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -254,7 +255,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.32/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.39/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -376,10 +377,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.38](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.38)
+最新版本：[v1.4.39](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.39)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.38/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.38/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.39/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.39/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -396,6 +397,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.39 (2026-07-15)
+
+- 修复热力图详情翻到最后一页后误报“该日暂无调用记录”。
+- 统一详情分页入口，避免旧逻辑覆盖正确日期。
 
 ### v1.4.38 (2026-07-14)
 

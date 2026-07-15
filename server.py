@@ -850,7 +850,10 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
         # ─── 社区 Dashboard API ───
         if self.path == "/api/community" or self.path.startswith("/api/community?"):
             try:
-                self._write_json(200, get_community_stats())
+                from urllib.parse import urlparse, parse_qs
+                query = parse_qs(urlparse(self.path).query)
+                force_refresh = query.get("refresh", ["0"])[0].lower() in {"1", "true", "yes"}
+                self._write_json(200, get_community_stats(force_refresh=force_refresh))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

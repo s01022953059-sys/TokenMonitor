@@ -551,6 +551,47 @@
             padding: 28px 30px 20px;
             border-bottom: 1px solid var(--border-subtle);
         }
+        .community-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .community-refresh-btn {
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 10px;
+            border: 1px solid var(--border-card);
+            border-radius: 6px;
+            background: var(--bg-subtle);
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .community-refresh-btn:hover {
+            border-color: var(--modal-line-color);
+            background: var(--bg-subtle-hover);
+        }
+        .community-refresh-btn:disabled {
+            color: var(--text-muted);
+            cursor: wait;
+            opacity: 0.72;
+        }
+        .community-refresh-icon {
+            display: inline-block;
+            font-size: 15px;
+            line-height: 1;
+        }
+        .community-refresh-btn.is-refreshing .community-refresh-icon {
+            animation: community-refresh-spin 0.8s linear infinite;
+        }
+        @keyframes community-refresh-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            .community-refresh-btn.is-refreshing .community-refresh-icon { animation: none; }
+        }
         .community-scroll-region {
             min-height: 0;
             overflow-y: auto;
@@ -1671,7 +1712,10 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>社区用量排行</h3>
-                <button id="communityCloseBtn" class="close-btn">&times;</button>
+                <div class="community-header-actions">
+                    <button id="communityRefreshBtn" class="community-refresh-btn" title="获取最新社区数据" aria-label="强制刷新社区数据"><span class="community-refresh-icon" aria-hidden="true">↻</span><span>刷新</span></button>
+                    <button id="communityCloseBtn" class="close-btn">&times;</button>
+                </div>
             </div>
             <div id="communityContainer" class="community-scroll-region">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>
@@ -2618,6 +2662,10 @@
             '1.4.38': [
                 '今日统计改为后台单次刷新，修复 macOS 持续高 CPU。',
                 '退出应用时同步关闭 Python 后端，不再残留进程和端口。'
+            ],
+            '1.4.39': [
+                '修复热力图详情翻到最后一页后误报“该日暂无调用记录”。',
+                '统一详情分页入口，避免旧逻辑覆盖正确日期。'
             ]
         });
 
@@ -3381,9 +3429,13 @@
             }
         }
 
-        function fetchCommunityData() {
-            if (_communityFetchPromise) return _communityFetchPromise;
-            _communityFetchPromise = fetch(API_BASE + '/api/community', {cache: 'no-store'})
+        function fetchCommunityData(forceRefresh = false) {
+            if (_communityFetchPromise) {
+                if (!forceRefresh) return _communityFetchPromise;
+                return _communityFetchPromise.catch(() => null).then(() => fetchCommunityData(true));
+            }
+            const url = API_BASE + '/api/community' + (forceRefresh ? '?refresh=1&_=' + Date.now() : '');
+            _communityFetchPromise = fetch(url, {cache: 'no-store'})
                 .then(response => response.json())
                 .then(data => {
                     if (!data.error) writeCommunityCache(data);
@@ -3419,6 +3471,7 @@
 
         async function loadCommunity(options = {}) {
             const container = document.getElementById('communityContainer');
+            const forceRefresh = options.forceRefresh === true;
             const cached = options.preferCache === false ? null : readCommunityCache();
             if (cached) {
                 renderCommunity(cached);
@@ -3426,7 +3479,7 @@
                 container.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>';
             }
             try {
-                const data = await fetchCommunityData();
+                const data = await fetchCommunityData(forceRefresh);
                 if (data.error) {
                     if (cached) return;
                     container.innerHTML = '<div style="text-align:center;padding:40px 20px;color:var(--text-muted);">' +
@@ -3709,6 +3762,20 @@
             document.getElementById('communityModal').classList.add('active');
             loadCommunity();
         });
+        document.getElementById('communityRefreshBtn').addEventListener('click', async () => {
+            const button = document.getElementById('communityRefreshBtn');
+            if (button.disabled) return;
+            button.disabled = true;
+            button.classList.add('is-refreshing');
+            button.querySelector('span:last-child').textContent = '刷新中';
+            try {
+                await loadCommunity({forceRefresh: true});
+            } finally {
+                button.disabled = false;
+                button.classList.remove('is-refreshing');
+                button.querySelector('span:last-child').textContent = '刷新';
+            }
+        });
         document.getElementById('communityCloseBtn').addEventListener('click', () => {
             document.getElementById('communityModal').classList.remove('active');
         });
@@ -3814,45 +3881,6 @@
             loadHeatmapDayDetail(_heatmapDetailState.date, 1);
         });
 
-        // 旧接口保留兼容 (weekday+hour 模式已废弃)
-        async function loadHeatmapDetail(weekday, hour, weekdayName, hourNum, page) {
-            if (page === undefined) page = 1;
-            _heatmapDetailState.weekday = weekday;
-            _heatmapDetailState.hour = hour;
-            _heatmapDetailState.page = page;
-            _heatmapDetailState.pageSize = parseInt(document.getElementById('heatmapDetailPageSize').value);
-            const modal = document.getElementById('heatmapDetailModal');
-            const titleEl = document.getElementById('heatmapDetailTitle');
-            const listEl = document.getElementById('heatmapDetailList');
-            titleEl.textContent = weekdayName + ' ' + String(hourNum).padStart(2, '0') + ':00 时段调用详情';
-            listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
-            document.getElementById('heatmapDetailPager').style.display = 'none';
-            modal.classList.add('active');
-            try {
-                const res = await fetch(API_BASE + '/api/heatmap_detail?weekday=' + weekday + '&hour=' + hour + '&days=30&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
-                const data = await res.json();
-                const sessions = data.sessions || [];
-                if (sessions.length === 0) {
-                    listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">该时段暂无调用记录</div>';
-                    return;
-                }
-                renderSessionList(sessions, listEl);
-                updatePager('heatmapDetailPager', 'heatmapDetailPageInfo', 'heatmapDetailPageNum', 'heatmapDetailPrevBtn', 'heatmapDetailNextBtn',
-                    data.total, data.page, _heatmapDetailState.pageSize, data.total_pages);
-                listEl.scrollTop = 0;
-            } catch (err) {
-                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载失败</div>';
-            }
-        }
-        document.getElementById('heatmapDetailPrevBtn').addEventListener('click', () => {
-            if (_heatmapDetailState.page > 1) loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, _heatmapDetailState.page - 1);
-        });
-        document.getElementById('heatmapDetailNextBtn').addEventListener('click', () => {
-            loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, _heatmapDetailState.page + 1);
-        });
-        document.getElementById('heatmapDetailPageSize').addEventListener('change', () => {
-            loadHeatmapDetail(_heatmapDetailState.weekday, _heatmapDetailState.hour, '', _heatmapDetailState.hour, 1);
-        });
         document.getElementById('heatmapDetailCloseBtn').addEventListener('click', () => {
             document.getElementById('heatmapDetailModal').classList.remove('active');
         });

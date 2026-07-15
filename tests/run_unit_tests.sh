@@ -38,6 +38,11 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       html.includes("data.rank_status !== 'pending' || !data.can_report")) {
     throw new Error(`${file}: 社区静默补报必须覆盖已上榜用户并保持 5 分钟节流`);
   }
+  if (!html.includes('id="communityRefreshBtn"') ||
+      !html.includes("loadCommunity({forceRefresh: true})") ||
+      !html.includes("'?refresh=1&_=' + Date.now()")) {
+    throw new Error(`${file}: 社区页缺少绕过缓存的强制刷新入口`);
+  }
   if (!html.includes("刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。")) {
     throw new Error(`${file}: 缺少社区数据短暂延迟的友好说明`);
   }
@@ -48,6 +53,10 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
   }
   if (!html.includes("data.cache_state === 'failed'")) {
     throw new Error(`${file}: 每日调用详情失败状态不能无限停在加载中`);
+  }
+  const heatmapNextHandlers = (html.match(/getElementById\('heatmapDetailNextBtn'\)\.addEventListener/g) || []).length;
+  if (heatmapNextHandlers !== 1) {
+    throw new Error(`${file}: 热力图详情分页按钮不能重复绑定旧逻辑`);
   }
   const versionHighlight = new RegExp(`['\"]${currentVersion}['\"]\\s*:\\s*\\[\\s*['\"][^'\"]+['\"]`, 's');
   if (!html.includes('id="aboutReleaseHighlights"') ||

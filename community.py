@@ -23,6 +23,7 @@ import urllib.error
 import datetime
 import plistlib
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 COMMUNITY_DIR = os.path.expanduser("~/.token_monitor")
 USER_ID_FILE = os.path.join(COMMUNITY_DIR, "community_id.txt")
@@ -349,7 +350,7 @@ def report_community_stats(today_usage):
     )
 
 
-def get_community_stats():
+def get_community_stats(force_refresh=False):
     """获取社区聚合统计 (带 5 分钟缓存)
 
     Returns:
@@ -367,7 +368,7 @@ def get_community_stats():
     """
     # 缓存检查
     now = time.time()
-    if _aggregate_cache["data"] and (now - _aggregate_cache["ts"]) < AGGREGATE_TTL:
+    if not force_refresh and _aggregate_cache["data"] and (now - _aggregate_cache["ts"]) < AGGREGATE_TTL:
         data = _aggregate_cache["data"].copy()
         data["opted_in"] = is_opted_in()
         data["my_id"] = get_user_id()
@@ -398,21 +399,31 @@ def get_community_stats():
     reports = []
     report_files = [f for f in files if isinstance(f, dict) and str(f.get("name", "")).endswith(".json")]
     read_failures = 0
-    for f in report_files[:200]:  # 限制最多 200 个用户 (防 API 超时)
-        if not isinstance(f, dict):
-            continue
+
+    def read_report(f):
         file_url = f.get("download_url") or f.get("url")
         if not file_url:
-            read_failures += 1
-            continue
+            return None
         try:
             report, read_error = _read_remote_json(file_url, token=token)
             if isinstance(report, dict) and report.get("id"):
-                reports.append(report)
-            elif read_error:
-                read_failures += 1
+                return report
         except Exception:
-            read_failures += 1
+            pass
+        return None
+
+    # GitCode 每份报告是独立文件。串行读取会让打开耗时随用户数线性增长，
+    # 用有限并发把等待压缩到最慢的一批请求，同时避免给公开接口造成突发压力。
+    selected_files = report_files[:200]
+    if selected_files:
+        with ThreadPoolExecutor(max_workers=min(8, len(selected_files))) as executor:
+            futures = [executor.submit(read_report, f) for f in selected_files]
+            for future in as_completed(futures):
+                report = future.result()
+                if report is None:
+                    read_failures += 1
+                else:
+                    reports.append(report)
 
     if report_files and not reports:
         return {

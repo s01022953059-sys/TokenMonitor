@@ -392,11 +392,11 @@ func updateCommunityProfile(displayName string) CommunityProfileResult {
 }
 
 // getCommunityStats 获取社区聚合统计 (带缓存)
-func getCommunityStats() map[string]interface{} {
+func getCommunityStats(forceRefresh bool) map[string]interface{} {
 	// 缓存 5 分钟
 	now := time.Now().Unix()
 	communityCacheMu.Lock()
-	if len(communityCache) > 0 && (now-communityCacheTs) < 300 {
+	if !forceRefresh && len(communityCache) > 0 && (now-communityCacheTs) < 300 {
 		result := map[string]interface{}{}
 		for k, v := range communityCache {
 			result[k] = v
@@ -442,18 +442,15 @@ func getCommunityStats() map[string]interface{} {
 	}
 	client := newProxyHTTPClient(8)
 
-	// 批量读取每个用户的 report
-	var reports []communityReportData
-	readFailures := 0
-	reportFileCount := 0
+	// GitCode 每份报告是独立文件，使用有限并发避免页面耗时随用户数线性增长。
+	var reportURLs []string
 	myID := getUserID()
 	for _, f := range files {
 		name, _ := f["name"].(string)
 		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
-		reportFileCount++
-		if reportFileCount > 200 {
+		if len(reportURLs) >= 200 {
 			break
 		}
 		dlURL, _ := f["download_url"].(string)
@@ -461,32 +458,44 @@ func getCommunityStats() map[string]interface{} {
 			dlURL, _ = f["url"].(string)
 		}
 		if dlURL == "" {
-			readFailures++
 			continue
 		}
-		req2, _ := http.NewRequest("GET", dlURL, nil)
-		if token != "" {
-			req2.Header.Set("Authorization", "Bearer "+token)
-		}
-		resp2, err := client.Do(req2)
-		if err != nil {
-			readFailures++
-			continue
-		}
-		body2, _ := io.ReadAll(resp2.Body)
-		resp2.Body.Close()
-		if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-			readFailures++
-			continue
-		}
-		var r communityReportData
-		if json.Unmarshal(body2, &r) == nil && r.ID != "" {
-			reports = append(reports, r)
+		reportURLs = append(reportURLs, dlURL)
+	}
+	type reportReadResult struct {
+		report communityReportData
+		ok     bool
+	}
+	results := make(chan reportReadResult, len(reportURLs))
+	workers := make(chan struct{}, 8)
+	for _, reportURL := range reportURLs {
+		go func(downloadURL string) {
+			workers <- struct{}{}
+			defer func() { <-workers }()
+			req, _ := http.NewRequest(http.MethodGet, downloadURL, nil)
+			resp, err := client.Do(req)
+			if err != nil {
+				results <- reportReadResult{}
+				return
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var report communityReportData
+			ok := resp.StatusCode >= 200 && resp.StatusCode < 300 && json.Unmarshal(body, &report) == nil && report.ID != ""
+			results <- reportReadResult{report: report, ok: ok}
+		}(reportURL)
+	}
+	var reports []communityReportData
+	readFailures := 0
+	for range reportURLs {
+		result := <-results
+		if result.ok {
+			reports = append(reports, result.report)
 		} else {
 			readFailures++
 		}
 	}
-	if reportFileCount > 0 && len(reports) == 0 {
+	if len(reportURLs) > 0 && len(reports) == 0 {
 		return map[string]interface{}{
 			"error": "社区报告存在，但本次全部读取失败，请稍后重试", "data_status": "load_failed",
 			"opted_in": isOptedIn(), "can_report": token != "", "my_id": getUserID(),

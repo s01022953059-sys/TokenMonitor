@@ -1,4 +1,6 @@
 import datetime
+import threading
+import time
 import os
 import tempfile
 import unittest
@@ -264,6 +266,48 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(result["today_active_users"], 2)
         self.assertEqual(result["total_tokens_today"], 210)
         self.assertEqual(result["leaderboard"][0]["tokens"], 200)
+
+    def test_force_refresh_bypasses_five_minute_cache(self):
+        community._aggregate_cache.update(data={"cached": True}, ts=time.time())
+        with mock.patch.object(community, "_gitcode_api", return_value=[]):
+            cached = community.get_community_stats()
+            fresh = community.get_community_stats(force_refresh=True)
+
+        self.assertTrue(cached["cached"])
+        self.assertNotIn("cached", fresh)
+
+    def test_report_files_are_read_with_bounded_concurrency(self):
+        today = datetime.date.today().isoformat()
+        files = [
+            {"name": f"User_{index}.json", "download_url": f"https://example.test/{index}"}
+            for index in range(12)
+        ]
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def slow_read(url, token=None):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return ({
+                "id": "User_" + url.rsplit("/", 1)[-1],
+                "report_date": today,
+                "today_tokens": 1,
+                "by_tool": {"Codex": 1},
+            }, None)
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=slow_read):
+            result = community.get_community_stats(force_refresh=True)
+
+        self.assertGreater(peak, 1)
+        self.assertLessEqual(peak, 8)
+        self.assertEqual(result["today_active_users"], 12)
 
 
 if __name__ == "__main__":
