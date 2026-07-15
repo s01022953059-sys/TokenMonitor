@@ -370,6 +370,15 @@
             text-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
         }
 
+        .donut-center .total-secondary {
+            margin-top: 7px;
+            color: var(--text-muted);
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+        }
+
         /* 工具占比卡片分布 */
         .legend-section {
             width: 100%;
@@ -1600,6 +1609,7 @@
                     <div class="donut-center low" id="toolDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="toolTotTokens">0</span>
+                        <span class="total-secondary" id="toolDonutSecondary">调用次数 0 次</span>
                     </div>
                 </div>
                 <div class="legend-section" id="toolLegendContainer">
@@ -1617,6 +1627,7 @@
                     <div class="donut-center low" id="modelDonutCenter">
                         <span class="total-label">今日总数</span>
                         <span class="total-value" id="modelTotTokens">0</span>
+                        <span class="total-secondary" id="modelDonutSecondary">缓存命中 0.0%</span>
                     </div>
                 </div>
                 <div class="legend-section" id="modelLegendContainer">
@@ -2238,10 +2249,18 @@
                 }
 
                 const formattedTotal = formatTokens(data.summary.total_tokens);
+                const requestCount = Number(data.summary.events_after_dedup || 0);
+                const inputTokens = Number(data.summary.input_tokens || 0);
+                const cachedTokens = Number(data.summary.input_cached || 0);
+                const cacheHitRate = inputTokens > 0
+                    ? ((cachedTokens / inputTokens) * 100).toFixed(1)
+                    : '0.0';
 
                 // 1. 更新圆心今日总数与日期
                 document.getElementById('toolTotTokens').innerText = formattedTotal;
                 document.getElementById('modelTotTokens').innerText = formattedTotal;
+                document.getElementById('toolDonutSecondary').innerText = `调用次数 ${requestCount.toLocaleString('zh-CN')} 次`;
+                document.getElementById('modelDonutSecondary').innerText = `缓存命中 ${cacheHitRate}%`;
                 document.getElementById('hdrDate').innerText = data.summary.date;
                 document.getElementById('hdrSaying').innerText = getDailyPengSaying(data.summary.date);
 
@@ -2666,6 +2685,10 @@
             '1.4.39': [
                 '修复热力图详情翻到最后一页后误报“该日暂无调用记录”。',
                 '统一详情分页入口，避免旧逻辑覆盖正确日期。'
+            ],
+            '1.4.40': [
+                '首页圆环增加调用次数与缓存命中率，今日用量更容易理解。',
+                'macOS 与 Windows 首页显示口径保持一致。'
             ]
         });
 

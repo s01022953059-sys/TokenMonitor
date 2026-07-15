@@ -104,6 +104,15 @@ CURRENT_VERSION=$(sed -n '/<key>CFBundleShortVersionString<\/key>/{n;s/.*<string
 test -n "$CURRENT_VERSION"
 
 "$PWCLI" open "http://127.0.0.1:$PORT" --browser msedge --headed >/dev/null
+for _ in {1..20}; do
+    CENTER_TEXT=$($PWCLI eval "() => document.getElementById('toolDonutSecondary').innerText + '|' + document.getElementById('modelDonutSecondary').innerText")
+    if printf '%s\n' "$CENTER_TEXT" | grep -q "调用次数" && printf '%s\n' "$CENTER_TEXT" | grep -q "缓存命中"; then
+        break
+    fi
+    sleep 0.1
+done
+printf '%s\n' "$CENTER_TEXT" | grep -q "调用次数"
+printf '%s\n' "$CENTER_TEXT" | grep -q "缓存命中"
 "$PWCLI" eval "() => document.getElementById('heatmapOpenBtn').click()" >/dev/null
 SNAPSHOT=$("$PWCLI" snapshot)
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_30 至"

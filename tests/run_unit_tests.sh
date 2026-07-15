@@ -68,6 +68,12 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('window.__TOKEN_MONITOR_DESKTOP__')) {
     throw new Error(`${file}: 双端单一内容面标识缺失`);
   }
+  if (!html.includes('id="toolDonutSecondary"') ||
+      !html.includes('id="modelDonutSecondary"') ||
+      !html.includes('缓存命中 ${cacheHitRate}%') ||
+      !html.includes('调用次数 ${requestCount.toLocaleString')) {
+    throw new Error(`${file}: 圆环中心辅助指标缺失或未绑定真实汇总数据`);
+  }
   if (!html.includes('class="community-scroll-region"') ||
       !html.includes('#communityModal .modal-content') ||
       !html.includes('scrollbar-gutter: stable') ||
