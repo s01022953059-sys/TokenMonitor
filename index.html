@@ -1119,6 +1119,38 @@
         .session-header span { text-align: right; }
         .session-header span:nth-child(1), .session-header span:nth-child(2) { text-align: left; }
         .session-header span:nth-child(3) { text-align: left; }
+        .session-filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-subtle);
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .session-filter-bar select,
+        .session-filter-bar input {
+            min-width: 92px;
+            padding: 4px 7px;
+            border: 1px solid var(--border-card);
+            border-radius: 5px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font: inherit;
+        }
+        .session-filter-bar input[type="time"] { min-width: 86px; }
+        .session-filter-reset {
+            margin-left: auto;
+            padding: 4px 8px;
+            border: 1px solid var(--border-card);
+            border-radius: 5px;
+            background: transparent;
+            color: var(--text-muted);
+            font: inherit;
+            cursor: pointer;
+        }
 
         /* ===== 热力图 ===== */
         .heatmap-grid-wrap {
@@ -1698,6 +1730,16 @@
                 <button id="heatmapDetailCloseBtn" class="close-btn">&times;</button>
             </div>
             <div id="heatmapDetailSummary" class="heatmap-stats" style="padding: 0 16px 12px;"></div>
+            <div class="session-filter-bar" id="heatmapDetailFilters">
+                <span>筛选</span>
+                <select id="heatmapDetailToolFilter" aria-label="按工具筛选"><option value="">全部工具</option></select>
+                <select id="heatmapDetailModelFilter" aria-label="按模型筛选"><option value="">全部模型</option></select>
+                <span>时间</span>
+                <input id="heatmapDetailStartTime" type="time" aria-label="开始时间">
+                <span>至</span>
+                <input id="heatmapDetailEndTime" type="time" aria-label="结束时间">
+                <button id="heatmapDetailResetFilter" class="session-filter-reset" type="button">清除筛选</button>
+            </div>
             <div id="heatmapDetailList" style="max-height: 50vh; overflow-y: auto; font-size: 12px;">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>
             </div>
@@ -2689,6 +2731,10 @@
             '1.4.40': [
                 '首页圆环增加调用次数与缓存命中率，今日用量更容易理解。',
                 'macOS 与 Windows 首页显示口径保持一致。'
+            ],
+            '1.4.41': [
+                '调用详情支持按工具、模型和时间范围组合筛选。',
+                '筛选结果同步更新统计卡片与分页，并复用本地快照。'
             ]
         });
 
@@ -3809,7 +3855,28 @@
         });
 
         // ===== 热力图下钻 =====
-        let _heatmapDetailState = { date: '', page: 1, pageSize: 50 };
+        let _heatmapDetailState = { date: '', page: 1, pageSize: 50, tool: '', model: '', startTime: '', endTime: '' };
+        function renderHeatmapDetailFilters(options) {
+            const toolEl = document.getElementById('heatmapDetailToolFilter');
+            const modelEl = document.getElementById('heatmapDetailModelFilter');
+            if (!toolEl || !modelEl) return;
+            const selectedTool = _heatmapDetailState.tool;
+            const selectedModel = _heatmapDetailState.model;
+            const tools = (options && options.tools) || [];
+            const models = (options && options.models) || [];
+            toolEl.innerHTML = '<option value="">全部工具</option>' + tools.map(value => '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>').join('');
+            modelEl.innerHTML = '<option value="">全部模型</option>' + models.map(value => '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>').join('');
+            toolEl.value = tools.includes(selectedTool) ? selectedTool : '';
+            modelEl.value = models.includes(selectedModel) ? selectedModel : '';
+            document.getElementById('heatmapDetailStartTime').value = _heatmapDetailState.startTime;
+            document.getElementById('heatmapDetailEndTime').value = _heatmapDetailState.endTime;
+        }
+        function readHeatmapDetailFilters() {
+            _heatmapDetailState.tool = document.getElementById('heatmapDetailToolFilter').value;
+            _heatmapDetailState.model = document.getElementById('heatmapDetailModelFilter').value;
+            _heatmapDetailState.startTime = document.getElementById('heatmapDetailStartTime').value;
+            _heatmapDetailState.endTime = document.getElementById('heatmapDetailEndTime').value;
+        }
         function renderHeatmapDetailSummary(summary) {
             const el = document.getElementById('heatmapDetailSummary');
             if (!summary || !summary.call_count) {
@@ -3850,6 +3917,7 @@
             _heatmapDetailState.date = date;
             _heatmapDetailState.page = page;
             _heatmapDetailState.pageSize = parseInt(document.getElementById('heatmapDetailPageSize').value);
+            readHeatmapDetailFilters();
             const modal = document.getElementById('heatmapDetailModal');
             const titleEl = document.getElementById('heatmapDetailTitle');
             const listEl = document.getElementById('heatmapDetailList');
@@ -3859,9 +3927,23 @@
             document.getElementById('heatmapDetailSummary').innerHTML = '';
             document.getElementById('heatmapDetailSummary').style.display = 'none';
             modal.classList.add('active');
+            if (_heatmapDetailState.startTime && _heatmapDetailState.endTime && _heatmapDetailState.startTime > _heatmapDetailState.endTime) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">结束时间需晚于开始时间</div>';
+                return;
+            }
             try {
-                const res = await fetch(API_BASE + '/api/heatmap_detail?date=' + date + '&page=' + _heatmapDetailState.page + '&page_size=' + _heatmapDetailState.pageSize, { cache: 'no-store' });
+                const params = new URLSearchParams({
+                    date: date,
+                    page: String(_heatmapDetailState.page),
+                    page_size: String(_heatmapDetailState.pageSize),
+                    tool: _heatmapDetailState.tool,
+                    model: _heatmapDetailState.model,
+                    start_time: _heatmapDetailState.startTime,
+                    end_time: _heatmapDetailState.endTime
+                });
+                const res = await fetch(API_BASE + '/api/heatmap_detail?' + params.toString(), { cache: 'no-store' });
                 const data = await res.json();
+                renderHeatmapDetailFilters(data.filter_options);
                 if (data.cache_state === 'warming') {
                     listEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">正在整理当天明细…</div>';
                     if (retryCount < 12) {
@@ -3901,6 +3983,20 @@
             loadHeatmapDayDetail(_heatmapDetailState.date, _heatmapDetailState.page + 1);
         });
         document.getElementById('heatmapDetailPageSize').addEventListener('change', () => {
+            loadHeatmapDayDetail(_heatmapDetailState.date, 1);
+        });
+        ['heatmapDetailToolFilter', 'heatmapDetailModelFilter', 'heatmapDetailStartTime', 'heatmapDetailEndTime'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                readHeatmapDetailFilters();
+                loadHeatmapDayDetail(_heatmapDetailState.date, 1);
+            });
+        });
+        document.getElementById('heatmapDetailResetFilter').addEventListener('click', () => {
+            _heatmapDetailState.tool = '';
+            _heatmapDetailState.model = '';
+            _heatmapDetailState.startTime = '';
+            _heatmapDetailState.endTime = '';
+            renderHeatmapDetailFilters({ tools: [], models: [] });
             loadHeatmapDayDetail(_heatmapDetailState.date, 1);
         });
 

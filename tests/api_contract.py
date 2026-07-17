@@ -219,11 +219,19 @@ class APIContractTests(unittest.TestCase):
             time.sleep(0.05)
             detail = self.get(f"/api/heatmap_detail?date={heatmap['end_date']}&page=1&page_size=1")
         self.assertNotEqual(detail.get("cache_state"), "warming")
+        self.assertIn("filter_options", detail)
+        self.assertIn("tools", detail["filter_options"])
+        self.assertIn("models", detail["filter_options"])
         started = time.monotonic()
         repaged = self.get(f"/api/heatmap_detail?date={heatmap['end_date']}&page=1&page_size=20")
         self.assertLess(time.monotonic() - started, 0.5)
         self.assertNotEqual(repaged.get("cache_state"), "warming")
         self.assertEqual(repaged["page_size"], 20)
+        filtered = self.get(
+            f"/api/heatmap_detail?date={heatmap['end_date']}&tool=Codex&model=missing-model&start_time=09:00&end_time=18:00&page=1&page_size=20"
+        )
+        self.assertEqual(filtered["total"], 0)
+        self.assertEqual(filtered["summary"]["call_count"], 0)
 
         session_id = "019f0000-1111-2222-3333-444444444444"
         started = time.monotonic()

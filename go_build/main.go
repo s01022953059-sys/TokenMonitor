@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.40"
+var appVersion = "1.4.41"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -126,12 +126,13 @@ type SessionEntry struct {
 }
 
 type SessionListResponse struct {
-	Sessions   []SessionEntry         `json:"sessions"`
-	Total      int                    `json:"total"`
-	Page       int                    `json:"page"`
-	PageSize   int                    `json:"page_size"`
-	TotalPages int                    `json:"total_pages"`
-	Summary    map[string]interface{} `json:"summary,omitempty"`
+	Sessions      []SessionEntry         `json:"sessions"`
+	Total         int                    `json:"total"`
+	Page          int                    `json:"page"`
+	PageSize      int                    `json:"page_size"`
+	TotalPages    int                    `json:"total_pages"`
+	Summary       map[string]interface{} `json:"summary,omitempty"`
+	FilterOptions map[string][]string    `json:"filter_options,omitempty"`
 }
 
 func paginatedSessionList(sessions []SessionEntry, summary map[string]interface{}, page, pageSize int) SessionListResponse {
@@ -1989,7 +1990,58 @@ func getCachedHeatmap(days int) HeatmapResponse {
 }
 
 // ───── API: /api/heatmap_detail ─────
-func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) SessionListResponse {
+func heatmapDetailFilterOptions(sessions []SessionEntry) map[string][]string {
+	tools := map[string]bool{}
+	models := map[string]bool{}
+	for _, session := range sessions {
+		if session.Tool != "" {
+			tools[session.Tool] = true
+		}
+		if session.Model != "" {
+			models[session.Model] = true
+		}
+	}
+	toolList := make([]string, 0, len(tools))
+	modelList := make([]string, 0, len(models))
+	for value := range tools {
+		toolList = append(toolList, value)
+	}
+	for value := range models {
+		modelList = append(modelList, value)
+	}
+	sort.Strings(toolList)
+	sort.Strings(modelList)
+	return map[string][]string{"tools": toolList, "models": modelList}
+}
+
+func filterHeatmapDetailSessions(sessions []SessionEntry, tool, model, startTime, endTime string) []SessionEntry {
+	filtered := make([]SessionEntry, 0, len(sessions))
+	for _, session := range sessions {
+		if tool != "" && session.Tool != tool {
+			continue
+		}
+		if model != "" && session.Model != model {
+			continue
+		}
+		clock := session.Time
+		if idx := strings.LastIndex(clock, " "); idx >= 0 {
+			clock = clock[idx+1:]
+		}
+		if len(clock) >= 5 {
+			clock = clock[:5]
+		}
+		if startTime != "" && clock < startTime {
+			continue
+		}
+		if endTime != "" && clock > endTime {
+			continue
+		}
+		filtered = append(filtered, session)
+	}
+	return filtered
+}
+
+func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, model, startTime, endTime string) SessionListResponse {
 	now := time.Now()
 	start := now.AddDate(0, 0, -(days - 1))
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
@@ -2059,37 +2111,42 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr string) S
 		})
 	}
 
-	// 当天统计 (与 Python scanner.get_heatmap_detail 保持一致)
-	summary := map[string]interface{}{
-		"total_tokens":   0,
-		"total_cached":   0,
-		"call_count":     0,
-		"avg_latency_ms": 0,
-		"max_latency_ms": 0,
-		"peak_tokens":    0,
-		"peak_time":      "",
+	filteredSessions := filterHeatmapDetailSessions(sessions, tool, model, startTime, endTime)
+	filteredSummary := map[string]interface{}{
+		"total_tokens": int64(0), "total_cached": int64(0), "call_count": len(filteredSessions),
+		"avg_latency_ms": int64(0), "max_latency_ms": int64(0), "peak_tokens": int64(0), "peak_time": "",
 	}
-	if len(filtered) > 0 {
-		var totalTokens, totalCached int64
-		peakIdx := 0
-		for i, s := range sessions {
-			totalTokens += s.TotalTokens
-			totalCached += s.InputCached
-			if s.TotalTokens > sessions[peakIdx].TotalTokens {
-				peakIdx = i
+	var latencyTotal int64
+	peak := SessionEntry{}
+	for i, session := range filteredSessions {
+		filteredSummary["total_tokens"] = filteredSummary["total_tokens"].(int64) + session.TotalTokens
+		filteredSummary["total_cached"] = filteredSummary["total_cached"].(int64) + session.InputCached
+		if session.LatencyMs > 0 {
+			latencyTotal += session.LatencyMs
+			if session.LatencyMs > filteredSummary["max_latency_ms"].(int64) {
+				filteredSummary["max_latency_ms"] = session.LatencyMs
 			}
 		}
-		summary["total_tokens"] = totalTokens
-		summary["total_cached"] = totalCached
-		summary["call_count"] = len(sessions)
-		summary["peak_tokens"] = sessions[peakIdx].TotalTokens
-		summary["peak_time"] = sessions[peakIdx].Time
-		// avg/max latency: Go 当前 cc-switch 不存 latency, 给 0 占位
-		summary["avg_latency_ms"] = 0
-		summary["max_latency_ms"] = 0
+		if i == 0 || session.TotalTokens > peak.TotalTokens {
+			peak = session
+		}
 	}
-
-	return paginatedSessionList(sessions, summary, page, pageSize)
+	if len(filteredSessions) > 0 {
+		filteredSummary["peak_tokens"] = peak.TotalTokens
+		filteredSummary["peak_time"] = peak.Time
+	}
+	latencyCount := int64(0)
+	for _, session := range filteredSessions {
+		if session.LatencyMs > 0 {
+			latencyCount++
+		}
+	}
+	if latencyCount > 0 {
+		filteredSummary["avg_latency_ms"] = latencyTotal / latencyCount
+	}
+	result := paginatedSessionList(filteredSessions, filteredSummary, page, pageSize)
+	result.FilterOptions = heatmapDetailFilterOptions(sessions)
+	return result
 }
 
 func main() {
@@ -2255,7 +2312,11 @@ func main() {
 		if pageSize < 1 {
 			pageSize = 50
 		}
-		writeJSON(w, 200, getHeatmapDetail(weekday, hour, days, page, pageSize, dateStr))
+		writeJSON(w, 200, getHeatmapDetail(
+			weekday, hour, days, page, pageSize, dateStr,
+			r.URL.Query().Get("tool"), r.URL.Query().Get("model"),
+			r.URL.Query().Get("start_time"), r.URL.Query().Get("end_time"),
+		))
 	})
 	// 社区 Dashboard API
 	http.HandleFunc("/api/community", func(w http.ResponseWriter, r *http.Request) {

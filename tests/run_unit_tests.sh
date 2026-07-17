@@ -74,6 +74,15 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('调用次数 ${requestCount.toLocaleString')) {
     throw new Error(`${file}: 圆环中心辅助指标缺失或未绑定真实汇总数据`);
   }
+  if (!html.includes('heatmapDetailToolFilter') ||
+      !html.includes('heatmapDetailModelFilter') ||
+      !html.includes('heatmapDetailStartTime') ||
+      !html.includes('heatmapDetailEndTime') ||
+      !html.includes('filter_options') ||
+      !html.includes('start_time') ||
+      !html.includes('end_time')) {
+    throw new Error(`${file}: 调用详情缺少按工具/模型/时间筛选能力`);
+  }
   if (!html.includes('class="community-scroll-region"') ||
       !html.includes('#communityModal .modal-content') ||
       !html.includes('scrollbar-gutter: stable') ||

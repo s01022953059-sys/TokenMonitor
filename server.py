@@ -343,23 +343,67 @@ def _save_heatmap_detail_cache(cache):
     os.replace(temporary, HEATMAP_DETAIL_CACHE_PATH)
 
 
-def _paginate_heatmap_detail_snapshot(snapshot, date, page, page_size):
-    """完整日快照只扫描一次，任意分页请求在内存中切片。"""
+def _filter_heatmap_detail_sessions(sessions, tool="", model="", start_time="", end_time=""):
+    """在已缓存的日快照上过滤，避免按筛选条件重新扫描日志。"""
+    tool = str(tool or "").strip()
+    model = str(model or "").strip()
+    start_time = str(start_time or "").strip()
+    end_time = str(end_time or "").strip()
+    filtered = []
+    for session in sessions:
+        if tool and session.get("tool") != tool:
+            continue
+        if model and session.get("model") != model:
+            continue
+        clock = str(session.get("time") or "").split(" ")[-1][:5]
+        if start_time and clock < start_time:
+            continue
+        if end_time and clock > end_time:
+            continue
+        filtered.append(session)
+    return filtered
+
+
+def _heatmap_detail_filter_options(snapshot):
+    sessions = list((snapshot or {}).get("sessions") or [])
+    return {
+        "tools": sorted({str(s.get("tool")) for s in sessions if s.get("tool")}),
+        "models": sorted({str(s.get("model")) for s in sessions if s.get("model")}),
+    }
+
+
+def _paginate_heatmap_detail_snapshot(snapshot, date, page, page_size,
+                                      tool="", model="", start_time="", end_time=""):
+    """完整日快照只扫描一次，筛选和分页都在内存中完成。"""
     try:
         page = max(1, int(page))
         page_size = max(1, int(page_size))
     except (TypeError, ValueError):
         page, page_size = 1, 50
-    sessions = list((snapshot or {}).get("sessions") or [])
+    sessions = _filter_heatmap_detail_sessions(
+        list((snapshot or {}).get("sessions") or []), tool, model, start_time, end_time
+    )
     total = len(sessions)
     start = (page - 1) * page_size
+    latencies = [s.get("latency_ms", 0) for s in sessions if s.get("latency_ms", 0) > 0]
+    peak = max(sessions, key=lambda s: s.get("total_tokens", 0), default=None)
+    summary = {
+        "total_tokens": sum(s.get("total_tokens", 0) for s in sessions),
+        "total_cached": sum(s.get("input_cached", 0) for s in sessions),
+        "call_count": total,
+        "avg_latency_ms": int(sum(latencies) / len(latencies)) if latencies else 0,
+        "max_latency_ms": max(latencies) if latencies else 0,
+        "peak_tokens": peak.get("total_tokens", 0) if peak else 0,
+        "peak_time": peak.get("time", "") if peak else "",
+    }
     return {
         "sessions": sessions[start:start + page_size],
         "total": total,
         "page": page,
         "page_size": page_size,
         "total_pages": max(1, (total + page_size - 1) // page_size),
-        "summary": dict((snapshot or {}).get("summary") or {}),
+        "summary": summary,
+        "filter_options": _heatmap_detail_filter_options(snapshot),
         "date": date,
     }
 
@@ -401,11 +445,14 @@ def _start_heatmap_detail_refresh(date):
     ).start()
 
 
-def get_cached_heatmap_detail(date, page=1, page_size=50):
+def get_cached_heatmap_detail(date, page=1, page_size=50, tool="", model="",
+                              start_time="", end_time=""):
     """详情页优先返回本地快照，扫描仅在后台运行。"""
     entry = _load_heatmap_detail_cache()["entries"].get(date)
     if entry and isinstance(entry.get("data"), dict):
-        result = _paginate_heatmap_detail_snapshot(entry["data"], date, page, page_size)
+        result = _paginate_heatmap_detail_snapshot(
+            entry["data"], date, page, page_size, tool, model, start_time, end_time
+        )
         if time.time() - float(entry.get("saved_at", 0)) > HEATMAP_DETAIL_CACHE_TTL:
             result["cache_state"] = "stale"
             _start_heatmap_detail_refresh(date)
@@ -824,10 +871,17 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 days = int(qs.get("days", ["30"])[0])
                 page = int(qs.get("page", ["1"])[0])
                 page_size = int(qs.get("page_size", ["50"])[0])
+                tool = qs.get("tool", [""])[0]
+                model = qs.get("model", [""])[0]
+                start_time = qs.get("start_time", [""])[0]
+                end_time = qs.get("end_time", [""])[0]
                 weekday = int(weekday_str) if weekday_str is not None else None
                 hour = int(hour_str) if hour_str is not None else None
                 if date:
-                    self._write_json(200, get_cached_heatmap_detail(date, page=page, page_size=page_size))
+                    self._write_json(200, get_cached_heatmap_detail(
+                        date, page=page, page_size=page_size, tool=tool, model=model,
+                        start_time=start_time, end_time=end_time
+                    ))
                 else:
                     self._write_json(200, get_heatmap_detail(weekday=weekday, hour=hour, days=days, page=page, page_size=page_size))
             except Exception as exc:
