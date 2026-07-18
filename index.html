@@ -2735,6 +2735,10 @@
             '1.4.42': [
                 '修复 WorkBuddy 调用统计详情无法打开的问题。',
                 'WorkBuddy 无正文时显示准确提示，不再误标为 cc-switch。'
+            ],
+            '1.4.43': [
+                'Claude 调用详情接入本机原生日志，可查看用户消息和助手回复。',
+                'Claude 详情增加缓存分页；找不到正文时显示准确的代理记录提示。'
             ]
         });
 
@@ -4041,6 +4045,8 @@
                         '<div style="font-size:10px; line-height: 1.6; max-width: 360px; margin: 0 auto;">' +
                         (_chatDetailState.tool === 'WorkBuddy' ?
                             'WorkBuddy 当前记录未保存可回放的消息正文。<br>如需查看完整对话，请在 WorkBuddy 客户端中打开对应会话。' :
+                        _chatDetailState.tool === 'Claude' ?
+                            'Claude 代理记录只保存模型、Token 和时间。<br>如果本机存在对应 Claude 原生日志，应用会自动展示；当前未找到可关联的正文。' :
                             '当前数据源只记录请求元数据（模型、Token、时间），未保存请求/响应原文。<br>' +
                             '如需查看完整对话，请到对应客户端本地日志查看。') +
                         '</div></div>';

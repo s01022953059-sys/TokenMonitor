@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.42**。
+当前发布版本：**v1.4.43**。
 
 ## 功能
 
@@ -62,6 +62,12 @@
 - 每个弹窗底部显示总条数和当前页码
 - 对话内容从 Codex rollout JSONL 文件中提取，按角色着色区分
 - WorkBuddy 调用会从对应项目 JSONL 提取用户消息和助手回复；如果该记录只有用量元数据，会明确提示无法回放正文，不再误显示为 cc-switch 原因
+- Claude 调用会按 `session_id` 读取 `~/.claude/projects/**/*.jsonl` 中的原生 user/assistant 消息；如果只有 cc-switch 代理元数据或原生日志已不存在，会明确提示原因
+
+### v1.4.43
+
+- Claude 调用详情接入本机原生日志，支持查看用户消息和助手回复。
+- 增加 Claude 原生日志缓存与分页解析；找不到正文时显示准确的代理元数据提示。
 
 ### 社区用量排行
 
@@ -232,7 +238,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -254,7 +260,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -376,10 +382,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.42](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.42)
+最新版本：[v1.4.43](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.43)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 

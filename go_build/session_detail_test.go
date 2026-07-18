@@ -136,3 +136,43 @@ func TestWorkBuddySessionDetailReadsMessageContent(t *testing.T) {
 		t.Fatalf("unexpected WorkBuddy detail: %+v", detail)
 	}
 }
+
+func TestClaudeSessionDetailReadsNativeJSONLContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resetSessionDetailCacheForTest()
+	path := filepath.Join(home, ".claude", "projects", "project", "session-claude.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder := json.NewEncoder(file)
+	for _, row := range []map[string]interface{}{
+		{"type": "user", "timestamp": "2026-07-18T12:00:00.000Z", "message": map[string]interface{}{"role": "user", "content": []map[string]string{{"type": "text", "text": "hello"}}}},
+		{"type": "assistant", "timestamp": "2026-07-18T12:00:01.000Z", "message": map[string]interface{}{"role": "assistant", "content": []map[string]string{{"type": "text", "text": "world"}}}},
+	} {
+		if err := encoder.Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	detail := getSessionDetail("session-claude", 1, 1, "Claude")
+	if detail.DetailSource != "claude" || detail.Total != 2 || len(detail.Messages) != 1 || detail.Messages[0].Text != "hello" {
+		t.Fatalf("unexpected Claude detail: %+v", detail)
+	}
+}
+
+func TestClaudeSessionDetailFallsBackWhenNativeLogIsMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resetSessionDetailCacheForTest()
+	detail := getSessionDetail("missing-claude", 1, 20, "Claude")
+	if detail.DetailSource != "claude_proxy" || detail.Total != 0 || len(detail.Messages) != 0 {
+		t.Fatalf("unexpected Claude fallback: %+v", detail)
+	}
+}

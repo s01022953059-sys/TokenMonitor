@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.42"
+var appVersion = "1.4.43"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -54,6 +54,7 @@ type sessionDetailCacheKey struct {
 	ModTime int64
 	Size    int64
 	Limit   int
+	Parser  string
 }
 
 var sessionDetailCacheMu sync.Mutex
@@ -1673,7 +1674,10 @@ func parseWorkBuddyMessages(path string, maxMessages int) ([]SessionMessage, err
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
 	for scanner.Scan() {
-		if len(messages) >= maxMessages || len(scanner.Bytes()) == 0 {
+		if len(messages) >= maxMessages {
+			break
+		}
+		if len(scanner.Bytes()) == 0 {
 			continue
 		}
 		var item map[string]interface{}
@@ -1708,6 +1712,90 @@ func findWorkBuddySessionFile(sessionID string) string {
 	}
 	var result string
 	filepath.Walk(workbuddyProjectsPath(), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if strings.TrimSuffix(info.Name(), filepath.Ext(info.Name())) == sessionID {
+			result = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return result
+}
+
+func claudeProjectsPath() string {
+	return filepath.Join(homeDir(), ".claude", "projects")
+}
+
+func claudeMessageText(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	items, ok := value.([]interface{})
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			parts = append(parts, text)
+			continue
+		}
+		if obj, ok := item.(map[string]interface{}); ok && obj["type"] == "text" {
+			if text, ok := obj["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func parseClaudeMessages(path string, maxMessages int) ([]SessionMessage, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	messages := make([]SessionMessage, 0, maxMessages)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+	for scanner.Scan() {
+		if len(messages) >= maxMessages || len(scanner.Bytes()) == 0 {
+			continue
+		}
+		var item map[string]interface{}
+		if json.Unmarshal(scanner.Bytes(), &item) != nil {
+			continue
+		}
+		typeName, _ := item["type"].(string)
+		if typeName != "user" && typeName != "assistant" {
+			continue
+		}
+		payload, _ := item["message"].(map[string]interface{})
+		role, _ := payload["role"].(string)
+		if role != "user" && role != "assistant" {
+			role = typeName
+		}
+		text := claudeMessageText(payload["content"])
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if len(text) > 5000 {
+			text = text[:5000] + "\n...(内容过长已截断)"
+		}
+		timestamp, _ := item["timestamp"].(string)
+		messages = append(messages, SessionMessage{Role: role, Text: text, Timestamp: timestamp})
+	}
+	return messages, scanner.Err()
+}
+
+func findClaudeSessionFile(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	var result string
+	filepath.Walk(claudeProjectsPath(), func(path string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
 			return nil
 		}
@@ -1786,12 +1874,12 @@ func parseSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage
 	return messages, scanner.Err()
 }
 
-func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
+func cachedSessionMessagesWithParser(rolloutPath string, maxMessages int, parserName string, parser func(string, int) ([]SessionMessage, error)) ([]SessionMessage, error) {
 	stat, err := os.Stat(rolloutPath)
 	if err != nil {
 		return nil, err
 	}
-	key := sessionDetailCacheKey{Path: rolloutPath, ModTime: stat.ModTime().UnixNano(), Size: stat.Size(), Limit: maxMessages}
+	key := sessionDetailCacheKey{Path: rolloutPath, ModTime: stat.ModTime().UnixNano(), Size: stat.Size(), Limit: maxMessages, Parser: parserName}
 
 	sessionDetailCacheMu.Lock()
 	if cached, ok := sessionDetailCache[key]; ok {
@@ -1810,7 +1898,7 @@ func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessag
 	sessionDetailInflight[key] = wait
 	sessionDetailCacheMu.Unlock()
 
-	messages, parseErr := sessionDetailParser(rolloutPath, maxMessages)
+	messages, parseErr := parser(rolloutPath, maxMessages)
 	sessionDetailCacheMu.Lock()
 	if parseErr == nil {
 		filtered := sessionDetailCacheOrder[:0]
@@ -1833,6 +1921,10 @@ func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessag
 	close(wait)
 	sessionDetailCacheMu.Unlock()
 	return messages, parseErr
+}
+
+func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
+	return cachedSessionMessagesWithParser(rolloutPath, maxMessages, "codex", sessionDetailParser)
 }
 
 func getSessionDetail(sessionID string, page, pageSize int, requestedTool ...string) SessionDetailResponse {
@@ -1860,6 +1952,35 @@ func getSessionDetail(sessionID string, page, pageSize int, requestedTool ...str
 		if err != nil {
 			return resp
 		}
+		resp.Messages = messages
+		resp.Total = len(messages)
+		resp.TotalPages = (resp.Total + pageSize - 1) / pageSize
+		if resp.TotalPages < 1 {
+			resp.TotalPages = 1
+		}
+		start := (page - 1) * pageSize
+		end := start + pageSize
+		if start >= resp.Total {
+			resp.Messages = []SessionMessage{}
+		} else {
+			if end > resp.Total {
+				end = resp.Total
+			}
+			resp.Messages = resp.Messages[start:end]
+		}
+		return resp
+	}
+	if tool == "Claude" {
+		resp.DetailSource = "claude_proxy"
+		path := findClaudeSessionFile(sessionID)
+		if path == "" {
+			return resp
+		}
+		messages, err := cachedSessionMessagesWithParser(path, 500, "claude", parseClaudeMessages)
+		if err != nil {
+			return resp
+		}
+		resp.DetailSource = "claude"
 		resp.Messages = messages
 		resp.Total = len(messages)
 		resp.TotalPages = (resp.Total + pageSize - 1) / pageSize

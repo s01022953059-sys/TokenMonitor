@@ -161,6 +161,34 @@ class ScannerAccuracyTests(unittest.TestCase):
         self.assertEqual(detail["messages"][0]["text"], "hello")
         self.assertEqual(detail["total_pages"], 2)
 
+    def test_claude_session_detail_reads_native_jsonl_content(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = os.path.join(root, "project")
+            os.makedirs(project)
+            path = os.path.join(project, "session-claude.jsonl")
+            rows = [
+                {"type": "user", "timestamp": "2026-07-18T12:00:00.000Z",
+                 "message": {"role": "user", "content": [{"type": "text", "text": "hello"}]}},
+                {"type": "assistant", "timestamp": "2026-07-18T12:00:01.000Z",
+                 "message": {"role": "assistant", "content": [{"type": "text", "text": "world"}]}},
+            ]
+            with open(path, "w", encoding="utf-8") as stream:
+                for row in rows:
+                    stream.write(json.dumps(row) + "\n")
+            with mock.patch.object(scanner, "CLAUDE_PROJECTS_DIR", root):
+                detail = scanner.get_session_detail("session-claude", tool="Claude", page_size=1)
+
+        self.assertEqual(detail["detail_source"], "claude")
+        self.assertEqual(detail["total"], 2)
+        self.assertEqual(detail["messages"][0]["text"], "hello")
+        self.assertEqual(detail["total_pages"], 2)
+
+    def test_claude_session_detail_reports_proxy_when_native_log_is_missing(self):
+        with mock.patch.object(scanner, "CLAUDE_PROJECTS_DIR", "/path/does/not/exist"):
+            detail = scanner.get_session_detail("missing-claude", tool="Claude")
+        self.assertEqual(detail["detail_source"], "claude_proxy")
+        self.assertEqual(detail["messages"], [])
+
     def test_history_and_heatmap_use_the_same_event_set(self):
         timestamp = int(datetime.datetime.now().timestamp())
         event = {

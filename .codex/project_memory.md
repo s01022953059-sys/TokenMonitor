@@ -375,5 +375,16 @@
 - WorkBuddy 用量事件来自项目 JSONL；点击调用详情时必须按 `tool=WorkBuddy` 查找同名项目文件并解析 `message` 行，不能复用只查 Codex rollout 的逻辑。
 - 无正文时提示必须说明“该记录未保存可回放消息”，不能显示 cc-switch 的通用提示。
 
+## Claude 详情口径（2026-07-18）
+
+- Claude 的 cc-switch `proxy_request_logs.session_id` 与 `~/.claude/projects/**/*.jsonl` 文件名中的 session ID 对齐；调用详情必须优先按该 ID 读取 Claude Code 原生日志。
+- Claude 原生日志解析 `type=user/assistant` 的 `message.content`，只展示文本块，忽略图片、工具调用和工具结果；消息快照沿用文件指纹缓存与分页切片。
+- 找不到对应原生日志时，必须显示 Claude 专属提示：代理记录只保存模型、Token、时间，当前没有可关联的正文；不能泛化成“所有数据源都不保存原文”。
+
 ### v1.4.42 (2026-07-18)
 - 修复 WorkBuddy 调用详情无法从项目 JSONL 打开的问题，并同步修正无正文提示。
+
+### v1.4.43 (2026-07-19)
+- Claude 调用详情按 `session_id` 读取本机 `~/.claude/projects/**/*.jsonl` 原生日志，支持查看用户消息和助手回复。
+- 增加 Claude 原生日志的文件指纹缓存与分页；找不到原生日志时明确显示代理元数据提示，避免误导用户。
+- 发布前必须通过 Python 单元、Go 单元、API 契约、E2E 和双平台构建验证。

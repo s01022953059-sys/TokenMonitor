@@ -21,6 +21,7 @@ ANTIGRAVITY_STATS_PATH = os.path.expanduser(
 HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
 WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
 WORKBUDDY_PROJECTS_DIR = os.path.expanduser("~/.workbuddy/projects")
+CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 CODEX_LOG_DB_PATH = os.path.expanduser("~/.codex/logs_2.sqlite")
 CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
 CODEX_ARCHIVED_SESSIONS_DIR = os.path.expanduser("~/.codex/archived_sessions")
@@ -1314,7 +1315,9 @@ def _parse_workbuddy_messages(path, max_messages):
     messages = []
     with open(path, "r", encoding="utf-8") as stream:
         for line in stream:
-            if not line.strip() or len(messages) >= max_messages:
+            if len(messages) >= max_messages:
+                break
+            if not line.strip():
                 continue
             try:
                 item = json.loads(line)
@@ -1338,6 +1341,61 @@ def _find_workbuddy_session_file(session_id):
     if not session_id or not os.path.isdir(WORKBUDDY_PROJECTS_DIR):
         return None
     for path in glob.iglob(os.path.join(WORKBUDDY_PROJECTS_DIR, "**", "*.jsonl"), recursive=True):
+        if os.path.splitext(os.path.basename(path))[0] == session_id:
+            return path
+    return None
+
+
+def _claude_text(value):
+    """提取 Claude 原生日志消息中的文本，忽略图片、工具调用和工具结果。"""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict) and item.get("type") == "text":
+            text = item.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _parse_claude_messages(path, max_messages):
+    """读取 Claude Code 原生日志中的 user/assistant 文本消息。"""
+    messages = []
+    with open(path, "r", encoding="utf-8") as stream:
+        for line in stream:
+            if len(messages) >= max_messages:
+                break
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if item.get("type") not in ("user", "assistant"):
+                continue
+            payload = item.get("message") or {}
+            role = payload.get("role") or item.get("type")
+            if role not in ("user", "assistant"):
+                continue
+            text = _claude_text(payload.get("content"))
+            if not text.strip():
+                continue
+            if len(text) > 5000:
+                text = text[:5000] + "\n...(内容过长已截断)"
+            timestamp = item.get("timestamp", "")
+            messages.append({"role": role, "text": text, "timestamp": str(timestamp or "")})
+    return messages
+
+
+def _find_claude_session_file(session_id):
+    if not session_id or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+        return None
+    for path in glob.iglob(os.path.join(CLAUDE_PROJECTS_DIR, "**", "*.jsonl"), recursive=True):
         if os.path.splitext(os.path.basename(path))[0] == session_id:
             return path
     return None
@@ -1394,9 +1452,12 @@ def _parse_session_messages(rollout_path, max_messages):
     return messages
 
 
-def _cached_session_messages(rollout_path, max_messages):
+def _cached_session_messages(rollout_path, max_messages, parser=None):
+    if parser is None:
+        parser = _parse_session_messages
     stat = os.stat(rollout_path)
-    key = (rollout_path, stat.st_mtime_ns, stat.st_size, max_messages)
+    parser_name = getattr(parser, "__name__", "custom")
+    key = (rollout_path, stat.st_mtime_ns, stat.st_size, max_messages, parser_name)
 
     with _session_detail_cache_condition:
         cached = _session_detail_cache.get(key)
@@ -1413,7 +1474,7 @@ def _cached_session_messages(rollout_path, max_messages):
 
     parsed = None
     try:
-        parsed = _parse_session_messages(rollout_path, max_messages)
+        parsed = parser(rollout_path, max_messages)
         return parsed
     finally:
         with _session_detail_cache_condition:
@@ -1453,6 +1514,23 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
             "session_id": session_id, "messages": messages[start:start + page_size],
             "total": total, "page": page, "page_size": page_size,
             "total_pages": _total_pages(total, page_size), "detail_source": "workbuddy",
+        }
+
+    if tool == "Claude":
+        claude_path = _find_claude_session_file(session_id)
+        if not claude_path:
+            return _empty_session_detail(session_id, page, page_size, "claude_proxy")
+        try:
+            messages = _cached_session_messages(claude_path, max_messages, _parse_claude_messages)
+        except Exception as e:
+            print(f"[-] Claude session_detail 出错: {e}")
+            messages = []
+        total = len(messages)
+        start = (page - 1) * page_size
+        return {
+            "session_id": session_id, "messages": messages[start:start + page_size],
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": _total_pages(total, page_size), "detail_source": "claude",
         }
 
     sessions_dir = CODEX_SESSIONS_DIR
