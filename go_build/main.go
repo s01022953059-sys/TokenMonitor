@@ -32,7 +32,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.41"
+var appVersion = "1.4.42"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1631,12 +1631,93 @@ type SessionMessage struct {
 }
 
 type SessionDetailResponse struct {
-	SessionID  string           `json:"session_id"`
-	Messages   []SessionMessage `json:"messages"`
-	Total      int              `json:"total"`
-	Page       int              `json:"page"`
-	PageSize   int              `json:"page_size"`
-	TotalPages int              `json:"total_pages"`
+	SessionID    string           `json:"session_id"`
+	Messages     []SessionMessage `json:"messages"`
+	DetailSource string           `json:"detail_source"`
+	Total        int              `json:"total"`
+	Page         int              `json:"page"`
+	PageSize     int              `json:"page_size"`
+	TotalPages   int              `json:"total_pages"`
+}
+
+func workBuddyMessageText(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	items, ok := value.([]interface{})
+	if !ok {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			parts = append(parts, text)
+			continue
+		}
+		if obj, ok := item.(map[string]interface{}); ok {
+			if text, ok := obj["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func parseWorkBuddyMessages(path string, maxMessages int) ([]SessionMessage, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	messages := make([]SessionMessage, 0, maxMessages)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+	for scanner.Scan() {
+		if len(messages) >= maxMessages || len(scanner.Bytes()) == 0 {
+			continue
+		}
+		var item map[string]interface{}
+		if json.Unmarshal(scanner.Bytes(), &item) != nil || item["type"] != "message" {
+			continue
+		}
+		role, _ := item["role"].(string)
+		if role != "user" && role != "assistant" {
+			continue
+		}
+		text := workBuddyMessageText(item["content"])
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if len(text) > 5000 {
+			text = text[:5000] + "\n...(内容过长已截断)"
+		}
+		timestamp := ""
+		if value, ok := item["timestamp"].(string); ok {
+			timestamp = value
+		} else if value, ok := item["timestamp"].(float64); ok && value > 0 {
+			timestamp = time.Unix(int64(value)/1000, 0).Format("2006-01-02 15:04:05")
+		}
+		messages = append(messages, SessionMessage{Role: role, Text: text, Timestamp: timestamp})
+	}
+	return messages, scanner.Err()
+}
+
+func findWorkBuddySessionFile(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	var result string
+	filepath.Walk(workbuddyProjectsPath(), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if strings.TrimSuffix(info.Name(), filepath.Ext(info.Name())) == sessionID {
+			result = path
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return result
 }
 
 func parseSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
@@ -1754,17 +1835,50 @@ func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessag
 	return messages, parseErr
 }
 
-func getSessionDetail(sessionID string, page, pageSize int) SessionDetailResponse {
+func getSessionDetail(sessionID string, page, pageSize int, requestedTool ...string) SessionDetailResponse {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 {
 		pageSize = 20
 	}
-	resp := SessionDetailResponse{SessionID: sessionID, Messages: []SessionMessage{}, Page: page, PageSize: pageSize, TotalPages: 1}
+	tool := ""
+	if len(requestedTool) > 0 {
+		tool = requestedTool[0]
+	}
+	resp := SessionDetailResponse{SessionID: sessionID, Messages: []SessionMessage{}, Page: page, PageSize: pageSize, TotalPages: 1, DetailSource: "unknown"}
 	if sessionID == "" {
 		return resp
 	}
+	if tool == "WorkBuddy" {
+		resp.DetailSource = "workbuddy"
+		path := findWorkBuddySessionFile(sessionID)
+		if path == "" {
+			return resp
+		}
+		messages, err := parseWorkBuddyMessages(path, 500)
+		if err != nil {
+			return resp
+		}
+		resp.Messages = messages
+		resp.Total = len(messages)
+		resp.TotalPages = (resp.Total + pageSize - 1) / pageSize
+		if resp.TotalPages < 1 {
+			resp.TotalPages = 1
+		}
+		start := (page - 1) * pageSize
+		end := start + pageSize
+		if start >= resp.Total {
+			resp.Messages = []SessionMessage{}
+		} else {
+			if end > resp.Total {
+				end = resp.Total
+			}
+			resp.Messages = resp.Messages[start:end]
+		}
+		return resp
+	}
+	resp.DetailSource = "codex"
 
 	sessionsDir := filepath.Join(homeDir(), ".codex", "sessions")
 	var rolloutPath string
@@ -2274,7 +2388,7 @@ func main() {
 		if pageSize < 1 {
 			pageSize = 20
 		}
-		writeJSON(w, 200, getSessionDetail(r.URL.Query().Get("session_id"), page, pageSize))
+		writeJSON(w, 200, getSessionDetail(r.URL.Query().Get("session_id"), page, pageSize, r.URL.Query().Get("tool")))
 	})
 
 	http.HandleFunc("/api/heatmap", func(w http.ResponseWriter, r *http.Request) {

@@ -66,7 +66,7 @@
 
 - cc-switch: `~/.cc-switch/cc-switch.db` (SQLite)
 - Codex 官方日志: `~/.codex/logs_2.sqlite` 与 `~/.codex/sessions/`、`~/.codex/archived_sessions/` rollout JSONL 始终合并去重
-- Antigravity: `~/Library/Application Support/BingchaAI/usage_stats.json` (macOS 专属, Windows 跳过)
+- Antigravity/冰茶 AI: 历史兼容数据源，已不作为独立平台展示或累加；避免与 cc-switch/Codex 重复计数
 - Hermes: `~/.hermes/state.db` (SQLite)
 - WorkBuddy: `~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage` (逐请求准确数据，按 AgentsView 口径); 旧版本没有 projects 时才回退 `~/.workbuddy/workbuddy.db` 的会话占用近似值
 
@@ -364,3 +364,16 @@
 
 - 社区卡片只使用两个明确口径：`总用户` 为去重后的全部历史匿名 ID；`今日活跃用户` 为今天已上报且 `today_tokens > 0` 的唯一 ID。0 Token 初始化和尚未当日同步的成员不进入活跃人数、排名或榜单。
 - Python 与 Windows Go 聚合均须先做旧身份迁移去重，再按匿名 ID 只保留 `updated_at` 最新的一份报告；绝不能把重复副本累加到人数或 Token。
+
+## 支持平台文案口径（2026-07-18）
+
+- About 与 README 只展示当前真正参与统计的四类来源：cc-switch、Codex、Hermes、WorkBuddy。
+- Antigravity/冰茶 AI 仅保留底层历史兼容逻辑，不得作为独立平台或独立数据源展示，避免用户误以为它会产生额外统计。
+
+## WorkBuddy 详情口径（2026-07-18）
+
+- WorkBuddy 用量事件来自项目 JSONL；点击调用详情时必须按 `tool=WorkBuddy` 查找同名项目文件并解析 `message` 行，不能复用只查 Codex rollout 的逻辑。
+- 无正文时提示必须说明“该记录未保存可回放消息”，不能显示 cc-switch 的通用提示。
+
+### v1.4.42 (2026-07-18)
+- 修复 WorkBuddy 调用详情无法从项目 JSONL 打开的问题，并同步修正无正文提示。

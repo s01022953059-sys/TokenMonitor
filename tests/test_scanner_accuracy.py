@@ -139,6 +139,28 @@ class ScannerAccuracyTests(unittest.TestCase):
         self.assertEqual(events[0]["input_cached"], 60)
         self.assertEqual(events[0]["session_id"], "session-test")
 
+    def test_workbuddy_session_detail_reads_message_content(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = os.path.join(root, "project")
+            os.makedirs(project)
+            path = os.path.join(project, "session-detail.jsonl")
+            rows = [
+                {"type": "message", "timestamp": 1_800_000_000_000, "role": "user",
+                 "content": [{"type": "input_text", "text": "hello"}]},
+                {"type": "message", "timestamp": 1_800_000_001_000, "role": "assistant",
+                 "content": [{"type": "output_text", "text": "world"}]},
+            ]
+            with open(path, "w", encoding="utf-8") as stream:
+                for row in rows:
+                    stream.write(json.dumps(row) + "\n")
+            with mock.patch.object(scanner, "WORKBUDDY_PROJECTS_DIR", root):
+                detail = scanner.get_session_detail("session-detail", tool="WorkBuddy", page_size=1)
+
+        self.assertEqual(detail["detail_source"], "workbuddy")
+        self.assertEqual(detail["total"], 2)
+        self.assertEqual(detail["messages"][0]["text"], "hello")
+        self.assertEqual(detail["total_pages"], 2)
+
     def test_history_and_heatmap_use_the_same_event_set(self):
         timestamp = int(datetime.datetime.now().timestamp())
         event = {

@@ -893,10 +893,11 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                 parsed = urlparse(self.path)
                 qs = parse_qs(parsed.query)
                 session_id = qs.get("session_id", [""])[0]
+                tool = qs.get("tool", [""])[0]
                 timestamp = qs.get("timestamp", [None])[0]
                 page = int(qs.get("page", ["1"])[0])
                 page_size = int(qs.get("page_size", ["20"])[0])
-                self._write_json(200, get_session_detail(session_id, timestamp=timestamp, page=page, page_size=page_size))
+                self._write_json(200, get_session_detail(session_id, timestamp=timestamp, page=page, page_size=page_size, tool=tool))
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

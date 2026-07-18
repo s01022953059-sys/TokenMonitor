@@ -1285,11 +1285,62 @@ def get_heatmap_data(days=30):
     }
 
 
-def _empty_session_detail(session_id, page, page_size):
+def _empty_session_detail(session_id, page, page_size, detail_source="unknown"):
     return {
         "session_id": session_id or "", "messages": [], "total": 0,
         "page": page, "page_size": page_size, "total_pages": 1,
+        "detail_source": detail_source,
     }
+
+
+def _workbuddy_text(value):
+    """提取 WorkBuddy message content 中的文本，忽略图片和工具结果。"""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        return ""
+    parts = []
+    for item in value:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _parse_workbuddy_messages(path, max_messages):
+    messages = []
+    with open(path, "r", encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip() or len(messages) >= max_messages:
+                continue
+            try:
+                item = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if item.get("type") != "message" or item.get("role") not in ("user", "assistant"):
+                continue
+            text = _workbuddy_text(item.get("content"))
+            if not text.strip():
+                continue
+            if len(text) > 5000:
+                text = text[:5000] + "\n...(内容过长已截断)"
+            timestamp = item.get("timestamp", "")
+            if isinstance(timestamp, (int, float)):
+                timestamp = datetime.datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")
+            messages.append({"role": item["role"], "text": text, "timestamp": str(timestamp or "")})
+    return messages
+
+
+def _find_workbuddy_session_file(session_id):
+    if not session_id or not os.path.isdir(WORKBUDDY_PROJECTS_DIR):
+        return None
+    for path in glob.iglob(os.path.join(WORKBUDDY_PROJECTS_DIR, "**", "*.jsonl"), recursive=True):
+        if os.path.splitext(os.path.basename(path))[0] == session_id:
+            return path
+    return None
 
 
 def _parse_session_messages(rollout_path, max_messages):
@@ -1379,7 +1430,7 @@ def _cached_session_messages(rollout_path, max_messages):
             _session_detail_cache_condition.notify_all()
 
 
-def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, page_size=20):
+def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, page_size=20, tool=None):
     """根据 session_id 从 Codex rollout JSONL 文件中提取对话内容。
 
     查找路径: ~/.codex/sessions/YYYY/MM/DD/rollout-*<session_id>*.jsonl
@@ -1387,11 +1438,28 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
     用 timestamp 近似匹配最近的 rollout 文件。
     返回: { "session_id": str, "messages": [ {role, text, timestamp}, ...] }
     """
+    if tool == "WorkBuddy":
+        workbuddy_path = _find_workbuddy_session_file(session_id)
+        if not workbuddy_path:
+            return _empty_session_detail(session_id, page, page_size, "workbuddy")
+        try:
+            messages = _parse_workbuddy_messages(workbuddy_path, max_messages)
+        except Exception as e:
+            print(f"[-] WorkBuddy session_detail 出错: {e}")
+            messages = []
+        total = len(messages)
+        start = (page - 1) * page_size
+        return {
+            "session_id": session_id, "messages": messages[start:start + page_size],
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": _total_pages(total, page_size), "detail_source": "workbuddy",
+        }
+
     sessions_dir = CODEX_SESSIONS_DIR
     messages = []
 
     if not os.path.isdir(sessions_dir):
-        return _empty_session_detail(session_id, page, page_size)
+        return _empty_session_detail(session_id, page, page_size, "codex")
 
     # 递归查找包含 session_id 的 rollout 文件
     rollout_files = []
@@ -1423,7 +1491,7 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
             pass
 
     if not rollout_files:
-        return _empty_session_detail(session_id, page, page_size)
+        return _empty_session_detail(session_id, page, page_size, "codex")
 
     # 按修改时间排序，取最新的
     rollout_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
@@ -1445,7 +1513,7 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
         "total": total,
         "page": page,
         "page_size": page_size,
-        "total_pages": _total_pages(total, page_size),
+        "total_pages": _total_pages(total, page_size), "detail_source": "codex",
     }
 
 def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, date=None,

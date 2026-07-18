@@ -107,3 +107,32 @@ func TestSessionDetailCoalescesConcurrentFirstRead(t *testing.T) {
 		t.Fatalf("expected one concurrent parse, got %d", got)
 	}
 }
+
+func TestWorkBuddySessionDetailReadsMessageContent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, ".workbuddy", "projects", "project", "session-detail.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder := json.NewEncoder(file)
+	for _, row := range []map[string]interface{}{
+		{"type": "message", "timestamp": float64(1800000000000), "role": "user", "content": []map[string]string{{"text": "hello"}}},
+		{"type": "message", "timestamp": float64(1800000001000), "role": "assistant", "content": []map[string]string{{"text": "world"}}},
+	} {
+		if err := encoder.Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	detail := getSessionDetail("session-detail", 1, 1, "WorkBuddy")
+	if detail.DetailSource != "workbuddy" || detail.Total != 2 || len(detail.Messages) != 1 || detail.Messages[0].Text != "hello" {
+		t.Fatalf("unexpected WorkBuddy detail: %+v", detail)
+	}
+}

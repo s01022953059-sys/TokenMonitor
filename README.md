@@ -4,13 +4,13 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.41**。
+当前发布版本：**v1.4.42**。
 
 ## 功能
 
 ### 数据采集
 
-只读扫描五类数据源，不修改任何原始数据：
+只读扫描四类数据源，不修改任何原始数据：
 
 - Token Monitor 展示本机日志中已记录的请求，不等同于供应商账号“全部 API Key、全部设备”的账户总量；模型条目悬停可查看本机请求次数
 
@@ -18,7 +18,6 @@
 |---|---|---|
 | cc-switch | `~/.cc-switch/cc-switch.db` | SQLite，记录所有经过代理的 API 请求 |
 | Codex 官方日志 | `~/.codex/logs_2.sqlite` + `~/.codex/sessions/` | SQLite 与 rollout JSONL 始终合并，覆盖 Codex 重启前后的完整记录 |
-| Antigravity (冰茶 AI) | `~/Library/Application Support/BingchaAI/usage_stats.json` | 识别该汇总文件，但不独立累加；其请求与 cc-switch/Codex 日志重合，直接加入会双计 |
 | Hermes | `~/.hermes/state.db` | SQLite，会话级记录；输入包含 cache read/write，用量日期优先按会话结束时间归属 |
 | WorkBuddy (腾讯 CodeBuddy) | `~/.workbuddy/projects/**/*.jsonl` | 逐请求读取 `providerData.usage`；旧版没有项目日志时才回退 SQLite 会话占用近似值 |
 
@@ -62,6 +61,7 @@
 - 分页数量可定制: 20/50/100/200 条每页 (列表) 或 10/20/50/100 条每页 (对话)
 - 每个弹窗底部显示总条数和当前页码
 - 对话内容从 Codex rollout JSONL 文件中提取，按角色着色区分
+- WorkBuddy 调用会从对应项目 JSONL 提取用户消息和助手回复；如果该记录只有用量元数据，会明确提示无法回放正文，不再误显示为 cc-switch 原因
 
 ### 社区用量排行
 
@@ -115,7 +115,7 @@
 | `GET /api/history` | 过去 30 天每日趋势（按工具/模型拆分） |
 | `GET /api/app-info` | 应用信息（名称/版本/更新源） |
 | `GET /api/check-update` | 检查更新（请求 GitCode Release API，比较版本号，返回下载地址） |
-| `GET /api/session_detail` | 会话详情（按 session_id 或时间戳匹配 Codex rollout 文件，返回对话内容） |
+| `GET /api/session_detail` | 会话详情（按工具匹配 Codex rollout 或 WorkBuddy 项目 JSONL，返回对话内容） |
 | `GET /api/heatmap_detail` | 热力图详情（按日期或星期 + 小时返回调用列表；按日期请求直接限定到目标自然日） |
 | `GET /api/community` | 读取社区今日聚合、个人同步状态和排名 |
 | `GET /api/community/report` | 立即提交一次匿名社区统计，并返回真实成功/失败状态 |
@@ -158,7 +158,6 @@ Windows 版用 Go 交叉编译，无需 Python。运行 `TokenMonitor-Setup.exe`
 | **首次安全拦截** | macOS 端 Gatekeeper 会拦截未签名 app, Windows 端 SmartScreen 拦截未签名 EXE. 详见下文"绕过安全限制" |
 | **WebView2 依赖** | Windows 版使用系统 WebView2 Runtime；较新的 Windows 10/11 通常已内置，缺失时需先安装 Microsoft Edge WebView2 Runtime |
 | **Win 端自更新** | 新版下载 `TokenMonitor-Setup.exe`；v1.4.29 及更早版本通过同内容的 `TokenMonitor.exe` 迁移入口静默转交安装器，无需用户重新安装 |
-| **Antigravity 数据源** | Antigravity (冰茶 AI) 的统计数据路径是 macOS 专属的 (`~/Library/Application Support/`)，Windows 上该文件不存在，自动跳过 |
 | **单实例锁机制不同** | macOS 用 `fcntl.flock`，Windows 用 `LockFileEx` 独占文件锁 |
 | **开机自启** | 使用当前用户的 `HKCU\...\Run`，登录后以 `--autostart` 静默启动到托盘，不需要管理员权限；新版会清理旧快捷方式和旧计划任务 |
 | **版本号来源** | macOS 从 `Info.plist` 读取；Windows 正式包优先使用编译进 EXE 的版本号，避免旧 `version.txt` 干扰更新判断 |
@@ -233,7 +232,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.41/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -255,7 +254,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.41/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -377,10 +376,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.41](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.41)
+最新版本：[v1.4.42](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.42)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.41/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.41/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.42/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -397,6 +396,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.42 (2026-07-18)
+- 修复 WorkBuddy 调用统计详情无法打开的问题。
+- WorkBuddy 无正文时显示准确提示，不再误标为 cc-switch。
 
 ### v1.4.41 (2026-07-17)
 - 调用详情支持按工具、模型和时间范围组合筛选。

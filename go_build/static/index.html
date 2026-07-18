@@ -1855,10 +1855,6 @@
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.codex/logs_2.sqlite</code></td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-color);">
-                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#a855f7;margin-right:4px;"></span>冰茶 AI (Antigravity)</td>
-                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">usage_stats.json</code></td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid var(--border-color);">
                             <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:4px;"></span>Hermes</td>
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.hermes/state.db</code></td>
                         </tr>
@@ -1872,14 +1868,14 @@
                         </tr>
                         <tr>
                             <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8b5cf6;margin-right:4px;"></span>WorkBuddy</td>
-                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.workbuddy/workbuddy.db</code></td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.workbuddy/projects/**/*.jsonl</code></td>
                         </tr>
                     </tbody>
                 </table>
                 <p style="margin-top: 14px; margin-bottom: 8px; color: var(--text-primary); font-size: 13px; font-weight: 600;">说明</p>
                 <ul style="padding-left: 16px; margin: 0; font-size: 11px; line-height: 1.8;">
                     <li><b>代理 (scanner 主读 cc-switch.db)</b>：Claude, OpenCode — 这些工具通过 CC-Switch 代理发请求, scanner 从 cc-switch.db 抓 token 数</li>
-                    <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>), Hermes (<code>~/.hermes/state.db</code>), AntiGravity (<code>usage_stats.json</code>) — 工具自己有本地日志文件, scanner 不经 cc-switch</li>
+                    <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>)、Hermes (<code>~/.hermes/state.db</code>) — 工具自己有本地日志文件，scanner 不经 cc-switch</li>
                     <li>部分工具 (Codex / Hermes) 走直连+代理两路, scanner 跨源去重合并</li>
                     <li>占比 &lt; 1% 自动归入 Other · 余额每 60s 异步刷新</li>
                     <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端, 本地不落盘, 暂无法支持</li>
@@ -2735,6 +2731,10 @@
             '1.4.41': [
                 '调用详情支持按工具、模型和时间范围组合筛选。',
                 '筛选结果同步更新统计卡片与分页，并复用本地快照。'
+            ],
+            '1.4.42': [
+                '修复 WorkBuddy 调用统计详情无法打开的问题。',
+                'WorkBuddy 无正文时显示准确提示，不再误标为 cc-switch。'
             ]
         });
 
@@ -3203,7 +3203,7 @@
             sessions.forEach(s => {
                 const toolColor = getToolColor(s.tool);
                 const latencyText = s.latency_ms > 0 ? (s.latency_ms / 1000).toFixed(1) + 's' : '-';
-                html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '">' +
+                html += '<div class="session-item" data-session-id="' + (s.session_id || '') + '" data-timestamp="' + (s.timestamp || '') + '" data-tool="' + (s.tool || '') + '">' +
                     '<span class="sess-time">' + s.time + '</span>' +
                     '<span class="sess-tool" style="background:' + toolColor + '22;color:' + toolColor + ';">' + s.tool + '</span>' +
                     '<span class="sess-model" title="' + s.model + '">' + s.model + '</span>' +
@@ -3217,7 +3217,8 @@
                 row.addEventListener('click', () => {
                     const sid = row.dataset.sessionId;
                     const ts = row.dataset.timestamp;
-                    if (sid) loadChatDetail(sid, ts);
+                    const tool = row.dataset.tool || '';
+                    if (sid) loadChatDetail(sid, ts, undefined, tool);
                 });
             });
         }
@@ -4010,13 +4011,14 @@
         });
 
         // ===== 对话内容查看 =====
-        let _chatDetailState = { sessionId: null, timestamp: null, page: 1, pageSize: 20 };
-        async function loadChatDetail(sessionId, timestamp, page) {
+        let _chatDetailState = { sessionId: null, timestamp: null, tool: '', page: 1, pageSize: 20 };
+        async function loadChatDetail(sessionId, timestamp, page, tool) {
             const modal = document.getElementById('chatDetailModal');
             const contentEl = document.getElementById('chatDetailContent');
             if (page === undefined) page = 1;
             _chatDetailState.sessionId = sessionId;
             _chatDetailState.timestamp = timestamp;
+            if (tool !== undefined) _chatDetailState.tool = tool;
             _chatDetailState.page = page;
             _chatDetailState.pageSize = parseInt(document.getElementById('chatDetailPageSize').value);
             contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载中...</div>';
@@ -4026,6 +4028,7 @@
                 let url = API_BASE + '/api/session_detail?session_id=' + encodeURIComponent(sessionId) +
                     '&page=' + _chatDetailState.page + '&page_size=' + _chatDetailState.pageSize;
                 if (timestamp) url += '&timestamp=' + timestamp;
+                if (_chatDetailState.tool) url += '&tool=' + encodeURIComponent(_chatDetailState.tool);
                 const res = await fetch(url, { cache: 'no-store' });
                 const data = await res.json();
                 const messages = data.messages || [];
@@ -4034,12 +4037,12 @@
                 const curPage = data.page || 1;
                 if (messages.length === 0) {
                     contentEl.innerHTML = '<div style="text-align: center; padding: 40px 0; color: var(--text-muted);">' +
-                        '<div style="margin-bottom: 8px;">未找到对话内容</div>' +
+                        '<div style="margin-bottom: 8px;">未找到可展示的对话内容</div>' +
                         '<div style="font-size:10px; line-height: 1.6; max-width: 360px; margin: 0 auto;">' +
-                        'cc-switch 代理只记录请求元数据(模型/Token/时间)<br>' +
-                        '不保存请求/响应原文, 无法回放对话。<br>' +
-                        '如需查看完整对话, 请到对应客户端本地日志查看<br>' +
-                        '(Codex: <code style="font-size:10px;">~/.codex/sessions/</code>, Hermes: <code style="font-size:10px;">~/.hermes/state.db</code>)' +
+                        (_chatDetailState.tool === 'WorkBuddy' ?
+                            'WorkBuddy 当前记录未保存可回放的消息正文。<br>如需查看完整对话，请在 WorkBuddy 客户端中打开对应会话。' :
+                            '当前数据源只记录请求元数据（模型、Token、时间），未保存请求/响应原文。<br>' +
+                            '如需查看完整对话，请到对应客户端本地日志查看。') +
                         '</div></div>';
                     return;
                 }
@@ -4066,13 +4069,13 @@
             }
         }
         document.getElementById('chatDetailPrevBtn').addEventListener('click', () => {
-            if (_chatDetailState.page > 1) loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page - 1);
+            if (_chatDetailState.page > 1) loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page - 1, _chatDetailState.tool);
         });
         document.getElementById('chatDetailNextBtn').addEventListener('click', () => {
-            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page + 1);
+            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, _chatDetailState.page + 1, _chatDetailState.tool);
         });
         document.getElementById('chatDetailPageSize').addEventListener('change', () => {
-            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, 1);
+            loadChatDetail(_chatDetailState.sessionId, _chatDetailState.timestamp, 1, _chatDetailState.tool);
         });
         function escapeHtml(text) {
             const div = document.createElement('div');
