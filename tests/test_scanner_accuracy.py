@@ -189,6 +189,34 @@ class ScannerAccuracyTests(unittest.TestCase):
         self.assertEqual(detail["detail_source"], "claude_proxy")
         self.assertEqual(detail["messages"], [])
 
+    def test_claude_session_detail_matches_native_log_by_request_timestamp(self):
+        with tempfile.TemporaryDirectory() as root:
+            project = os.path.join(root, "project")
+            os.makedirs(project)
+            path = os.path.join(project, "native-session-id.jsonl")
+            request_time = datetime.datetime(2026, 7, 19, 12, 0, 1, tzinfo=datetime.timezone.utc)
+            rows = [
+                {"type": "user", "timestamp": "2026-07-19T12:00:00.000Z",
+                 "sessionId": "native-session-id",
+                 "message": {"role": "user", "content": "show me the result"}},
+                {"type": "assistant", "timestamp": "2026-07-19T12:00:02.000Z",
+                 "sessionId": "native-session-id",
+                 "message": {"role": "assistant", "content": [{"type": "text", "text": "here is the result"}]}},
+            ]
+            with open(path, "w", encoding="utf-8") as stream:
+                for row in rows:
+                    stream.write(json.dumps(row) + "\n")
+            with mock.patch.object(scanner, "CLAUDE_PROJECTS_DIR", root):
+                detail = scanner.get_session_detail(
+                    "proxy-request-session-id", timestamp=str(int(request_time.timestamp())),
+                    tool="Claude", page_size=20,
+                )
+
+        self.assertEqual(detail["detail_source"], "claude")
+        self.assertEqual([message["text"] for message in detail["messages"]], [
+            "show me the result", "here is the result",
+        ])
+
     def test_history_and_heatmap_use_the_same_event_set(self):
         timestamp = int(datetime.datetime.now().timestamp())
         event = {

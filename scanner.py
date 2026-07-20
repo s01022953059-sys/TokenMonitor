@@ -1401,6 +1401,76 @@ def _find_claude_session_file(session_id):
     return None
 
 
+def _parse_claude_timestamp(value):
+    """把代理记录或 Claude JSONL 中的时间统一转换为 Unix 秒。"""
+    if value is None or value == "":
+        return None
+    try:
+        numeric = float(value)
+        if numeric > 100_000_000_000:
+            numeric /= 1000
+        return numeric
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+        return parsed.timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _claude_file_start_time(path, limit=128):
+    """读取文件前部的时间元数据，避免为关联请求扫描完整大日志。"""
+    values = []
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            for index, line in enumerate(stream):
+                if index >= limit:
+                    break
+                try:
+                    item = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                timestamp = _parse_claude_timestamp(item.get("timestamp"))
+                if timestamp is not None:
+                    values.append(timestamp)
+    except (OSError, UnicodeError):
+        return None
+    return min(values) if values else None
+
+
+def _find_claude_session_file_by_timestamp(timestamp):
+    target = _parse_claude_timestamp(timestamp)
+    if target is None or not os.path.isdir(CLAUDE_PROJECTS_DIR):
+        return None
+    best_path = None
+    best_distance = float("inf")
+    for path in glob.iglob(os.path.join(CLAUDE_PROJECTS_DIR, "**", "*.jsonl"), recursive=True):
+        start = _claude_file_start_time(path)
+        if start is None:
+            continue
+        try:
+            end = max(start, os.path.getmtime(path))
+        except OSError:
+            end = start
+        if start <= target <= end:
+            distance = 0
+        elif target < start:
+            distance = start - target
+        else:
+            distance = target - end
+        if distance < best_distance:
+            best_distance = distance
+            best_path = path
+    # 代理日志与原生日志可能存在少量写入延迟，但不能跨到另一个会话。
+    return best_path if best_distance <= 600 else None
+
+
 def _parse_session_messages(rollout_path, max_messages):
     """只解析对话行，跳过 rollout 中体积最大的工具结果和统计事件。"""
     messages = []
@@ -1518,6 +1588,8 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
 
     if tool == "Claude":
         claude_path = _find_claude_session_file(session_id)
+        if not claude_path:
+            claude_path = _find_claude_session_file_by_timestamp(timestamp)
         if not claude_path:
             return _empty_session_detail(session_id, page, page_size, "claude_proxy")
         try:

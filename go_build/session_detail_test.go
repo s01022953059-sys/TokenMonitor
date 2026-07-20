@@ -176,3 +176,33 @@ func TestClaudeSessionDetailFallsBackWhenNativeLogIsMissing(t *testing.T) {
 		t.Fatalf("unexpected Claude fallback: %+v", detail)
 	}
 }
+
+func TestClaudeSessionDetailMatchesNativeLogByRequestTimestamp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resetSessionDetailCacheForTest()
+	path := filepath.Join(home, ".claude", "projects", "project", "native-session-id.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder := json.NewEncoder(file)
+	for _, row := range []map[string]interface{}{
+		{"type": "user", "timestamp": "2026-07-19T12:00:00.000Z", "sessionId": "native-session-id", "message": map[string]interface{}{"role": "user", "content": "show me the result"}},
+		{"type": "assistant", "timestamp": "2026-07-19T12:00:02.000Z", "sessionId": "native-session-id", "message": map[string]interface{}{"role": "assistant", "content": []map[string]string{{"type": "text", "text": "here is the result"}}}},
+	} {
+		if err := encoder.Encode(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	detail := getSessionDetailWithTimestamp("proxy-request-session-id", 1, 20, "1784462401", "Claude")
+	if detail.DetailSource != "claude" || len(detail.Messages) != 2 || detail.Messages[0].Text != "show me the result" || detail.Messages[1].Text != "here is the result" {
+		t.Fatalf("unexpected Claude timestamp match: %+v", detail)
+	}
+}

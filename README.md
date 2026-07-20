@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.43**。
+当前发布版本：**v1.4.44**。
 
 ## 功能
 
@@ -63,6 +63,7 @@
 - 对话内容从 Codex rollout JSONL 文件中提取，按角色着色区分
 - WorkBuddy 调用会从对应项目 JSONL 提取用户消息和助手回复；如果该记录只有用量元数据，会明确提示无法回放正文，不再误显示为 cc-switch 原因
 - Claude 调用会按 `session_id` 读取 `~/.claude/projects/**/*.jsonl` 中的原生 user/assistant 消息；如果只有 cc-switch 代理元数据或原生日志已不存在，会明确提示原因
+- Claude 代理请求的 `session_id` 与原生日志文件名不一致时，会按调用时间关联最近的 Claude 原生日志；只有找不到时间窗口内的原生日志时才回退为代理元数据
 
 ### v1.4.43
 
@@ -81,6 +82,7 @@
 - 社区报告采用最多 8 路有限并发读取，避免加载时间随用户数线性增加；标题栏提供“刷新”按钮，可绕过 5 分钟缓存获取最新排行
 - 自动初始化产生的 0 Token 身份计入总用户，但不计入今日活跃用户、今日榜单或今日排名；同一匿名 ID 的重复报告只取最新一份，避免人数和用量重复统计
 - 社区用量在启动后与每 5 分钟静默上报；打开社区页也会在后台按同样节流补报，因此不需要手工同步，展示可先用缓存、随后自动刷新
+- 自动上报由本地后台服务独立执行，与社区页面是否打开无关；应用启动后约 5 秒首次尝试，之后每 5 分钟重试并同步当天快照
 - 社区页会友好说明：刚产生的用量可能短暂落后首页，通常几分钟内自动更新；不显示传输进度或手动同步入口，刷新只请求最新聚合数据
 - 首页今日用量、趋势图和热力图都使用缓存优先展示；高频网页与托盘轮询只读取持久快照，今日用量每 30 秒最多安排一次后台刷新且同一时刻只扫描一次
 - 热力图始终从同一份 365 天快照切片，冷启动也先显示完整日期网格，历史日志扫描仅在后台静默执行
@@ -382,10 +384,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.43](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.43)
+最新版本：[v1.4.44](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.44)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.44/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.44/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -402,6 +404,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.44 (2026-07-20)
+- 社区统计改为应用启动后自动后台上报，不再依赖打开社区页面。
+- 增加双端自动上报测试，冷启动时等待本地统计快照准备完成。
 
 ### v1.4.42 (2026-07-18)
 - 修复 WorkBuddy 调用统计详情无法打开的问题。

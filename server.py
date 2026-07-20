@@ -476,6 +476,34 @@ def _prewarm_recent_dashboard_data():
     get_cached_usage()
     get_cached_heatmap(HEATMAP_CACHE_DAYS)
 
+
+def _community_report_loop(stop_event=None, initial_delay=5, interval=None):
+    """在后台上报社区统计，不依赖用户是否打开社区页面。
+
+    ``stop_event`` 仅供测试和优雅退出使用；生产服务传入 None，保持守护线程
+    生命周期。读取本地快照不会阻塞前台，冷启动扫描完成后由下一个周期上报。
+    """
+    wait_interval = COMMUNITY_SYNC_INTERVAL_SECONDS if interval is None else interval
+
+    def wait(seconds):
+        if stop_event is None:
+            time.sleep(seconds)
+            return False
+        return stop_event.wait(seconds)
+
+    if wait(initial_delay):
+        return
+    while stop_event is None or not stop_event.is_set():
+        try:
+            usage = get_cached_usage()
+            if usage.get("cache_state") != "warming":
+                report_community_stats(usage)
+        except Exception:
+            # 社区网络或本地数据异常不能影响主服务，下一周期自动重试。
+            pass
+        if wait(wait_interval):
+            return
+
 _parser = argparse.ArgumentParser(add_help=False)
 _parser.add_argument("--port", type=int, default=15723)
 _parser.add_argument("--update-feed-url", type=str, default="")
@@ -988,17 +1016,6 @@ def main():
     reporting_disabled = os.environ.get("TOKEN_MONITOR_DISABLE_COMMUNITY_REPORT", "").strip().lower()
     if reporting_disabled not in {"1", "true", "yes"}:
         # 社区统计随安装自动上报：启动后 5 秒首次同步，之后每 5 分钟后台同步。
-        def _community_report_loop():
-            import time as _time
-            _time.sleep(5)
-            while True:
-                try:
-                    usage = get_cached_usage()
-                    if usage.get("cache_state") != "warming":
-                        report_community_stats(usage)
-                except Exception:
-                    pass
-                _time.sleep(COMMUNITY_SYNC_INTERVAL_SECONDS)
         threading.Thread(target=_community_report_loop, daemon=True).start()
 
     try:

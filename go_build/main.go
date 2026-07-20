@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -32,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.43"
+var appVersion = "1.4.44"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1761,7 +1762,10 @@ func parseClaudeMessages(path string, maxMessages int) ([]SessionMessage, error)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
 	for scanner.Scan() {
-		if len(messages) >= maxMessages || len(scanner.Bytes()) == 0 {
+		if len(messages) >= maxMessages {
+			break
+		}
+		if len(scanner.Bytes()) == 0 {
 			continue
 		}
 		var item map[string]interface{}
@@ -1806,6 +1810,85 @@ func findClaudeSessionFile(sessionID string) string {
 		return nil
 	})
 	return result
+}
+
+func parseClaudeTimestamp(value string) (float64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	if numeric, err := strconv.ParseFloat(value, 64); err == nil {
+		if numeric > 100_000_000_000 {
+			numeric /= 1000
+		}
+		return numeric, true
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return 0, false
+	}
+	return float64(parsed.UnixNano()) / 1e9, true
+}
+
+func claudeFileStartTime(path string, limit int) (float64, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, false
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+	var first float64
+	found := false
+	for index := 0; scanner.Scan() && index < limit; index++ {
+		var item map[string]interface{}
+		if json.Unmarshal(scanner.Bytes(), &item) != nil {
+			continue
+		}
+		timestamp, _ := item["timestamp"].(string)
+		if value, ok := parseClaudeTimestamp(timestamp); ok && (!found || value < first) {
+			first = value
+			found = true
+		}
+	}
+	return first, found
+}
+
+func findClaudeSessionFileByTimestamp(timestamp string) string {
+	target, ok := parseClaudeTimestamp(timestamp)
+	if !ok {
+		return ""
+	}
+	bestPath := ""
+	bestDistance := math.Inf(1)
+	filepath.Walk(claudeProjectsPath(), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		start, found := claudeFileStartTime(path, 128)
+		if !found {
+			return nil
+		}
+		end := start
+		if modified := float64(info.ModTime().UnixNano()) / 1e9; modified > end {
+			end = modified
+		}
+		distance := 0.0
+		if target < start {
+			distance = start - target
+		} else if target > end {
+			distance = target - end
+		}
+		if distance < bestDistance {
+			bestDistance = distance
+			bestPath = path
+		}
+		return nil
+	})
+	if bestDistance > 600 {
+		return ""
+	}
+	return bestPath
 }
 
 func parseSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessage, error) {
@@ -1928,6 +2011,10 @@ func cachedSessionMessages(rolloutPath string, maxMessages int) ([]SessionMessag
 }
 
 func getSessionDetail(sessionID string, page, pageSize int, requestedTool ...string) SessionDetailResponse {
+	return getSessionDetailWithTimestamp(sessionID, page, pageSize, "", requestedTool...)
+}
+
+func getSessionDetailWithTimestamp(sessionID string, page, pageSize int, timestamp string, requestedTool ...string) SessionDetailResponse {
 	if page < 1 {
 		page = 1
 	}
@@ -1973,6 +2060,9 @@ func getSessionDetail(sessionID string, page, pageSize int, requestedTool ...str
 	if tool == "Claude" {
 		resp.DetailSource = "claude_proxy"
 		path := findClaudeSessionFile(sessionID)
+		if path == "" {
+			path = findClaudeSessionFileByTimestamp(timestamp)
+		}
 		if path == "" {
 			return resp
 		}
@@ -2384,6 +2474,26 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, mo
 	return result
 }
 
+func runCommunityReportLoop(stop <-chan struct{}, initialDelay, interval time.Duration, usage func() UsageResponse, report func(*UsageResponse) CommunityReportResult) {
+	timer := time.NewTimer(initialDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-stop:
+		return
+	}
+	for {
+		current := usage()
+		report(&current)
+		timer.Reset(interval)
+		select {
+		case <-timer.C:
+		case <-stop:
+			return
+		}
+	}
+}
+
 func main() {
 	// 读取版本号
 	appVersion = readAppVersion()
@@ -2509,7 +2619,7 @@ func main() {
 		if pageSize < 1 {
 			pageSize = 20
 		}
-		writeJSON(w, 200, getSessionDetail(r.URL.Query().Get("session_id"), page, pageSize, r.URL.Query().Get("tool")))
+		writeJSON(w, 200, getSessionDetailWithTimestamp(r.URL.Query().Get("session_id"), page, pageSize, r.URL.Query().Get("timestamp"), r.URL.Query().Get("tool")))
 	})
 
 	http.HandleFunc("/api/heatmap", func(w http.ResponseWriter, r *http.Request) {
@@ -2680,14 +2790,7 @@ func main() {
 	// 测试服务必须显式关闭真实社区上报，避免临时 HOME 产生线上匿名身份。
 	if communityReportingEnabled() {
 		// 社区统计随安装自动上报：启动后 5 秒首次同步，之后每 5 分钟后台同步。
-		go func() {
-			time.Sleep(5 * time.Second)
-			for {
-				usage := getTodayUsage()
-				reportCommunityStats(&usage)
-				time.Sleep(communitySyncInterval)
-			}
-		}()
+		go runCommunityReportLoop(nil, 5*time.Second, communitySyncInterval, getTodayUsage, reportCommunityStats)
 	}
 
 	// --server-only 模式: 只跑 HTTP server (CI/后台, 不需要桌面环境)
