@@ -38,6 +38,18 @@ func TestNewCommunityIDIsAlwaysEightCharacters(t *testing.T) {
 	}
 }
 
+func TestFormatCommunityToolsShowsAllToolsByUsage(t *testing.T) {
+	if got := formatCommunityTools(map[string]int64{"Claude": 40, "Codex": 60}); got != "Codex + Claude" {
+		t.Fatalf("formatCommunityTools() = %q, want %q", got, "Codex + Claude")
+	}
+	if got := formatCommunityTools(map[string]int64{"Claude": 10, "Codex": 10}); got != "Claude + Codex" {
+		t.Fatalf("formatCommunityTools() tie = %q, want %q", got, "Claude + Codex")
+	}
+	if got := formatCommunityTools(map[string]int64{"Claude": 0}); got != "?" {
+		t.Fatalf("formatCommunityTools() empty = %q, want %q", got, "?")
+	}
+}
+
 func TestLegacyOptOutIsMigratedToAutomaticMembership(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

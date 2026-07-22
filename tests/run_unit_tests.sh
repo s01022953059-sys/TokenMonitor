@@ -74,6 +74,10 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('调用次数 ${requestCount.toLocaleString')) {
     throw new Error(`${file}: 圆环中心辅助指标缺失或未绑定真实汇总数据`);
   }
+  if (!html.includes('工具维度保留所有非零工具') ||
+      !html.includes('if (data.by_tool[t].total_tokens > 0)')) {
+    throw new Error(`${file}: 工具占比不能把低用量工具隐藏到 Other`);
+  }
   if (!html.includes('heatmapDetailToolFilter') ||
       !html.includes('heatmapDetailModelFilter') ||
       !html.includes('heatmapDetailStartTime') ||

@@ -162,6 +162,23 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(result["rank_total"], 12)
         self.assertEqual(len(result["leaderboard"]), 10)
 
+    def test_leaderboard_shows_all_tools_used_by_member(self):
+        today = datetime.date.today().isoformat()
+        reports = [{
+            "id": "User_MULTI01",
+            "updated_at": today + "T08:00:00Z",
+            "report_date": today,
+            "today_tokens": 100,
+            "by_tool": {"Claude": 40, "Codex": 60},
+        }]
+        files = [{"name": "User_MULTI01.json", "download_url": "https://example.test/multi.json"}]
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", return_value=(reports[0], None)):
+            result = community.get_community_stats(force_refresh=True)
+
+        self.assertEqual(result["leaderboard"][0]["tool"], "Codex + Claude")
+
     def test_public_data_and_relay_work_without_gitcode_credentials(self):
         calls = []
 

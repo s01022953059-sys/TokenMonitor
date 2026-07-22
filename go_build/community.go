@@ -38,6 +38,34 @@ const (
 	communitySyncInterval     = 5 * time.Minute
 )
 
+// formatCommunityTools lists every tool with non-zero usage, ordered by usage.
+func formatCommunityTools(byTool map[string]int64) string {
+	type toolUsage struct {
+		name   string
+		tokens int64
+	}
+	items := make([]toolUsage, 0, len(byTool))
+	for name, tokens := range byTool {
+		if tokens > 0 {
+			items = append(items, toolUsage{name: name, tokens: tokens})
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].tokens != items[j].tokens {
+			return items[i].tokens > items[j].tokens
+		}
+		return items[i].name < items[j].name
+	})
+	if len(items) == 0 {
+		return "?"
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.name
+	}
+	return strings.Join(names, " + ")
+}
+
 type CommunityReportResult struct {
 	OK         bool   `json:"ok"`
 	Status     string `json:"status"`
@@ -543,19 +571,11 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 		if i >= communityLeaderboardLimit {
 			continue
 		}
-		topTool := "?"
-		var maxT int64
-		for t, v := range r.ByTool {
-			if v > maxT {
-				maxT = v
-				topTool = t
-			}
-		}
 		entry := map[string]interface{}{
 			"id":           r.ID,
 			"display_name": r.DisplayName,
 			"tokens":       r.TodayTokens,
-			"tool":         topTool,
+			"tool":         formatCommunityTools(r.ByTool),
 			"is_me":        r.ID == myID,
 		}
 		leaderboard = append(leaderboard, entry)

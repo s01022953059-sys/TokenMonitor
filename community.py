@@ -38,6 +38,20 @@ COMMUNITY_RELAY_URL = os.environ.get(
 )
 # 聚合缓存 (5 分钟 TTL)
 _aggregate_cache = {"data": None, "ts": 0}
+
+
+def _format_report_tools(by_tool):
+    """按 Token 用量降序展示用户当天实际使用的全部工具。"""
+    items = []
+    for tool, tokens in (by_tool or {}).items():
+        try:
+            value = int(tokens or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            items.append((str(tool), value))
+    items.sort(key=lambda item: (-item[1], item[0]))
+    return " + ".join(tool for tool, _ in items) or "?"
 AGGREGATE_TTL = 300  # 5 分钟
 LEADERBOARD_LIMIT = 10
 
@@ -464,7 +478,7 @@ def get_community_stats(force_refresh=False):
         "id": r.get("id", "?"),
         "display_name": r.get("display_name", ""),
         "tokens": r.get("today_tokens", 0),
-        "tool": max(r.get("by_tool", {}), key=r.get("by_tool", {}).get, default="?") if r.get("by_tool") else "?",
+        "tool": _format_report_tools(r.get("by_tool", {})),
         "is_me": r.get("id") == my_id
     } for r in leaderboard]
 

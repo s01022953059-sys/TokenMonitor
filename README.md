@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.44**。
+当前发布版本：**v1.4.45**。
 
 ## 功能
 
@@ -36,6 +36,7 @@
 - 双圆环图（donut）：左侧按工具，右侧按模型
 - 按排名固定色盘（top1 红 → top2 橙 → top3 黄 → ...）
 - 工具与模型图例统一按今日 Token 用量降序排列；同量时按名称稳定排序，圆环颜色与列表顺序一致
+- 工具占比保留所有有实际用量的工具，即使低于 1% 也不会合并到 Other，避免 Claude 等低用量应用被隐藏；模型占比仍按 1% 规则合并
 - 首页使用紧凑双栏数据面板：标题分割线、工具/模型竖向分隔和等高图例行让少量数据也保持完整布局
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
 - 历史趋势弹窗：7/14/30 天，工具和模型两个维度
@@ -80,6 +81,7 @@
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
 - 社区报告采用最多 8 路有限并发读取，避免加载时间随用户数线性增加；标题栏提供“刷新”按钮，可绕过 5 分钟缓存获取最新排行
+- 社区排行榜工具列展示每位用户当天实际使用的全部工具，并按用量降序排列；多工具用户会显示为 Codex + Claude，避免隐藏 Claude 用量
 - 自动初始化产生的 0 Token 身份计入总用户，但不计入今日活跃用户、今日榜单或今日排名；同一匿名 ID 的重复报告只取最新一份，避免人数和用量重复统计
 - 社区用量在启动后与每 5 分钟静默上报；打开社区页也会在后台按同样节流补报，因此不需要手工同步，展示可先用缓存、随后自动刷新
 - 自动上报由本地后台服务独立执行，与社区页面是否打开无关；应用启动后约 5 秒首次尝试，之后每 5 分钟重试并同步当天快照
@@ -240,7 +242,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.45/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -262,7 +264,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.43/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.45/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -384,10 +386,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.44](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.44)
+最新版本：[v1.4.45](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.45)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.44/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.44/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.45/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.45/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -404,6 +406,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.45 (2026-07-22)
+- 修复社区排行榜多工具用户只显示单一工具的问题，Claude 用量展示更准确。
+- 修复首页低用量工具被合并为 Other 的问题，并补充 Claude 数据源说明。
 
 ### v1.4.44 (2026-07-20)
 - 社区统计改为应用启动后自动后台上报，不再依赖打开社区页面。
