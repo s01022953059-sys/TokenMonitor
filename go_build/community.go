@@ -598,6 +598,37 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 	for t, v := range toolTotals {
 		toolDist[t] = math.Round(float64(v)/float64(totalToolTokens)*1000) / 10
 	}
+	// 对齐 Python 端: 按用量降序排序, 保证 Mac/Win 社区工具占比顺序一致。
+	// Go map 序列化成 JSON 时按 key 字母序, 不是按值降序, 需手动构建有序 JSON。
+	type toolDistEntry struct {
+		Tool string
+		Pct  float64
+	}
+	var toolDistSorted []toolDistEntry
+	for t, v := range toolDist {
+		toolDistSorted = append(toolDistSorted, toolDistEntry{Tool: t, Pct: v})
+	}
+	sort.Slice(toolDistSorted, func(i, j int) bool {
+		if toolDistSorted[i].Pct != toolDistSorted[j].Pct {
+			return toolDistSorted[i].Pct > toolDistSorted[j].Pct
+		}
+		return toolDistSorted[i].Tool < toolDistSorted[j].Tool
+	})
+	// 手动构建有序 JSON object (encoding/json 对 map 按 key 字母序, 无法保持插入顺序)
+	var toolDistBuf bytes.Buffer
+	toolDistBuf.WriteByte('{')
+	for i, e := range toolDistSorted {
+		if i > 0 {
+			toolDistBuf.WriteByte(',')
+		}
+		key, _ := json.Marshal(e.Tool)
+		toolDistBuf.Write(key)
+		toolDistBuf.WriteByte(':')
+		val, _ := json.Marshal(e.Pct)
+		toolDistBuf.Write(val)
+	}
+	toolDistBuf.WriteByte('}')
+	toolDistJSON := json.RawMessage(toolDistBuf.Bytes())
 	// 趣味统计
 	warPeace := float64(totalTokensToday) / 580000
 	funFacts := map[string]interface{}{
@@ -655,7 +686,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 		"total_tokens_all":     totalTokensToday * 30,
 		"projected_30d_tokens": totalTokensToday * 30,
 		"leaderboard":          leaderboard,
-		"tool_distribution":    toolDist,
+		"tool_distribution":    toolDistJSON,
 		"active_hours":         []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		"my_rank":              myRank,
 		"my_tokens":            myTokens,
