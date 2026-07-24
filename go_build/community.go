@@ -50,7 +50,7 @@ func formatCommunityTools(byTool map[string]int64) string {
 			items = append(items, toolUsage{name: name, tokens: tokens})
 		}
 	}
-	sort.Slice(items, func(i, j int) bool {
+	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].tokens != items[j].tokens {
 			return items[i].tokens > items[j].tokens
 		}
@@ -559,7 +559,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 		totalTokensToday += r.TodayTokens
 	}
 	// 排名在全部今日参与者中计算，榜单仅展示前 10。
-	sort.Slice(activeReports, func(i, j int) bool {
+	sort.SliceStable(activeReports, func(i, j int) bool {
 		return activeReports[i].TodayTokens > activeReports[j].TodayTokens
 	})
 	leaderboard := []map[string]interface{}{}
@@ -608,7 +608,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 	for t, v := range toolDist {
 		toolDistSorted = append(toolDistSorted, toolDistEntry{Tool: t, Pct: v})
 	}
-	sort.Slice(toolDistSorted, func(i, j int) bool {
+	sort.SliceStable(toolDistSorted, func(i, j int) bool {
 		if toolDistSorted[i].Pct != toolDistSorted[j].Pct {
 			return toolDistSorted[i].Pct > toolDistSorted[j].Pct
 		}

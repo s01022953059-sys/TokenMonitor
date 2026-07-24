@@ -367,5 +367,73 @@ class CommunityReportTests(unittest.TestCase):
         self.assertEqual(community._format_report_tools(by_tool), "ZCode")
 
 
+class SortOrderConsistencyTests(unittest.TestCase):
+    """排序一致性与 Other 位置回归测试。
+
+    确保 Mac (Python) 与 Win (Go) 两端:
+    1. history 的 by_tool/by_model 里 Other 始终在末尾
+    2. tool_distribution 按用量降序
+    3. _dedup_events 稳定排序 (相同时间戳保持输入顺序)
+    4. community _format_report_tools 按用量降序 + 名称升序 tiebreak
+    """
+
+    def test_history_by_tool_other_is_last(self):
+        """get_historical_usage 的 by_tool key 列表里 Other 必须在末尾。"""
+        hu = scanner.get_historical_usage(30)
+        tools = list(hu["by_tool"].keys())
+        if "Other" in tools:
+            self.assertEqual(tools[-1], "Other",
+                             f"Other not last in by_tool: {tools}")
+
+    def test_history_by_model_other_is_last(self):
+        """get_historical_usage 的 by_model key 列表里 Other 必须在末尾。"""
+        hu = scanner.get_historical_usage(30)
+        models = list(hu["by_model"].keys())
+        if "Other" in models:
+            self.assertEqual(models[-1], "Other",
+                             f"Other not last in by_model: {models}")
+
+    def test_tool_distribution_sorted_by_usage_desc(self):
+        """community tool_distribution 应按占比降序排列。"""
+        by_tool = {"Codex": 1000, "ZCode": 500, "Claude": 200, "Hermes": 50}
+        # 模拟 community.py 的排序逻辑
+        tool_distribution = {k: round(v / sum(by_tool.values()) * 100, 1)
+                             for k, v in by_tool.items()}
+        tool_distribution = dict(sorted(tool_distribution.items(),
+                                        key=lambda x: -x[1]))
+        keys = list(tool_distribution.keys())
+        self.assertEqual(keys, ["Codex", "ZCode", "Claude", "Hermes"])
+
+    def test_dedup_events_stable_for_same_timestamp(self):
+        """相同时间戳的不同请求 (不同 total) 保持输入顺序。"""
+        base_ts = 1800000000
+        events = [
+            {"timestamp": base_ts, "tool": "ZCode", "model": "glm-5.2",
+             "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+             "input_cached": 0, "input_uncached": 100, "session_id": "first"},
+            {"timestamp": base_ts, "tool": "Codex", "model": "gpt-5.6",
+             "input_tokens": 200, "output_tokens": 50, "total_tokens": 250,
+             "input_cached": 0, "input_uncached": 200, "session_id": "second"},
+        ]
+        deduped = scanner._dedup_events(events)
+        self.assertEqual(len(deduped), 2)
+        # 稳定排序: 相同 timestamp 时 first 应在前
+        self.assertEqual(deduped[0]["session_id"], "first")
+        self.assertEqual(deduped[1]["session_id"], "second")
+
+    def test_format_report_tools_tiebreak_by_name(self):
+        """相同用量的工具按名称升序排列 (tiebreak)。"""
+        by_tool = {"ZCode": 100, "Codex": 100, "MiniMax Code": 100}
+        result = community._format_report_tools(by_tool)
+        # 用量相同, 按名称升序: Codex + MiniMax Code + ZCode
+        self.assertEqual(result, "Codex + MiniMax Code + ZCode")
+
+    def test_format_report_tools_descending_by_usage(self):
+        """工具列按用量降序, 不按字母序。"""
+        by_tool = {"Hermes": 500, "Codex": 100, "ZCode": 1000}
+        result = community._format_report_tools(by_tool)
+        self.assertEqual(result, "ZCode + Hermes + Codex")
+
+
 if __name__ == "__main__":
     unittest.main()

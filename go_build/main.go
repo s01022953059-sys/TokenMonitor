@@ -100,10 +100,38 @@ type UsageResponse struct {
 }
 
 type HistoryResponse struct {
-	Labels  []string           `json:"labels"`
-	Values  []int64            `json:"values"`
-	ByTool  map[string][]int64 `json:"by_tool"`
-	ByModel map[string][]int64 `json:"by_model"`
+	Labels  []string          `json:"labels"`
+	Values  []int64           `json:"values"`
+	ByTool  json.RawMessage   `json:"by_tool"`
+	ByModel json.RawMessage   `json:"by_model"`
+}
+
+// orderedMapJSON 按 keys 顺序构建 JSON object, 绕过 Go map 的字母序序列化。
+func orderedMapJSON(keys []string, getVal func(string) (interface{}, error)) (json.RawMessage, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		keyBytes, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+		val, err := getVal(k)
+		if err != nil {
+			return nil, err
+		}
+		valBytes, err := json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(valBytes)
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes()), nil
 }
 
 type AppInfoResponse struct {
@@ -1383,20 +1411,20 @@ func getHistoricalUsage(days int) HistoryResponse {
 		modelData[model][idx] += event.TotalTokens
 	}
 
-	resTool := map[string][]int64{}
-	for _, t := range tools {
-		resTool[t] = toolData[t]
-	}
-	resModel := map[string][]int64{}
-	for _, m := range models {
-		resModel[m] = modelData[m]
-	}
+	// 按 tools/models 切片顺序 (Other 在末尾) 构建有序 JSON,
+	// 对齐 Python 端 dict 的插入顺序, 避免 Go map 字母序导致 Other 不在末尾。
+	byToolJSON, _ := orderedMapJSON(tools, func(t string) (interface{}, error) {
+		return toolData[t], nil
+	})
+	byModelJSON, _ := orderedMapJSON(models, func(m string) (interface{}, error) {
+		return modelData[m], nil
+	})
 
 	return HistoryResponse{
 		Labels:  dateList,
 		Values:  dailyTotals,
-		ByTool:  resTool,
-		ByModel: resModel,
+		ByTool:  byToolJSON,
+		ByModel: byModelJSON,
 	}
 }
 
@@ -1807,7 +1835,7 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 	allLogs := append(append(append(append(append(ccLogs, codexLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
-	sort.Slice(allLogs, func(i, j int) bool {
+	sort.SliceStable(allLogs, func(i, j int) bool {
 		return allLogs[i].Timestamp > allLogs[j].Timestamp
 	})
 
@@ -2624,7 +2652,7 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, mo
 		}
 	}
 
-	sort.Slice(filtered, func(i, j int) bool {
+	sort.SliceStable(filtered, func(i, j int) bool {
 		return filtered[i].Timestamp > filtered[j].Timestamp
 	})
 
