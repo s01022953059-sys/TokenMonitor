@@ -410,12 +410,15 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
-### v1.4.52 (待发版)
+### v1.4.52
+- 修复 Windows 客户端 TOP10 排名变化弹窗 404：`go_build/main.go` 在 `/api/community/profile` 之后注册 `/api/community/history`，调 `getCommunityHistory(30)`，按社区路由统一模板（`setCORSHeaders` + OPTIONS 短路 + GET-only + `writeJSON`）。根因：v1.4.49a 引入排名变化弹窗时只写了函数，忘记注册 HTTP 路由，macOS 走 Python 后端正常，Windows 端一直静默 404。
 - AGENTS.md 增加第 7 条约定：每次发现 bug 或根据反馈改动代码，必须在同一次提交中补充或扩充测试用例（Python 放在 `tests/`，Go 放在 `go_build/*_test.go`），覆盖该修复的场景、输入和预期输出。
 - 追补历史 fix 漏测试的覆盖：
-  - Python `c4fca0b`（ZCode 会话详情）现已有 `tests/test_zcode_session_detail.py`（6 个测试覆盖 happy path / DB 缺失 / session 缺失 / 分页 / part 过滤 / 角色过滤）。
-  - Go `a5c08b4`（community tool distribution 排序）抽出 `buildToolDistributionJSON` 纯函数后在 `go_build/community_test.go` 补 4 个 JSON key 序断言测试（按用量降序 + 名升序 tiebreak + 空 map + 百分比舍入）。
-- 仅文档 / 测试 + 一处无害重构，不改动 v1.4.51 之前的任何产品代码逻辑。
+  - Python `c4fca0b`（ZCode 会话详情）：`tests/test_zcode_session_detail.py` 6 个测试（happy path / DB 缺失 / session 缺失 / 分页 / part 过滤 / 角色过滤），调公开 API `scanner.get_session_detail(..., tool='ZCode')`。
+  - Go `a5c08b4`（community tool distribution 排序）：抽出 `buildToolDistributionJSON` 纯函数后在 `go_build/community_test.go` 补 4 个 JSON key 序断言测试（按用量降序 + 名升序 tiebreak + 空 map + 百分比 1 位小数舍入）。
+- 跟随本修复新增 `go_build/community_history_route_test.go`（2 个测试）：
+  - `TestCommunityHistoryRouteRegistered`：AST 静态扫描 `main.go`，验证 `HandleFunc("/api/community/history", ...)` 注册存在，防回归（已用临时删 route 实测 FAIL，恢复后 PASS）。
+  - `TestCommunityHistoryRouteIntegration`：httptest 起最小 mux，验 `GET 200 + JSON 形状（snapshots + data_status + 每条含 date/leaderboard）`、OPTIONS 200、POST 405 三件套。
 
 ### v1.4.51 (待发版)
 - TOP10 排名变化弹窗按钮对齐主题与图标风格：自动播放改为紫主色 + 播放/暂停 SVG，◀/▶ 切换为 24×24 chevron SVG，与 TopBar 的 SVG 风格保持一致；原先内联 `var(--text-primary)` / `var(--border-color)` 不存在的 CSS 变量修正为 `--text-main` / `--border-card`。

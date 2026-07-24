@@ -2809,6 +2809,10 @@
             '1.4.51': [
                 'TOP10 排名变化弹窗的按钮对齐主色与图标风格：自动播放改为紫主色 + 播放/暂停 SVG 切换。',
                 'Windows 客户端补齐 ZCode 会话详情支持：现在从本机 SQLite 读取 user/assistant 文本消息。'
+            ],
+            '1.4.52': [
+                '修复 Windows 客户端 TOP10 排名变化弹窗 404：补 /api/community/history 路由注册，macOS 走 Python 后端无事，Windows 端此前一直在 404。',
+                'AGENTS.md 增加第 7 条约定：每次 bug fix 必须在同次提交补测试用例；追补历史 fix 漏测试的覆盖（ZCode 会话详情 + community tool distribution 排序）。'
             ]
         });
 
