@@ -66,6 +66,52 @@ func formatCommunityTools(byTool map[string]int64) string {
 	return strings.Join(names, " + ")
 }
 
+// buildToolDistributionJSON 把 by-tool 用量聚合转成 "tool -> pct" 的 JSON object 字符串,
+// 按 pct 降序、tool 名升序 tiebreak, 序列化后手动维持该顺序 (encoding/json 对 map 按 key 字母序, 会丢失排序)。
+// 抽出来便于单测, 对齐 Python 端 community._format_report_tools 与
+// community.py tool_distribution dict 排序语义, 修复 a5c08b4。
+func buildToolDistributionJSON(toolTotals map[string]int64) json.RawMessage {
+	totalToolTokens := int64(0)
+	for _, v := range toolTotals {
+		totalToolTokens += v
+	}
+	if totalToolTokens == 0 {
+		totalToolTokens = 1
+	}
+	type toolDistEntry struct {
+		Tool string
+		Pct  float64
+	}
+	pct := map[string]float64{}
+	for t, v := range toolTotals {
+		pct[t] = math.Round(float64(v)/float64(totalToolTokens)*1000) / 10
+	}
+	var sorted []toolDistEntry
+	for t, v := range pct {
+		sorted = append(sorted, toolDistEntry{Tool: t, Pct: v})
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Pct != sorted[j].Pct {
+			return sorted[i].Pct > sorted[j].Pct
+		}
+		return sorted[i].Tool < sorted[j].Tool
+	})
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, e := range sorted {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		key, _ := json.Marshal(e.Tool)
+		buf.Write(key)
+		buf.WriteByte(':')
+		val, _ := json.Marshal(e.Pct)
+		buf.Write(val)
+	}
+	buf.WriteByte('}')
+	return json.RawMessage(buf.Bytes())
+}
+
 type CommunityReportResult struct {
 	OK         bool   `json:"ok"`
 	Status     string `json:"status"`
@@ -587,48 +633,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 			toolTotals[t] += v
 		}
 	}
-	totalToolTokens := int64(0)
-	for _, v := range toolTotals {
-		totalToolTokens += v
-	}
-	if totalToolTokens == 0 {
-		totalToolTokens = 1
-	}
-	toolDist := map[string]float64{}
-	for t, v := range toolTotals {
-		toolDist[t] = math.Round(float64(v)/float64(totalToolTokens)*1000) / 10
-	}
-	// 对齐 Python 端: 按用量降序排序, 保证 Mac/Win 社区工具占比顺序一致。
-	// Go map 序列化成 JSON 时按 key 字母序, 不是按值降序, 需手动构建有序 JSON。
-	type toolDistEntry struct {
-		Tool string
-		Pct  float64
-	}
-	var toolDistSorted []toolDistEntry
-	for t, v := range toolDist {
-		toolDistSorted = append(toolDistSorted, toolDistEntry{Tool: t, Pct: v})
-	}
-	sort.SliceStable(toolDistSorted, func(i, j int) bool {
-		if toolDistSorted[i].Pct != toolDistSorted[j].Pct {
-			return toolDistSorted[i].Pct > toolDistSorted[j].Pct
-		}
-		return toolDistSorted[i].Tool < toolDistSorted[j].Tool
-	})
-	// 手动构建有序 JSON object (encoding/json 对 map 按 key 字母序, 无法保持插入顺序)
-	var toolDistBuf bytes.Buffer
-	toolDistBuf.WriteByte('{')
-	for i, e := range toolDistSorted {
-		if i > 0 {
-			toolDistBuf.WriteByte(',')
-		}
-		key, _ := json.Marshal(e.Tool)
-		toolDistBuf.Write(key)
-		toolDistBuf.WriteByte(':')
-		val, _ := json.Marshal(e.Pct)
-		toolDistBuf.Write(val)
-	}
-	toolDistBuf.WriteByte('}')
-	toolDistJSON := json.RawMessage(toolDistBuf.Bytes())
+	toolDistJSON := buildToolDistributionJSON(toolTotals)
 	// 趣味统计
 	warPeace := float64(totalTokensToday) / 580000
 	funFacts := map[string]interface{}{

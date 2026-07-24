@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -187,5 +188,94 @@ func TestCommunityProfileUsesRelayCredential(t *testing.T) {
 	}
 	if received["id"] == "" || received["device_secret"] == "" || received["display_name"] != "鹏帅" {
 		t.Fatalf("unexpected payload: %#v", received)
+	}
+}
+
+// jsonKeys 提取 json.RawMessage (对象) 的顶层 key 顺序, 供 JSON 序断言用。
+func jsonKeys(t *testing.T, raw json.RawMessage) []string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.Token() // '{'
+	var keys []string
+	for dec.More() {
+		token, err := dec.Token()
+		if err != nil {
+			t.Fatalf("decode token: %v", err)
+		}
+		key, ok := token.(string)
+		if !ok {
+			t.Fatalf("expected string key, got %T", token)
+		}
+		keys = append(keys, key)
+		// skip 1 个 value (number/string)
+		if _, err := dec.Token(); err != nil {
+			t.Fatalf("decode value: %v", err)
+		}
+	}
+	return keys
+}
+
+func TestBuildToolDistributionJSONOrderByUsageDesc(t *testing.T) {
+	raw := buildToolDistributionJSON(map[string]int64{
+		"Codex": 1000, "ZCode": 500, "Claude": 200, "Hermes": 50,
+	})
+	keys := jsonKeys(t, raw)
+	want := []string{"Codex", "ZCode", "Claude", "Hermes"}
+	if len(keys) != len(want) {
+		t.Fatalf("key count mismatch: got %v want %v", keys, want)
+	}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Fatalf("key[%d] = %q, want %q (full: %v)", i, keys[i], want[i], keys)
+		}
+	}
+}
+
+func TestBuildToolDistributionJSONTiebreakByName(t *testing.T) {
+	raw := buildToolDistributionJSON(map[string]int64{
+		"Claude":  10,
+		"Codex":   10,
+		"ZCode":   10,
+		"Hermes":  10,
+	})
+	keys := jsonKeys(t, raw)
+	want := []string{"Claude", "Codex", "Hermes", "ZCode"}
+	if len(keys) != len(want) {
+		t.Fatalf("key count mismatch: got %v want %v", keys, want)
+	}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Fatalf("tiebreak key[%d] = %q, want %q (full: %v)", i, keys[i], want[i], keys)
+		}
+	}
+}
+
+func TestBuildToolDistributionJSONEmpty(t *testing.T) {
+	raw := buildToolDistributionJSON(map[string]int64{})
+	if string(raw) != "{}" {
+		t.Fatalf("expected {}, got %s", string(raw))
+	}
+}
+
+func TestBuildToolDistributionJSONPctRounding(t *testing.T) {
+	// 333 + 333 + 334 = 1000 → 33.3 / 33.3 / 33.4 (1 位小数, 不累计误差)
+	raw := buildToolDistributionJSON(map[string]int64{
+		"Codex": 333, "Claude": 333, "ZCode": 334,
+	})
+	keys := jsonKeys(t, raw)
+	// ZCode 用量最高, 应排在第一; 同 pct 时按名字升序 (Claude 在 Codex 前)
+	want := []string{"ZCode", "Claude", "Codex"}
+	for i := range want {
+		if keys[i] != want[i] {
+			t.Fatalf("pct ordering key[%d] = %q, want %q (full: %v)", i, keys[i], want[i], keys)
+		}
+	}
+	// 验证精确百分比
+	var got map[string]float64
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["ZCode"] != 33.4 || got["Claude"] != 33.3 || got["Codex"] != 33.3 {
+		t.Fatalf("pct rounding wrong: %+v", got)
 	}
 }

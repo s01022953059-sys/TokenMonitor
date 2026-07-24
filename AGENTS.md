@@ -8,6 +8,7 @@
 4. 发布流程: bump 版本 → git commit + tag → `bash release_all.sh`
 5. GitCode token: ydMwBZbLaiex8hRqi-2cma3k
 6. GitCode 不支持删除 release 附件, 每次发版用新 tag
+7. **每次发现 bug 或根据反馈改动代码, 必须在同一次提交中补充或扩充测试用例** (Python 放在 `tests/`,Go 放在 `go_build/*_test.go`),覆盖该修复的场景、输入和预期输出。
 
 ## 项目记忆
 
