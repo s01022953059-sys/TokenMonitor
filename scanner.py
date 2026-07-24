@@ -1514,6 +1514,92 @@ def _empty_session_detail(session_id, page, page_size, detail_source="unknown"):
     }
 
 
+def _find_zcode_session_file(session_id):
+    """验证 ZCode 的 session_id 在 `session` 表中存在。
+    返回 sqlite 连接用于后续查询 (调用方负责关闭),若不存在或 DB 不可用返回 None。
+    """
+    if not session_id or not os.path.exists(ZCODE_DB_PATH):
+        return None
+    try:
+        conn = _open_sqlite_readonly(ZCODE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM session WHERE id = ? LIMIT 1", (session_id,))
+        if cursor.fetchone() is None:
+            conn.close()
+            return None
+        return conn
+    except Exception as e:
+        print(f"[-] ZCode session_detail 打开 DB 出错: {e}")
+        return None
+
+
+def _parse_zcode_messages(conn, session_id, max_messages):
+    """从 ZCode 的 message + part 表读取用户/助手文本消息。
+
+    同一 session 内按 time_created 升序, 只取 role ∈ {user, assistant},
+    正文来自同 message_id 的 type='text' part.text 拼接。"""
+    try:
+        cursor = conn.cursor()
+        # role 存在 data JSON 里 (json_extract), 只在 SQL 侧粗筛再在 Python 侧确认。
+        cursor.execute("""
+            SELECT id, json_extract(data, '$.role') AS role, time_created
+            FROM message
+            WHERE session_id = ?
+              AND json_extract(data, '$.role') IN ('user', 'assistant')
+            ORDER BY time_created ASC
+        """, (session_id,))
+        rows = cursor.fetchall()
+    except Exception as e:
+        print(f"[-] ZCode session_detail 读 message 出错: {e}")
+        return []
+
+    if not rows:
+        return []
+
+    # 批量取这批 message 的所有 text part
+    message_ids = [r[0] for r in rows]
+    placeholders = ",".join("?" * len(message_ids))
+    part_texts = {}
+    try:
+        cursor.execute(f"""
+            SELECT message_id, data
+            FROM part
+            WHERE session_id = ?
+              AND message_id IN ({placeholders})
+              AND json_extract(data, '$.type') = 'text'
+            ORDER BY message_id, time_created ASC
+        """, (session_id, *message_ids))
+        for mid, data in cursor.fetchall():
+            try:
+                obj = json.loads(data)
+            except (TypeError, ValueError):
+                continue
+            text = obj.get("text")
+            if isinstance(text, str) and text:
+                part_texts.setdefault(mid, []).append(text)
+    except Exception as e:
+        print(f"[-] ZCode session_detail 读 part 出错: {e}")
+
+    messages = []
+    for mid, role, time_created in rows:
+        parts = part_texts.get(mid) or []
+        text = "\n".join(parts).strip()
+        if not text:
+            continue
+        if len(text) > 5000:
+            text = text[:5000] + "\n...(内容过长已截断)"
+        ts = ""
+        if time_created:
+            try:
+                ts = datetime.datetime.fromtimestamp(int(time_created) / 1000).strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError, OSError):
+                ts = str(time_created)
+        messages.append({"role": role, "text": text, "timestamp": ts})
+        if len(messages) >= max_messages:
+            break
+    return messages
+
+
 def _workbuddy_text(value):
     """提取 WorkBuddy message content 中的文本，忽略图片和工具结果。"""
     if isinstance(value, str):
@@ -1804,6 +1890,28 @@ def get_session_detail(session_id, max_messages=500, timestamp=None, page=1, pag
             "session_id": session_id, "messages": messages[start:start + page_size],
             "total": total, "page": page, "page_size": page_size,
             "total_pages": _total_pages(total, page_size), "detail_source": "workbuddy",
+        }
+
+    if tool == "ZCode":
+        zcode_conn = _find_zcode_session_file(session_id)
+        if not zcode_conn:
+            return _empty_session_detail(session_id, page, page_size, "zcode")
+        try:
+            messages = _parse_zcode_messages(zcode_conn, session_id, max_messages)
+        except Exception as e:
+            print(f"[-] ZCode session_detail 出错: {e}")
+            messages = []
+        finally:
+            try:
+                zcode_conn.close()
+            except Exception:
+                pass
+        total = len(messages)
+        start = (page - 1) * page_size
+        return {
+            "session_id": session_id, "messages": messages[start:start + page_size],
+            "total": total, "page": page, "page_size": page_size,
+            "total_pages": _total_pages(total, page_size), "detail_source": "zcode",
         }
 
     if tool == "Claude":

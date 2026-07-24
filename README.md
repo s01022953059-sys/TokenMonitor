@@ -67,6 +67,7 @@
 - WorkBuddy 调用会从对应项目 JSONL 提取用户消息和助手回复；如果该记录只有用量元数据，会明确提示无法回放正文，不再误显示为 cc-switch 原因
 - Claude 调用会按 `session_id` 读取 `~/.claude/projects/**/*.jsonl` 中的原生 user/assistant 消息；如果只有 cc-switch 代理元数据或原生日志已不存在，会明确提示原因
 - Claude 代理请求的 `session_id` 与原生日志文件名不一致时，会按调用时间关联最近的 Claude 原生日志；只有找不到时间窗口内的原生日志时才回退为代理元数据
+- ZCode 调用会按 `session_id` 读取 `~/.zcode/cli/db/db.sqlite` 中 `message` + `part` 表的 user/assistant 文本消息；如果 session_id 已被清理或该会话没有正文，会显示准确的本地提示，不再误显示为「数据源只记录请求元数据」
 
 ### v1.4.43
 
@@ -408,6 +409,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.49 (待发版)
+- 修复 ZCode 会话详情看不到的问题：ZCode 之前走错详情分支（落到 Codex rollout 兜底），现在直接从本机 `~/.zcode/cli/db/db.sqlite` 的 `message`/`part` 表读取用户/助手文本消息；找不到正文时显示准确的本地提示。
 
 ### v1.4.45 (2026-07-22)
 - 修复社区排行榜多工具用户只显示单一工具的问题，Claude 用量展示更准确。

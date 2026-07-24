@@ -1766,12 +1766,41 @@
             <div class="modal-header">
                 <h3>社区用量排行</h3>
                 <div class="community-header-actions">
+                    <button id="rankHistoryBtn" class="community-refresh-btn" title="查看每日 TOP10 排名变化" aria-label="排名变化动画"><span aria-hidden="true">📊</span><span>排名变化</span></button>
                     <button id="communityRefreshBtn" class="community-refresh-btn" title="获取最新社区数据" aria-label="强制刷新社区数据"><span class="community-refresh-icon" aria-hidden="true">↻</span><span>刷新</span></button>
                     <button id="communityCloseBtn" class="close-btn">&times;</button>
                 </div>
             </div>
             <div id="communityContainer" class="community-scroll-region">
                 <div style="text-align: center; padding: 40px 0; color: var(--text-muted);">加载社区数据中...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 排名变化动画弹窗 -->
+    <div id="rankHistoryModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>TOP 10 排名变化</h3>
+                <div class="community-header-actions">
+                    <button id="rankHistoryCloseBtn" class="close-btn">&times;</button>
+                </div>
+            </div>
+            <div class="community-scroll-region" style="padding: 16px 20px;">
+                <div id="rankHistoryControls" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button id="rankPrevBtn" style="background:var(--bg-subtle);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">◀</button>
+                        <span id="rankDateLabel" style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:600;min-width:90px;text-align:center;">-</span>
+                        <button id="rankNextBtn" style="background:var(--bg-subtle);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">▶</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button id="rankPlayBtn" style="background:var(--neon-green);border:none;color:#000;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px;font-weight:600;">▶ 自动播放</button>
+                        <span id="rankHistoryStatus" style="font-size:11px;color:var(--text-muted);"></span>
+                    </div>
+                </div>
+                <div id="rankHistoryContainer" style="position:relative;height:400px;overflow:hidden;">
+                    <div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">加载排名历史数据中...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -3885,6 +3914,117 @@
             }
         });
 
+        // ===== 排名变化动画 =====
+        let _rankHistory = { snapshots: [], index: 0, playing: false, timer: null };
+        const RANK_BAR_HEIGHT = 38;
+        const RANK_BAR_GAP = 4;
+
+        async function loadRankHistory() {
+            const container = document.getElementById('rankHistoryContainer');
+            const statusEl = document.getElementById('rankHistoryStatus');
+            try {
+                statusEl.textContent = '加载中...';
+                const resp = await fetch(API_BASE + '/api/community/history');
+                const data = await resp.json();
+                _rankHistory.snapshots = data.snapshots || [];
+                _rankHistory.index = _rankHistory.snapshots.length > 0 ? _rankHistory.snapshots.length - 1 : 0;
+                if (_rankHistory.snapshots.length === 0) {
+                    container.innerHTML = '<div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">暂无排名历史数据，每天 23:55 自动归档</div>';
+                    statusEl.textContent = '';
+                    return;
+                }
+                statusEl.textContent = _rankHistory.snapshots.length + ' 天数据';
+                renderRankHistory();
+            } catch (e) {
+                container.innerHTML = '<div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">加载失败，请稍后重试</div>';
+                statusEl.textContent = '';
+            }
+        }
+
+        function renderRankHistory() {
+            const container = document.getElementById('rankHistoryContainer');
+            const snapshots = _rankHistory.snapshots;
+            if (!snapshots.length) return;
+            const idx = _rankHistory.index;
+            const snap = snapshots[idx];
+            const leaderboard = snap.leaderboard || [];
+            const date = snap.date || '-';
+            const maxTokens = leaderboard.length > 0 ? Math.max(...leaderboard.map(e => e.tokens || 0), 1) : 1;
+
+            document.getElementById('rankDateLabel').textContent = date;
+            document.getElementById('rankPrevBtn').style.opacity = idx > 0 ? '1' : '0.4';
+            document.getElementById('rankNextBtn').style.opacity = idx < snapshots.length - 1 ? '1' : '0.4';
+
+            // 收集所有出现过的用户 ID, 用于稳定行定位
+            const allIds = new Set();
+            snapshots.forEach(s => (s.leaderboard || []).forEach(e => allIds.add(e.id)));
+
+            // 渲染赛道: 每个用户一行, 按 token 降序排列, 用 order + translateY 定位
+            const colors = ['#3b82f6','#ec4899','#10b981','#14b8a6','#e11d48','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16'];
+            let html = '<div style="position:relative;height:100%;">';
+            leaderboard.forEach((entry, rank) => {
+                const pct = Math.max(2, ((entry.tokens || 0) / maxTokens) * 100);
+                const color = colors[rank % colors.length];
+                const name = entry.display_name || entry.id || '?';
+                const top = rank * (RANK_BAR_HEIGHT + RANK_BAR_GAP);
+                html += '<div style="position:absolute;left:0;right:0;height:' + RANK_BAR_HEIGHT + 'px;top:' + top + 'px;transition:top 600ms cubic-bezier(0.22,0.61,0.36,1);display:flex;align-items:center;gap:8px;padding:0 4px;">' +
+                    '<span style="width:28px;text-align:center;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:' + (rank < 3 ? color : 'var(--text-muted)') + ';">' + (rank + 1) + '</span>' +
+                    '<div style="flex:1;position:relative;height:24px;background:rgba(255,255,255,0.03);border-radius:4px;overflow:hidden;">' +
+                    '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:4px;transition:width 600ms cubic-bezier(0.22,0.61,0.36,1);opacity:0.85;"></div>' +
+                    '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:' + (pct - 4) + '%;">' + escapeHtml(name) + '</span>' +
+                    '</div>' +
+                    '<span style="width:70px;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:var(--text-primary);">' + formatTokens(entry.tokens || 0) + '</span>' +
+                    '</div>';
+            });
+            html += '</div>';
+            container.innerHTML = html;
+            container.style.height = Math.max(400, leaderboard.length * (RANK_BAR_HEIGHT + RANK_BAR_GAP) + 20) + 'px';
+        }
+
+        document.getElementById('rankHistoryBtn').addEventListener('click', async () => {
+            document.getElementById('rankHistoryModal').classList.add('active');
+            await loadRankHistory();
+        });
+        document.getElementById('rankHistoryCloseBtn').addEventListener('click', () => {
+            _rankHistory.playing = false;
+            if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
+            const btn = document.getElementById('rankPlayBtn');
+            btn.textContent = '▶ 自动播放';
+            btn.style.background = 'var(--neon-green)';
+            document.getElementById('rankHistoryModal').classList.remove('active');
+        });
+        document.getElementById('rankHistoryModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('rankHistoryModal')) {
+                _rankHistory.playing = false;
+                if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
+                document.getElementById('rankHistoryModal').classList.remove('active');
+            }
+        });
+        document.getElementById('rankPrevBtn').addEventListener('click', () => {
+            if (_rankHistory.index > 0) { _rankHistory.index--; renderRankHistory(); }
+        });
+        document.getElementById('rankNextBtn').addEventListener('click', () => {
+            if (_rankHistory.index < _rankHistory.snapshots.length - 1) { _rankHistory.index++; renderRankHistory(); }
+        });
+        document.getElementById('rankPlayBtn').addEventListener('click', () => {
+            const btn = document.getElementById('rankPlayBtn');
+            if (_rankHistory.playing) {
+                _rankHistory.playing = false;
+                if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
+                btn.textContent = '▶ 自动播放';
+                btn.style.background = 'var(--neon-green)';
+            } else {
+                if (_rankHistory.snapshots.length < 2) return;
+                _rankHistory.playing = true;
+                btn.textContent = '⏸ 暂停';
+                btn.style.background = 'var(--text-muted)';
+                _rankHistory.timer = setInterval(() => {
+                    _rankHistory.index = (_rankHistory.index + 1) % _rankHistory.snapshots.length;
+                    renderRankHistory();
+                }, 2000);
+            }
+        });
+
         // ===== 热力图下钻 =====
         let _heatmapDetailState = { date: '', page: 1, pageSize: 50, tool: '', model: '', startTime: '', endTime: '' };
         function renderHeatmapDetailFilters(options) {
@@ -4073,6 +4213,8 @@
                             'WorkBuddy 当前记录未保存可回放的消息正文。<br>如需查看完整对话，请在 WorkBuddy 客户端中打开对应会话。' :
                         _chatDetailState.tool === 'Claude' ?
                             'Claude 代理记录只保存模型、Token 和时间。<br>如果本机存在对应 Claude 原生日志，应用会自动展示；当前未找到可关联的正文。' :
+                        _chatDetailState.tool === 'ZCode' ?
+                            'ZCode 本地数据库中未找到该会话的消息正文。<br>该会话可能尚未产生 user/assistant 文本消息，或 session_id 已被清理。' :
                             '当前数据源只记录请求元数据（模型、Token、时间），未保存请求/响应原文。<br>' +
                             '如需查看完整对话，请到对应客户端本地日志查看。') +
                         '</div></div>';
