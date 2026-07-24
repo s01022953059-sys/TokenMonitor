@@ -129,6 +129,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         config.userContentController = userContentController
         // 允许本地 file:// 页面发起对 localhost 的跨域 fetch 请求
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        // 使用非持久化数据存储: 本地仪表盘不需要 Cookie/local storage 落盘,
+        // 进程退出即清, 避免长期运行 WebKit 缓存累积占用内存。
+        config.websiteDataStore = WKWebsiteDataStore.nonPersistent()
         
         webView = WKWebView(frame: .zero, configuration: config)
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -756,6 +759,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         request.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
         let downloadTask = session.downloadTask(with: request) { [weak self] tempURL, response, error in
+            session.finishTasksAndInvalidate()
             guard let self = self else { return }
             if let error = error {
                 self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)\n\n请检查网络连接, 或点 NSAlert 的'下载 zip'手动下载。")
@@ -843,6 +847,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
         var lastReportedBytes: Int64 = 0
         let task = session.downloadTask(with: request) { [weak self] tempURL, response, error in
+            session.finishTasksAndInvalidate()
             guard let self = self else { return }
             if let http = response as? HTTPURLResponse {
                 debugLog("retry \(attempt) HTTP \(http.statusCode), content-length=\(http.expectedContentLength)")

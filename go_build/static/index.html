@@ -2761,6 +2761,10 @@
             ],
             '1.4.47': [
                 '修复 ZCode/MiniMax Code 走 cc-switch 代理时社区排行误显示为 Other 的问题。'
+            ],
+            '1.4.48': [
+                '优化内存占用：Python 后端加内存级缓存，heatmap 详情按日拆分存储。',
+                'WKWebView 非持久化数据存储，前端轮询间隔从 3 秒调整为 10 秒。'
             ]
         });
 
@@ -2956,7 +2960,7 @@
                     await updateData();
                     // 首次成功，停止快速重试，切换为稳态 3 秒轮询
                     clearInterval(bootRetryTimer);
-                    setInterval(updateData, 3000);
+                    setInterval(updateData, 10000);
                 } catch (e) {
                     // 服务器还没就绪，继续重试
                 }

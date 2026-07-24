@@ -90,6 +90,9 @@ HEATMAP_DETAIL_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_DETAIL_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_detail_cache.json"),
 )
+HEATMAP_DETAIL_CACHE_DIR = os.path.join(
+    os.path.dirname(HEATMAP_DETAIL_CACHE_PATH), "detail_cache"
+)
 _heatmap_cache_lock = threading.Lock()
 _heatmap_refreshing = False
 _heatmap_detail_cache_lock = threading.Lock()
@@ -98,6 +101,35 @@ _heatmap_detail_failures = {}
 _usage_cache_lock = threading.Lock()
 _usage_refreshing = False
 _usage_refresh_failed_at = 0.0
+
+# ───── 内存级 JSON 缓存 (mtime 失效) ─────
+# 避免每次 HTTP 请求都从磁盘全量 json.load, 特别是 3.8MB 的 detail 缓存。
+# 仅当文件 mtime 变化时才重新解析, 否则直接返回内存中的对象。
+
+_usage_cache_obj = None
+_usage_cache_mtime = 0.0
+
+_heatmap_cache_obj = None
+_heatmap_cache_mtime = 0.0
+
+
+def _read_json_cached(path, cache_obj_ref, cache_mtime_ref):
+    """读取 JSON 文件并做内存缓存, 文件 mtime 不变时直接返回缓存对象。
+
+    返回 (parsed_or_None, new_cache_obj, new_mtime)。
+    """
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None, None, 0.0
+    if cache_obj_ref is not None and mtime == cache_mtime_ref:
+        return cache_obj_ref, cache_obj_ref, mtime
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            parsed = json.load(stream)
+        return parsed, parsed, mtime
+    except (OSError, ValueError, TypeError):
+        return None, None, 0.0
 
 
 def _empty_usage_snapshot():
@@ -124,20 +156,22 @@ def _empty_usage_snapshot():
 
 
 def _load_usage_snapshot():
-    try:
-        with open(USAGE_CACHE_PATH, "r", encoding="utf-8") as stream:
-            cached = json.load(stream)
-        data = cached.get("data")
-        if not isinstance(data, dict):
-            return None
-        if (data.get("summary") or {}).get("date") != datetime.date.today().isoformat():
-            return None
-        return cached
-    except (OSError, ValueError, TypeError):
+    global _usage_cache_obj, _usage_cache_mtime
+    parsed, _usage_cache_obj, _usage_cache_mtime = _read_json_cached(
+        USAGE_CACHE_PATH, _usage_cache_obj, _usage_cache_mtime
+    )
+    if parsed is None:
         return None
+    data = parsed.get("data")
+    if not isinstance(data, dict):
+        return None
+    if (data.get("summary") or {}).get("date") != datetime.date.today().isoformat():
+        return None
+    return parsed
 
 
 def _save_usage_snapshot(data):
+    global _usage_cache_obj, _usage_cache_mtime
     directory = os.path.dirname(USAGE_CACHE_PATH)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -145,6 +179,12 @@ def _save_usage_snapshot(data):
     with open(temporary, "w", encoding="utf-8") as stream:
         json.dump({"saved_at": time.time(), "data": data}, stream, ensure_ascii=False)
     os.replace(temporary, USAGE_CACHE_PATH)
+    # 写入后同步更新内存缓存, 避免下一次请求重复读磁盘。
+    _usage_cache_obj = {"saved_at": time.time(), "data": data}
+    try:
+        _usage_cache_mtime = os.path.getmtime(USAGE_CACHE_PATH)
+    except OSError:
+        _usage_cache_mtime = 0.0
 
 
 def _refresh_usage_snapshot():
@@ -227,18 +267,20 @@ def _empty_heatmap(days):
 
 
 def _load_heatmap_snapshot():
-    try:
-        with open(HEATMAP_CACHE_PATH, "r", encoding="utf-8") as stream:
-            cached = json.load(stream)
-        data = cached.get("data") or {}
-        if len(data.get("days") or []) != HEATMAP_CACHE_DAYS:
-            return None
-        return cached
-    except (OSError, ValueError, TypeError):
+    global _heatmap_cache_obj, _heatmap_cache_mtime
+    parsed, _heatmap_cache_obj, _heatmap_cache_mtime = _read_json_cached(
+        HEATMAP_CACHE_PATH, _heatmap_cache_obj, _heatmap_cache_mtime
+    )
+    if parsed is None:
         return None
+    data = parsed.get("data") or {}
+    if len(data.get("days") or []) != HEATMAP_CACHE_DAYS:
+        return None
+    return parsed
 
 
 def _save_heatmap_snapshot(data):
+    global _heatmap_cache_obj, _heatmap_cache_mtime
     directory = os.path.dirname(HEATMAP_CACHE_PATH)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -246,6 +288,11 @@ def _save_heatmap_snapshot(data):
     with open(temporary, "w", encoding="utf-8") as stream:
         json.dump({"saved_at": time.time(), "data": data}, stream, ensure_ascii=False)
     os.replace(temporary, HEATMAP_CACHE_PATH)
+    _heatmap_cache_obj = {"saved_at": time.time(), "data": data}
+    try:
+        _heatmap_cache_mtime = os.path.getmtime(HEATMAP_CACHE_PATH)
+    except OSError:
+        _heatmap_cache_mtime = 0.0
 
 
 def _build_heatmap_snapshot_worker(cache_path):
@@ -324,23 +371,71 @@ def _empty_heatmap_detail(date, page, page_size):
     }
 
 
-def _load_heatmap_detail_cache():
+def _detail_cache_path_for_date(date):
+    """按日拆分的 detail 缓存文件路径, 避免全量读写 3.8MB。"""
+    return os.path.join(HEATMAP_DETAIL_CACHE_DIR, f"{date}.json")
+
+
+def _load_heatmap_detail_entry(date):
+    """读取单日 detail 缓存, 返回 {"saved_at": float, "data": dict} 或 None。"""
+    path = _detail_cache_path_for_date(date)
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            entry = json.load(stream)
+        if isinstance(entry, dict) and isinstance(entry.get("data"), dict):
+            return entry
+    except (OSError, ValueError, TypeError):
+        pass
+    # 兼容旧格式: 从合并文件里读
+    return _load_legacy_detail_entry(date)
+
+
+def _load_legacy_detail_entry(date):
+    """从旧的合并格式 heatmap_detail_cache.json 读取单日 (兼容迁移)。"""
     try:
         with open(HEATMAP_DETAIL_CACHE_PATH, "r", encoding="utf-8") as stream:
             cached = json.load(stream)
-        return cached if isinstance(cached.get("entries"), dict) else {"entries": {}}
+        entry = cached.get("entries", {}).get(date)
+        if entry and isinstance(entry.get("data"), dict):
+            return entry
     except (OSError, ValueError, TypeError):
-        return {"entries": {}}
+        pass
+    return None
 
 
-def _save_heatmap_detail_cache(cache):
-    directory = os.path.dirname(HEATMAP_DETAIL_CACHE_PATH)
-    if directory:
-        os.makedirs(directory, exist_ok=True)
-    temporary = HEATMAP_DETAIL_CACHE_PATH + ".tmp"
+def _save_heatmap_detail_entry(date, entry):
+    """写入单日 detail 缓存, 只读写单日小文件 (~200KB), 不再全量读写。"""
+    directory = HEATMAP_DETAIL_CACHE_DIR
+    os.makedirs(directory, exist_ok=True)
+    path = _detail_cache_path_for_date(date)
+    temporary = path + ".tmp"
     with open(temporary, "w", encoding="utf-8") as stream:
-        json.dump(cache, stream, ensure_ascii=False)
-    os.replace(temporary, HEATMAP_DETAIL_CACHE_PATH)
+        json.dump(entry, stream, ensure_ascii=False)
+    os.replace(temporary, path)
+
+
+def _migrate_legacy_detail_cache():
+    """启动时将旧的合并格式迁移到按日文件, 迁移后删除旧文件。"""
+    if not os.path.exists(HEATMAP_DETAIL_CACHE_PATH):
+        return
+    try:
+        with open(HEATMAP_DETAIL_CACHE_PATH, "r", encoding="utf-8") as stream:
+            cached = json.load(stream)
+        entries = cached.get("entries", {})
+        if not isinstance(entries, dict) or not entries:
+            return
+        os.makedirs(HEATMAP_DETAIL_CACHE_DIR, exist_ok=True)
+        for date, entry in entries.items():
+            if not isinstance(entry, dict) or not isinstance(entry.get("data"), dict):
+                continue
+            # 只迁移 weekday:hour 格式的旧 key, 纯日期的也迁移
+            path = _detail_cache_path_for_date(date.replace(":", "-"))
+            if not os.path.exists(path):
+                with open(path, "w", encoding="utf-8") as stream:
+                    json.dump(entry, stream, ensure_ascii=False)
+        os.remove(HEATMAP_DETAIL_CACHE_PATH)
+    except (OSError, ValueError, TypeError):
+        pass
 
 
 def _filter_heatmap_detail_sessions(sessions, tool="", model="", start_time="", end_time=""):
@@ -414,9 +509,7 @@ def _refresh_heatmap_detail(date):
         if not isinstance(snapshot, dict):
             raise ValueError("heatmap detail snapshot is invalid")
         with _heatmap_detail_cache_lock:
-            cache = _load_heatmap_detail_cache()
-            cache["entries"][date] = {"saved_at": time.time(), "data": snapshot}
-            _save_heatmap_detail_cache(cache)
+            _save_heatmap_detail_entry(date, {"saved_at": time.time(), "data": snapshot})
             _heatmap_detail_failures.pop(date, None)
     except Exception as exc:
         # 失败信息只留在本机内存，前端不展示原始路径/数据库错误。
@@ -448,7 +541,7 @@ def _start_heatmap_detail_refresh(date):
 def get_cached_heatmap_detail(date, page=1, page_size=50, tool="", model="",
                               start_time="", end_time=""):
     """详情页优先返回本地快照，扫描仅在后台运行。"""
-    entry = _load_heatmap_detail_cache()["entries"].get(date)
+    entry = _load_heatmap_detail_entry(date)
     if entry and isinstance(entry.get("data"), dict):
         result = _paginate_heatmap_detail_snapshot(
             entry["data"], date, page, page_size, tool, model, start_time, end_time
@@ -1004,6 +1097,9 @@ def main():
             file=sys.stderr,
         )
         sys.exit(0)
+    # 启动时迁移旧的合并格式 detail 缓存到按日文件。
+    _migrate_legacy_detail_cache()
+
     httpd = ThreadingHTTPServer(("127.0.0.1", PORT), TokenMonitorHandler)
     feed_status = UPDATE_FEED_URL or "<not configured>"
     print(f"[+] Token Monitor 仪表盘已启动: http://127.0.0.1:{PORT}")

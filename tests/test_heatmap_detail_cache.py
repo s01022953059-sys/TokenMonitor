@@ -25,7 +25,10 @@ class HeatmapDetailCacheTests(unittest.TestCase):
         date = dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "detail.json")
+            detail_dir = os.path.join(root, "detail_cache")
             with mock.patch.object(server, "HEATMAP_DETAIL_CACHE_PATH", path), mock.patch.object(
+                server, "HEATMAP_DETAIL_CACHE_DIR", detail_dir
+            ), mock.patch.object(
                 server,
                 "get_heatmap_detail",
                 side_effect=lambda **kwargs: (time.sleep(0.2), make_detail(**kwargs))[1],
@@ -48,7 +51,10 @@ class HeatmapDetailCacheTests(unittest.TestCase):
         date = dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "detail.json")
+            detail_dir = os.path.join(root, "detail_cache")
             with mock.patch.object(server, "HEATMAP_DETAIL_CACHE_PATH", path), mock.patch.object(
+                server, "HEATMAP_DETAIL_CACHE_DIR", detail_dir
+            ), mock.patch.object(
                 server, "get_heatmap_detail", side_effect=make_detail
             ) as scanner:
                 server._refresh_heatmap_detail(date)
@@ -65,7 +71,10 @@ class HeatmapDetailCacheTests(unittest.TestCase):
         date = dt.date.today().isoformat()
         with tempfile.TemporaryDirectory() as root:
             path = os.path.join(root, "detail.json")
+            detail_dir = os.path.join(root, "detail_cache")
             with mock.patch.object(server, "HEATMAP_DETAIL_CACHE_PATH", path), mock.patch.object(
+                server, "HEATMAP_DETAIL_CACHE_DIR", detail_dir
+            ), mock.patch.object(
                 server, "get_heatmap_detail", side_effect=RuntimeError("fixture failure")
             ):
                 server.get_cached_heatmap_detail(date)

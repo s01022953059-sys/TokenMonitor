@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.47"
+var appVersion = "1.4.48"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1283,6 +1283,62 @@ func getTodayUsage() UsageResponse {
 	}
 }
 
+// ───── Usage 内存快照缓存 ─────
+// Go 端之前每次 /api/usage 请求都重扫 7 个日志源, 无任何缓存。
+// 加内存快照后, 前台请求只读缓存, 后台单飞刷新, 对齐 Python 端的 get_cached_usage。
+
+var (
+	usageCacheMu       sync.Mutex
+	usageCacheData     *UsageResponse
+	usageCacheSavedAt  time.Time
+	usageCacheRefreshing bool
+)
+
+const usageCacheTTL = 10 * time.Second // 前端 10 秒轮询, 缓存也 10 秒
+
+func getCachedUsage() UsageResponse {
+	usageCacheMu.Lock()
+	if usageCacheData != nil && time.Since(usageCacheSavedAt) < usageCacheTTL {
+		data := *usageCacheData
+		usageCacheMu.Unlock()
+		return data
+	}
+	needRefresh := !usageCacheRefreshing
+	if needRefresh {
+		usageCacheRefreshing = true
+	}
+	usageCacheMu.Unlock()
+
+	if needRefresh {
+		go func() {
+			fresh := getTodayUsage()
+			usageCacheMu.Lock()
+			usageCacheData = &fresh
+			usageCacheSavedAt = time.Now()
+			usageCacheRefreshing = false
+			usageCacheMu.Unlock()
+		}()
+	}
+
+	// 返回旧缓存 (如果有) 或同步扫描一次
+	usageCacheMu.Lock()
+	if usageCacheData != nil {
+		data := *usageCacheData
+		usageCacheMu.Unlock()
+		return data
+	}
+	usageCacheMu.Unlock()
+
+	// 冷启动: 同步扫描一次
+	fresh := getTodayUsage()
+	usageCacheMu.Lock()
+	usageCacheData = &fresh
+	usageCacheSavedAt = time.Now()
+	usageCacheRefreshing = false
+	usageCacheMu.Unlock()
+	return fresh
+}
+
 // ───── API: /api/history (对齐 scanner.py get_historical_usage) ─────
 
 func getNormalizedTool(appType string) string {
@@ -2482,12 +2538,43 @@ func emptyHeatmap(days int) HeatmapResponse {
 	return HeatmapResponse{Days: rows, StartDate: rows[0].Date, EndDate: rows[len(rows)-1].Date, CacheState: "warming"}
 }
 
+// heatmap 内存缓存: 避免 /api/heatmap 每次请求都 os.ReadFile + json.Unmarshal。
+var (
+	heatmapCacheMemMu     sync.Mutex
+	heatmapCacheMemData   *heatmapCacheFile
+	heatmapCacheMemMtime  int64
+)
+
 func loadHeatmapCache() (heatmapCacheFile, bool) {
+	path := heatmapCachePath()
+	info, err := os.Stat(path)
+	if err != nil {
+		return heatmapCacheFile{}, false
+	}
+	mtime := info.ModTime().UnixNano()
+
+	// 内存缓存命中: mtime 不变直接返回
+	heatmapCacheMemMu.Lock()
+	if heatmapCacheMemData != nil && mtime == heatmapCacheMemMtime {
+		data := *heatmapCacheMemData
+		heatmapCacheMemMu.Unlock()
+		return data, true
+	}
+	heatmapCacheMemMu.Unlock()
+
+	// mtime 变了, 重新读磁盘
 	var cached heatmapCacheFile
-	raw, err := os.ReadFile(heatmapCachePath())
+	raw, err := os.ReadFile(path)
 	if err != nil || json.Unmarshal(raw, &cached) != nil || len(cached.Data.Days) != heatmapCacheDays {
 		return cached, false
 	}
+
+	// 更新内存缓存
+	heatmapCacheMemMu.Lock()
+	heatmapCacheMemData = &cached
+	heatmapCacheMemMtime = mtime
+	heatmapCacheMemMu.Unlock()
+
 	return cached, true
 }
 
@@ -2774,7 +2861,7 @@ func main() {
 			w.WriteHeader(200)
 			return
 		}
-		data := getTodayUsage()
+		data := getCachedUsage()
 		writeJSON(w, 200, data)
 	})
 
@@ -2919,9 +3006,9 @@ func main() {
 		enabled := r.URL.Query().Get("enabled") != "false"
 		setOptIn(enabled)
 		if enabled {
-			usage := getTodayUsage()
-			go reportCommunityStats(&usage)
-		}
+				usage := getCachedUsage()
+				go reportCommunityStats(&usage)
+			}
 		writeJSON(w, 200, map[string]interface{}{"ok": true, "opted_in": isOptedIn(), "user_id": getUserID()})
 	})
 	http.HandleFunc("/api/community/report", func(w http.ResponseWriter, r *http.Request) {
@@ -2930,7 +3017,7 @@ func main() {
 			w.WriteHeader(200)
 			return
 		}
-		usage := getTodayUsage()
+		usage := getCachedUsage()
 		result := reportCommunityStats(&usage)
 		writeJSON(w, 200, result)
 	})
