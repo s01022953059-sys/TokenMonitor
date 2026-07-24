@@ -454,7 +454,8 @@ def _normalize_app_type(app_type):
 
     已知映射: claude-desktop / claude -> Claude (统一为客户端名, 不区分 desktop/cli),
     codex -> Codex, hermes -> Hermes, antigravity -> Antigravity,
-    opencode -> OpenCode, 其他/空 -> Other
+    opencode -> OpenCode, zcode -> ZCode, minimax -> MiniMax Code,
+    其他/空 -> Other
     """
     if not app_type:
         return "Other"
@@ -465,6 +466,10 @@ def _normalize_app_type(app_type):
         return "Hermes"
     if "workbuddy" in t_lower or "codebuddy" in t_lower:
         return "WorkBuddy"
+    if "zcode" in t_lower:
+        return "ZCode"
+    if "minimax" in t_lower:
+        return "MiniMax Code"
     if "claude" in t_lower:
         # 不区分 desktop / cli / code, 统一为 Claude
         return "Claude"

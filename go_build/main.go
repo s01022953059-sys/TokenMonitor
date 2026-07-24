@@ -1268,6 +1268,15 @@ func getNormalizedTool(appType string) string {
 	if strings.Contains(lower, "hermes") {
 		return "Hermes"
 	}
+	if strings.Contains(lower, "workbuddy") || strings.Contains(lower, "codebuddy") {
+		return "WorkBuddy"
+	}
+	if strings.Contains(lower, "zcode") {
+		return "ZCode"
+	}
+	if strings.Contains(lower, "minimax") {
+		return "MiniMax Code"
+	}
 	if strings.Contains(lower, "claude") {
 		// 不区分 desktop / cli / code, 统一为 Claude
 		return "Claude"

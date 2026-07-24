@@ -282,6 +282,41 @@ class CrossSourceDedupTests(unittest.TestCase):
         self.assertEqual(usage["summary"]["total_tokens"], 350)
 
 
+class AppTypeNormalizationTests(unittest.TestCase):
+    """cc-switch app_type 归一化: 新工具不能被误归为 Other。
+
+    回归场景: ZCode 请求走 cc-switch 代理时 app_type=zcode,
+    _normalize_app_type('zcode') 之前返回 'Other', 导致社区排行
+    显示 'Other + Codex' 而非 'ZCode + Codex'。
+    """
+
+    def test_zcode_app_type_not_other(self):
+        """zcode / ZCode 必须归为 'ZCode', 不能是 'Other'。"""
+        self.assertEqual(scanner._normalize_app_type("zcode"), "ZCode")
+        self.assertEqual(scanner._normalize_app_type("ZCode"), "ZCode")
+        self.assertEqual(scanner._normalize_app_type("ZCODE"), "ZCode")
+
+    def test_minimax_app_type_not_other(self):
+        """minimax / MiniMax Code 走代理时不能归为 'Other'。"""
+        self.assertEqual(scanner._normalize_app_type("minimax"), "MiniMax Code")
+        self.assertEqual(scanner._normalize_app_type("minimax-code"), "MiniMax Code")
+
+    def test_existing_mappings_unchanged(self):
+        """已有映射不被破坏。"""
+        self.assertEqual(scanner._normalize_app_type("codex"), "Codex")
+        self.assertEqual(scanner._normalize_app_type("claude"), "Claude")
+        self.assertEqual(scanner._normalize_app_type("claude-desktop"), "Claude")
+        self.assertEqual(scanner._normalize_app_type("hermes"), "Hermes")
+        self.assertEqual(scanner._normalize_app_type("workbuddy"), "WorkBuddy")
+        self.assertEqual(scanner._normalize_app_type("opencode"), "OpenCode")
+
+    def test_empty_and_unknown_still_other(self):
+        """空值和未知类型仍归为 Other。"""
+        self.assertEqual(scanner._normalize_app_type(""), "Other")
+        self.assertEqual(scanner._normalize_app_type(None), "Other")
+        self.assertEqual(scanner._normalize_app_type("unknown-tool"), "Other")
+
+
 class CommunityReportTests(unittest.TestCase):
     """社区上报: by_tool 动态包含新工具, today_tokens 含新工具用量。"""
 
