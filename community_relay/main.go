@@ -26,7 +26,8 @@ var communityIDPattern = regexp.MustCompile(`^User_[A-Z0-9]{5,12}$`)
 
 var allowedTools = map[string]bool{
 	"Codex": true, "Claude": true, "Hermes": true, "OpenCode": true,
-	"WorkBuddy": true, "Antigravity": true, "Other": true,
+	"WorkBuddy": true, "Antigravity": true, "ZCode": true, "MiniMax Code": true,
+	"Other": true,
 }
 
 type reportRequest struct {

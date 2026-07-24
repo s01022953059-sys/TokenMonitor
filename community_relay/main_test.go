@@ -155,3 +155,44 @@ func TestStorageFailureIsHidden(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestNewToolsNotGroupedAsOther(t *testing.T) {
+	cases := []struct {
+		tool  string
+		tokens int64
+	}{
+		{"ZCode", 150000000},
+		{"MiniMax Code", 60000000},
+	}
+	for _, tc := range cases {
+		request := testRequest()
+		request.ByTool = map[string]int64{tc.tool: tc.tokens, "Codex": 9000000}
+		store := &fakeStore{}
+		response := performReport(t, store, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", tc.tool, response.Code, response.Body.String())
+		}
+		if store.written == nil {
+			t.Fatalf("%s: report not written", tc.tool)
+		}
+		if store.written.ByTool["Other"] != 0 {
+			t.Errorf("%s: was incorrectly grouped into Other (got %d)", tc.tool, store.written.ByTool["Other"])
+		}
+		if store.written.ByTool[tc.tool] != tc.tokens {
+			t.Errorf("%s: tokens mismatch, got %d want %d", tc.tool, store.written.ByTool[tc.tool], tc.tokens)
+		}
+	}
+}
+
+func TestUnknownToolStillGroupedAsOther(t *testing.T) {
+	request := testRequest()
+	request.ByTool = map[string]int64{"SomeRandomTool": 500, "Codex": 1000}
+	store := &fakeStore{}
+	response := performReport(t, store, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if store.written.ByTool["Other"] != 500 {
+		t.Fatalf("unknown tool not grouped as Other: %#v", store.written.ByTool)
+	}
+}
