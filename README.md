@@ -19,6 +19,8 @@
 | cc-switch | `~/.cc-switch/cc-switch.db` | SQLite，记录所有经过代理的 API 请求 |
 | Codex 官方日志 | `~/.codex/logs_2.sqlite` + `~/.codex/sessions/` | SQLite 与 rollout JSONL 始终合并，覆盖 Codex 重启前后的完整记录 |
 | Hermes | `~/.hermes/state.db` | SQLite，会话级记录；输入包含 cache read/write，用量日期优先按会话结束时间归属 |
+| ZCode | `~/.zcode/cli/db/db.sqlite` | SQLite，逐模型请求记录 `model_usage` 表，含 input/output/reasoning/cache 拆分；时间戳为毫秒级，scanner 转秒后参与跨源去重 |
+| MiniMax Code | `~/.pi/agent/sessions/**/*.jsonl` | 基于 Pi Agent 框架，逐请求读取 assistant message 的 `usage` 字段（input/output/cacheRead/cacheWrite）；ISO 时间戳转秒后参与跨源去重 |
 | WorkBuddy (腾讯 CodeBuddy) | `~/.workbuddy/projects/**/*.jsonl` | 逐请求读取 `providerData.usage`；旧版没有项目日志时才回退 SQLite 会话占用近似值 |
 
 所有数据源合并后做**跨源去重**：相差不超过 2 秒且 Token 总量相同的记录视为同一请求，只计一次。cc-switch 记录优先于 Codex 官方日志，以保留第三方 Provider 的真实模型名；Codex rollout 还会按累计 usage 过滤重复事件。没有安装或没有同步 cc-switch 的用户仍可直接统计官方 Codex App。

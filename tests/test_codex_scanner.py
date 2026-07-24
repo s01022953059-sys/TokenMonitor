@@ -21,6 +21,7 @@ class CodexScannerTests(unittest.TestCase):
             mock.patch.object(scanner, "CODEX_ARCHIVED_SESSIONS_DIR", self.archived_dir),
             mock.patch.object(scanner, "CC_SWITCH_DB_PATH", os.path.join(self.temp_dir.name, "missing-cc.db")),
             mock.patch.object(scanner, "HERMES_DB_PATH", os.path.join(self.temp_dir.name, "missing-hermes.db")),
+            mock.patch.object(scanner, "ZCODE_DB_PATH", os.path.join(self.temp_dir.name, "missing-zcode.db")),
             mock.patch.object(scanner, "WORKBUDDY_DB_PATH", os.path.join(self.temp_dir.name, "missing-workbuddy.db")),
             mock.patch.object(scanner, "WORKBUDDY_PROJECTS_DIR", os.path.join(self.temp_dir.name, "missing-workbuddy-projects")),
             mock.patch.object(scanner, "ANTIGRAVITY_STATS_PATH", os.path.join(self.temp_dir.name, "missing-antigravity.json")),

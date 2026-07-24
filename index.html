@@ -1859,6 +1859,14 @@
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.hermes/state.db</code></td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#14b8a6;margin-right:4px;"></span>ZCode</td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.zcode/cli/db/db.sqlite</code></td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e11d48;margin-right:4px;"></span>MiniMax Code</td>
+                            <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.pi/agent/sessions/**/*.jsonl</code></td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border-color);">
                             <td style="padding: 6px 8px; white-space: nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ec4899;margin-right:4px;"></span>Claude</td>
                             <td style="padding: 6px 8px;"><code style="font-size:10px;background:var(--hover-bg);padding:1px 4px;border-radius:3px;">~/.claude/projects/**/*.jsonl</code></td>
                         </tr>
@@ -1876,7 +1884,7 @@
                 <ul style="padding-left: 16px; margin: 0; font-size: 11px; line-height: 1.8;">
                     <li><b>Claude</b>：原生日志读取 <code>~/.claude/projects/**/*.jsonl</code>；经过 CC-Switch 代理的请求从 <code>~/.cc-switch/cc-switch.db</code> 补充 Token 与模型信息</li>
                     <li><b>代理</b>：OpenCode — 通过 CC-Switch 代理发请求，scanner 从 <code>~/.cc-switch/cc-switch.db</code> 读取 Token 数</li>
-                    <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>)、Hermes (<code>~/.hermes/state.db</code>) — 工具自己有本地日志文件，scanner 不经 cc-switch</li>
+                    <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>)、Hermes (<code>~/.hermes/state.db</code>)、ZCode (<code>~/.zcode/cli/db/db.sqlite</code>)、MiniMax Code (<code>~/.pi/agent/sessions/**/*.jsonl</code>) — 工具自己有本地日志文件，scanner 不经 cc-switch</li>
                     <li>部分工具 (Codex / Hermes) 走直连+代理两路, scanner 跨源去重合并</li>
                     <li>占比 &lt; 1% 自动归入 Other · 余额每 60s 异步刷新</li>
                     <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端, 本地不落盘, 暂无法支持</li>
@@ -2161,6 +2169,8 @@
             'antigravity': '#a855f7',     // 紫
             'hermes': '#10b981',          // 绿
             'hermes-native': '#06d6a0',   // 青绿
+            'zcode': '#14b8a6',           // 青色 (ZCode CLI)
+            'minimax code': '#e11d48',    // 玫红 (MiniMax Code 桌面端)
             'claude': '#ec4899',          // 粉 (聚合 claude-desktop + claude CLI)
             'opencode': '#f97316',        // 深橙 (OpenCode CLI)
             'cursor': '#6366f1',          // 靛
@@ -2744,6 +2754,10 @@
             '1.4.45': [
                 '修复社区排行榜多工具用户只显示单一工具的问题，Claude 用量展示更准确。',
                 '修复首页低用量工具被合并为 Other 的问题，并补充 Claude 数据源说明。'
+            ],
+            '1.4.46': [
+                '新增 ZCode 数据源，直读 ~/.zcode/cli/db/db.sqlite 逐模型请求 token 用量。',
+                '新增 MiniMax Code 数据源，直读 ~/.pi/agent/sessions/**/*.jsonl 逐请求 token 用量。'
             ]
         });
 
@@ -3679,7 +3693,7 @@
                     '<div id="communityActivityStep" class="community-activity-step">1 / ' + activities.length + '</div>' +
                 '</div>' : '';
 
-            const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'OpenCode': '#f59e0b', 'WorkBuddy': '#8b5cf6', 'Other': '#6b7280'};
+            const toolColors = {'Codex': '#3b82f6', 'Claude': '#ec4899', 'Hermes': '#10b981', 'ZCode': '#14b8a6', 'MiniMax Code': '#e11d48', 'OpenCode': '#f59e0b', 'WorkBuddy': '#8b5cf6', 'Other': '#6b7280'};
             const toolDots = Object.entries(toolDist).map(([tool, pct]) => {
                 const color = toolColors[tool] || '#6b7280';
                 return '<div class="dist-item" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +

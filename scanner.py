@@ -19,8 +19,10 @@ ANTIGRAVITY_STATS_PATH = os.path.expanduser(
     "~/Library/Application Support/BingchaAI/usage_stats.json"
 )
 HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
+ZCODE_DB_PATH = os.path.expanduser("~/.zcode/cli/db/db.sqlite")
 WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
 WORKBUDDY_PROJECTS_DIR = os.path.expanduser("~/.workbuddy/projects")
+MINIMAX_SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
 CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 CODEX_LOG_DB_PATH = os.path.expanduser("~/.codex/logs_2.sqlite")
 CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
@@ -611,8 +613,176 @@ def scan_hermes_tokens(today_start):
             })
     except Exception as e:
         print(f"[-] 扫描 Hermes 数据库出错: {e}")
-        
+
     return logs_data
+
+def scan_zcode_tokens(start_timestamp, end_timestamp=None):
+    """只读扫描 ZCode 本地数据库中今天的模型请求记录。
+
+    ZCode (~/.zcode/cli/db/db.sqlite) 的 model_usage 表逐条记录每个模型请求,
+    含完整的 token 拆分 (input/output/reasoning/cache_creation/cache_read)。
+
+    时间口径: model_usage.started_at 是毫秒级 unix 时间戳, 这里 /1000 转秒,
+    与 cc-switch/Hermes 等其他数据源对齐, 否则跨源去重 (≤2s 窗口) 会失效。
+
+    缓存口径 (Anthropic 式分离): input_tokens 是未缓存的新输入, cache_read /
+    cache_creation 是输入之外的独立字段, 与 Hermes / cc-switch Anthropic 分支
+    一致。不能用 computed_total_tokens —— 它只含 input+output, 不含 cache_read。
+    """
+    logs_data = []
+    if not os.path.exists(ZCODE_DB_PATH):
+        return logs_data
+
+    try:
+        conn = _open_sqlite_readonly(ZCODE_DB_PATH)
+        cursor = conn.cursor()
+
+        # started_at 毫秒 → 秒: SQL 侧直接比较毫秒, 避免逐行除法。
+        start_ms = int(start_timestamp) * 1000
+        query = """
+            SELECT started_at, model_id, status, input_tokens, output_tokens,
+                   reasoning_tokens, cache_creation_input_tokens,
+                   cache_read_input_tokens, session_id, turn_id
+            FROM model_usage
+            WHERE started_at >= ?
+        """
+        params = [start_ms]
+        if end_timestamp is not None:
+            query += " AND started_at < ?"
+            params.append(int(end_timestamp) * 1000)
+        query += " ORDER BY started_at ASC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        for row in rows:
+            started_at_ms, model, status, input_t, output_t, reasoning_t, \
+                cache_create_t, cache_read_t, session_id, turn_id = row
+
+            # 跳过未完成 / 用户取消的请求 (running 尚未结算, cancelled 不计费)。
+            if status in ("running", "cancelled"):
+                continue
+
+            # 毫秒 → 秒, 与其他源对齐。
+            occurred_at = int(started_at_ms) // 1000
+            local_time = datetime.datetime.fromtimestamp(occurred_at).strftime("%H:%M:%S")
+
+            # Anthropic 式分离: input 是未缓存新输入, cache 独立。
+            i_cached = (cache_read_t or 0) + (cache_create_t or 0)
+            i_uncached = (input_t or 0) + (reasoning_t or 0)
+            total_input = i_uncached + i_cached
+            output_tokens = output_t or 0
+            total_t = total_input + output_tokens
+
+            logs_data.append({
+                "time": local_time,
+                "timestamp": occurred_at,
+                "tool": "ZCode",
+                "model": normalize_model_name(model) if model else "Unknown",
+                "input_tokens": total_input,
+                "output_tokens": output_tokens,
+                "total_tokens": total_t,
+                "input_cached": i_cached,
+                "input_uncached": i_uncached,
+                "latency_ms": 0,
+                "session_id": session_id or turn_id or "",
+            })
+    except Exception as e:
+        print(f"[-] 扫描 ZCode 数据库出错: {e}")
+
+    return logs_data
+
+def _parse_pi_timestamp(ts_str):
+    """把 Pi Agent 的 ISO 8601 时间戳 (如 '2026-05-26T10:07:19.655Z') 转成 unix 秒。
+
+    返回 0 表示解析失败。"""
+    if not ts_str or not isinstance(ts_str, str):
+        return 0
+    try:
+        # fromisoformat 不接受末尾的 Z, 替换为 +00:00 后转本地时间。
+        dt = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return int(dt.astimezone().timestamp())
+    except (ValueError, TypeError):
+        return 0
+
+
+def scan_minimax_tokens(start_timestamp, end_timestamp=None):
+    """只读扫描 MiniMax Code (Pi Agent) 会话 JSONL 中的逐请求 token 用量。
+
+    MiniMax Code 桌面端基于开源框架 Pi Agent, 会话存于
+    ~/.pi/agent/sessions/**/*.jsonl。每行是一个 JSON 事件, 其中 role=assistant
+    的 message 事件带 message.usage 字段 (input/output/cacheRead/cacheWrite/
+    totalTokens), 是 Anthropic 式分离口径 (input 不含 cache)。
+
+    时间戳是 ISO 8601 字符串, 需转 unix 秒后与其他数据源对齐参与跨源去重。
+    """
+    logs_data = []
+    if not os.path.isdir(MINIMAX_SESSIONS_DIR):
+        return logs_data
+
+    for path in glob.iglob(os.path.join(MINIMAX_SESSIONS_DIR, "**", "*.jsonl"), recursive=True):
+        try:
+            # 跳过早于扫描窗口的文件 (减 1 天容差, 兼容跨天会话)。
+            if os.path.getmtime(path) < start_timestamp - 86400:
+                continue
+            with open(path, "r", encoding="utf-8") as stream:
+                for line in stream:
+                    try:
+                        item = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    if item.get("type") != "message":
+                        continue
+                    message = item.get("message") or {}
+                    if message.get("role") != "assistant":
+                        continue
+                    usage = message.get("usage")
+                    if not isinstance(usage, dict):
+                        continue
+
+                    timestamp = _parse_pi_timestamp(item.get("timestamp") or message.get("timestamp"))
+                    if timestamp <= 0:
+                        continue
+                    if timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp >= end_timestamp:
+                        continue
+
+                    input_t = int(usage.get("input") or 0)
+                    output_t = int(usage.get("output") or 0)
+                    cache_read = int(usage.get("cacheRead") or 0)
+                    cache_write = int(usage.get("cacheWrite") or 0)
+                    total_t = int(usage.get("totalTokens") or 0)
+
+                    # Anthropic 式分离: input 是未缓存新输入, cache 独立。
+                    i_cached = cache_read + cache_write
+                    i_uncached = input_t
+                    total_input = i_uncached + i_cached
+                    if total_t <= 0:
+                        total_t = total_input + output_t
+                    if total_t <= 0:
+                        continue
+
+                    model = message.get("model") or "Unknown"
+
+                    logs_data.append({
+                        "time": datetime.datetime.fromtimestamp(timestamp).strftime("%H:%M:%S"),
+                        "timestamp": timestamp,
+                        "tool": "MiniMax Code",
+                        "model": normalize_model_name(model),
+                        "input_tokens": total_input,
+                        "output_tokens": output_t,
+                        "total_tokens": total_t,
+                        "input_cached": i_cached,
+                        "input_uncached": i_uncached,
+                        "latency_ms": 0,
+                        "session_id": os.path.splitext(os.path.basename(path))[0],
+                    })
+        except OSError:
+            continue
+
+    return _dedup_events(logs_data)
 
 def _workbuddy_usage_value(usage, *keys):
     for key in keys:
@@ -783,11 +953,13 @@ def get_today_usage():
     codex_logs = scan_codex_tokens(today_start)
     antigravity_logs = scan_antigravity_tokens(today_start)
     hermes_logs = scan_hermes_tokens(today_start)
+    zcode_logs = scan_zcode_tokens(today_start)
+    minimax_logs = scan_minimax_tokens(today_start)
     workbuddy_logs = scan_workbuddy_tokens(today_start)
 
     # 2. 合并去重 + 按时间戳排序
     all_logs = _dedup_events(
-        cc_logs + codex_logs + antigravity_logs + hermes_logs + workbuddy_logs
+        cc_logs + codex_logs + antigravity_logs + hermes_logs + zcode_logs + minimax_logs + workbuddy_logs
     )
 
     # 3. 统计汇总
@@ -844,7 +1016,7 @@ def get_today_usage():
             "deepseek_status": ds_balance.get("status", "Offline"),
             # 去重后的事件条数, 给前端做"是否发生跨源重复"的提示
             "events_after_dedup": len(all_logs),
-            "events_before_dedup": len(cc_logs) + len(codex_logs) + len(antigravity_logs) + len(hermes_logs) + len(workbuddy_logs),
+            "events_before_dedup": len(cc_logs) + len(codex_logs) + len(antigravity_logs) + len(hermes_logs) + len(zcode_logs) + len(minimax_logs) + len(workbuddy_logs),
         },
         "by_tool": by_tool,
         "by_model": by_model,
@@ -874,7 +1046,7 @@ def _get_historical_usage_legacy(days=30):
     # v1.3.91 修复: 加 OpenCode (cc-switch.db 里有 11 条 opencode app_type 请求)
     # v1.3.90 移除 "冰茶 AI" 项: 冰茶 AI 客户端只是 IDE/代理入口, scanner 不再
     # 单独算它 (避免跟 cc-switch Codex 代理的双计). 流量归到真实调用工具.
-    tools = ["Hermes", "Codex", "Claude", "OpenCode", "Other"]
+    tools = ["Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "Other"]
 
     def get_normalized_tool(app_type):
         return _normalize_app_type(app_type)
@@ -925,6 +1097,16 @@ def _get_historical_usage_legacy(days=30):
                 all_model_names.add(normalize_model_name(model))
         except Exception as e:
             print(f"[-] 历史扫描 Hermes 出错: {e}")
+
+    # --- 扫描 ZCode 收集模型名 ---
+    zcode_logs = scan_zcode_tokens(start_timestamp)
+    for event in zcode_logs:
+        all_model_names.add(event["model"])
+
+    # --- 扫描 MiniMax Code 收集模型名 ---
+    minimax_logs = scan_minimax_tokens(start_timestamp)
+    for event in minimax_logs:
+        all_model_names.add(event["model"])
 
     # 官方 Codex App 直连日志。cc-switch 仍然排在前面，后续跨源去重时优先
     # 保留其 provider 实际模型名。
@@ -1009,6 +1191,29 @@ def _get_historical_usage_legacy(days=30):
                 m_norm = "Other"
             model_data[m_norm][d_str] += tokens
 
+    # --- 填充 ZCode 数据 ---
+    # ZCode 事件已按 Anthropic 式口径算好 total_tokens, 直接累加。
+    for event in zcode_logs:
+        d_str = datetime.datetime.fromtimestamp(event["timestamp"]).strftime("%Y-%m-%d")
+        if d_str not in daily_totals:
+            continue
+        tokens = event["total_tokens"]
+        daily_totals[d_str] += tokens
+        tool_data["ZCode"][d_str] += tokens
+        m_norm = event["model"] if event["model"] in model_data else "Other"
+        model_data[m_norm][d_str] += tokens
+
+    # --- 填充 MiniMax Code 数据 ---
+    for event in minimax_logs:
+        d_str = datetime.datetime.fromtimestamp(event["timestamp"]).strftime("%Y-%m-%d")
+        if d_str not in daily_totals:
+            continue
+        tokens = event["total_tokens"]
+        daily_totals[d_str] += tokens
+        tool_data["MiniMax Code"][d_str] += tokens
+        m_norm = event["model"] if event["model"] in model_data else "Other"
+        model_data[m_norm][d_str] += tokens
+
     # --- 填充 Antigravity 数据 ---
     # v1.3.90 起冰茶 AI 降级为数据源, scanner 不再产出 events. 仍保留这段读取
     # 逻辑作为历史/调试用, 写 tool_data 改用 dict.setdefault 防止 KeyError
@@ -1068,10 +1273,12 @@ def get_historical_usage(days=30):
         + scan_codex_tokens(start_timestamp)
         + scan_antigravity_tokens(start_timestamp)
         + scan_hermes_tokens(start_timestamp)
+        + scan_zcode_tokens(start_timestamp)
+        + scan_minimax_tokens(start_timestamp)
         + scan_workbuddy_tokens(start_timestamp)
     )
 
-    default_tools = ["Hermes", "Codex", "Claude", "OpenCode", "WorkBuddy", "Other"]
+    default_tools = ["Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Other"]
     tools = default_tools + sorted({event["tool"] for event in events} - set(default_tools))
     model_names = sorted({event["model"] for event in events if event["model"] != "Other"})
     models = model_names + ["Other"]
@@ -1208,6 +1415,12 @@ def get_session_list(days=1, page=1, page_size=50):
         except Exception as e:
             print(f"[-] session list Hermes 出错: {e}")
 
+    # --- ZCode ---
+    events.extend(scan_zcode_tokens(start_timestamp))
+
+    # --- MiniMax Code ---
+    events.extend(scan_minimax_tokens(start_timestamp))
+
     # --- WorkBuddy ---
     events.extend(scan_workbuddy_tokens(start_timestamp))
 
@@ -1257,6 +1470,8 @@ def get_heatmap_data(days=30):
         scan_cc_switch_logs(start_timestamp)
         + scan_codex_tokens(start_timestamp)
         + scan_hermes_tokens(start_timestamp)
+        + scan_zcode_tokens(start_timestamp)
+        + scan_minimax_tokens(start_timestamp)
         + scan_workbuddy_tokens(start_timestamp)
     )
     for event in events:
@@ -1814,6 +2029,30 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
             conn.close()
         except Exception as e:
             print(f"[-] heatmap_detail Hermes 出错: {e}")
+
+    # --- ZCode ---
+    for event in scan_zcode_tokens(scan_start_timestamp, scan_end_timestamp):
+        dt = datetime.datetime.fromtimestamp(event["timestamp"])
+        if date_start_ts is not None:
+            if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
+                continue
+        elif weekday is not None and (dt.weekday() != weekday or dt.hour != hour):
+            continue
+        event = dict(event)
+        event["time"] = dt.strftime("%m-%d %H:%M:%S")
+        events.append(event)
+
+    # --- MiniMax Code ---
+    for event in scan_minimax_tokens(scan_start_timestamp, scan_end_timestamp):
+        dt = datetime.datetime.fromtimestamp(event["timestamp"])
+        if date_start_ts is not None:
+            if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
+                continue
+        elif weekday is not None and (dt.weekday() != weekday or dt.hour != hour):
+            continue
+        event = dict(event)
+        event["time"] = dt.strftime("%m-%d %H:%M:%S")
+        events.append(event)
 
     # --- WorkBuddy ---
     for event in scan_workbuddy_tokens(scan_start_timestamp, scan_end_timestamp):

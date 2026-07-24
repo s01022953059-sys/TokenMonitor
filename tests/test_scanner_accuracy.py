@@ -230,6 +230,7 @@ class ScannerAccuracyTests(unittest.TestCase):
             mock.patch.object(scanner, "scan_codex_tokens", empty),
             mock.patch.object(scanner, "scan_antigravity_tokens", empty),
             mock.patch.object(scanner, "scan_hermes_tokens", empty),
+            mock.patch.object(scanner, "scan_zcode_tokens", empty),
             mock.patch.object(scanner, "scan_workbuddy_tokens", return_value=[event]),
         ]
         for patcher in patches:

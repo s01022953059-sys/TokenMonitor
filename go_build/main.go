@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.45"
+var appVersion = "1.4.46"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -213,6 +213,14 @@ func workbuddyDBPath() string {
 
 func workbuddyProjectsPath() string {
 	return filepath.Join(homeDir(), ".workbuddy", "projects")
+}
+
+func zcodeDBPath() string {
+	return filepath.Join(homeDir(), ".zcode", "cli", "db", "db.sqlite")
+}
+
+func minimaxSessionsPath() string {
+	return filepath.Join(homeDir(), ".pi", "agent", "sessions")
 }
 
 func codexLogDBPath() string {
@@ -789,6 +797,188 @@ func scanHermesTokens(todayStart int64) []LogEntry {
 	return logs
 }
 
+// 4. ZCode
+func scanZCodeTokens(todayStart int64) []LogEntry {
+	dbPath := zcodeDBPath()
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		fmt.Printf("[-] 扫描 ZCode 数据库出错: %v\n", err)
+		return nil
+	}
+	defer db.Close()
+
+	// model_usage.started_at 是毫秒级时间戳, 这里 *1000 在 SQL 侧比较,
+	// 取回后再 /1000 转秒, 与其他数据源对齐 (否则跨源去重 ≤2s 窗口会失效)。
+	// 缓存口径 (Anthropic 式分离): input_tokens 是未缓存新输入,
+	// cache_read/cache_creation 是输入之外的独立字段, 与 Hermes 一致。
+	// 不能用 computed_total_tokens —— 它只含 input+output, 不含 cache_read。
+	rows, err := db.Query(`
+		SELECT started_at, model_id, status, input_tokens, output_tokens,
+		       reasoning_tokens, cache_creation_input_tokens,
+		       cache_read_input_tokens, session_id, turn_id
+		FROM model_usage
+		WHERE started_at >= ?
+		ORDER BY started_at ASC
+	`, todayStart*1000)
+	if err != nil {
+		fmt.Printf("[-] 扫描 ZCode 数据库出错: %v\n", err)
+		return nil
+	}
+	defer rows.Close()
+
+	var logs []LogEntry
+	for rows.Next() {
+		var startedAtMs int64
+		var model, status sql.NullString
+		var inputT, outputT, reasoningT, cacheCreateT, cacheReadT sql.NullInt64
+		var sessionID, turnID sql.NullString
+		if err := rows.Scan(&startedAtMs, &model, &status, &inputT, &outputT,
+			&reasoningT, &cacheCreateT, &cacheReadT, &sessionID, &turnID); err != nil {
+			continue
+		}
+
+		// 跳过未完成 / 用户取消的请求 (running 尚未结算, cancelled 不计费)。
+		st := status.String
+		if st == "running" || st == "cancelled" {
+			continue
+		}
+
+		// 毫秒 → 秒。
+		occurredAt := startedAtMs / 1000
+		// Anthropic 式分离: input 是未缓存新输入, cache 独立。
+		iCached := cacheReadT.Int64 + cacheCreateT.Int64
+		iUncached := inputT.Int64 + reasoningT.Int64
+		totalInput := iUncached + iCached
+		oT := outputT.Int64
+		totalT := totalInput + oT
+
+		m := "Unknown"
+		if model.Valid && model.String != "" {
+			m = normalizeModelName(model.String)
+		}
+
+		sessID := sessionID.String
+		if sessID == "" {
+			sessID = turnID.String
+		}
+
+		logs = append(logs, LogEntry{
+			Time:          time.Unix(occurredAt, 0).Format("15:04:05"),
+			Timestamp:     occurredAt,
+			Tool:          "ZCode",
+			Model:         m,
+			InputTokens:   totalInput,
+			OutputTokens:  oT,
+			TotalTokens:   totalT,
+			InputCached:   iCached,
+			InputUncached: iUncached,
+			SessionID:     sessID,
+		})
+	}
+	return logs
+}
+
+// 5. MiniMax Code (Pi Agent)
+// MiniMax Code 桌面端基于开源框架 Pi Agent, 会话存于
+// ~/.pi/agent/sessions/**/*.jsonl。每行是一个 JSON 事件, 其中 role=assistant
+// 的 message 事件带 message.usage (input/output/cacheRead/cacheWrite/totalTokens),
+// Anthropic 式分离口径。时间戳是 ISO 8601, 需转 unix 秒后参与跨源去重。
+func scanMiniMaxTokens(todayStart int64) []LogEntry {
+	root := minimaxSessionsPath()
+	if !fileExists(root) {
+		return nil
+	}
+	var events []LogEntry
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if info.ModTime().Unix() < todayStart-86400 {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 64*1024), 64*1024*1024)
+		for scanner.Scan() {
+			var item struct {
+				Type      string `json:"type"`
+				Timestamp string `json:"timestamp"`
+				Message   struct {
+					Role    string `json:"role"`
+					Model   string `json:"model"`
+					Usage   struct {
+						Input       int64 `json:"input"`
+						Output      int64 `json:"output"`
+						CacheRead   int64 `json:"cacheRead"`
+						CacheWrite  int64 `json:"cacheWrite"`
+						TotalTokens int64 `json:"totalTokens"`
+					} `json:"usage"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &item) != nil {
+				continue
+			}
+			if item.Type != "message" || item.Message.Role != "assistant" {
+				continue
+			}
+			u := item.Message.Usage
+			if u.TotalTokens == 0 && u.Input == 0 && u.Output == 0 {
+				continue
+			}
+
+			// ISO 8601 (RFC3339Nano) → unix 秒
+			parsed, err := time.Parse(time.RFC3339Nano, item.Timestamp)
+			if err != nil {
+				continue
+			}
+			ts := parsed.Unix()
+			if ts < todayStart {
+				continue
+			}
+
+			// Anthropic 式分离: input 是未缓存新输入, cache 独立。
+			iCached := u.CacheRead + u.CacheWrite
+			iUncached := u.Input
+			totalInput := iUncached + iCached
+			oT := u.Output
+			totalT := u.TotalTokens
+			if totalT <= 0 {
+				totalT = totalInput + oT
+			}
+			if totalT <= 0 {
+				continue
+			}
+
+			m := "Unknown"
+			if item.Message.Model != "" {
+				m = normalizeModelName(item.Message.Model)
+			}
+
+			events = append(events, LogEntry{
+				Time:          time.Unix(ts, 0).Format("15:04:05"),
+				Timestamp:     ts,
+				Tool:          "MiniMax Code",
+				Model:         m,
+				InputTokens:   totalInput,
+				OutputTokens:  oT,
+				TotalTokens:   totalT,
+				InputCached:   iCached,
+				InputUncached: iUncached,
+				SessionID:     strings.TrimSuffix(info.Name(), filepath.Ext(info.Name())),
+			})
+		}
+		return nil
+	})
+	return dedupEvents(events)
+}
+
 // ───── 跨源去重 (对齐 scanner.py _dedup_events) ─────
 
 const dedupWindowSeconds = 2
@@ -996,20 +1186,22 @@ func getTodayUsage() UsageResponse {
 	todayStart := todayMidnight()
 
 	// 三源并行扫描
-	var ccLogs, codexLogs, antigravityLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, antigravityLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(7)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(todayStart) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(todayStart) }()
 	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens() }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(todayStart) }()
+	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(todayStart) }()
+	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(todayStart) }()
 	var workbuddyLogs []LogEntry
 	go func() { defer wg.Done(); workbuddyLogs = scanWorkBuddyTokens(todayStart) }()
 	wg.Wait()
 
 	// 合并去重
-	eventsBeforeDedup := len(ccLogs) + len(codexLogs) + len(antigravityLogs) + len(hermesLogs) + len(workbuddyLogs)
-	allLogs := append(append(append(append(ccLogs, codexLogs...), antigravityLogs...), hermesLogs...), workbuddyLogs...)
+	eventsBeforeDedup := len(ccLogs) + len(codexLogs) + len(antigravityLogs) + len(hermesLogs) + len(zcodeLogs) + len(minimaxLogs) + len(workbuddyLogs)
+	allLogs := append(append(append(append(append(append(ccLogs, codexLogs...), antigravityLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), workbuddyLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var totalTokens, inputTokens, outputTokens, inputCached, inputUncached int64
@@ -1122,12 +1314,14 @@ func getHistoricalUsage(days int) HistoryResponse {
 		dateList[i] = d.Format("2006-01-02")
 	}
 
-	events := dedupEvents(append(append(append(
+	events := dedupEvents(append(append(append(append(append(
 		scanCCSwitchLogs(startTimestamp),
 		scanCodexTokens(startTimestamp)...),
 		scanHermesTokens(startTimestamp)...),
+		scanZCodeTokens(startTimestamp)...),
+		scanMiniMaxTokens(startTimestamp)...),
 		scanWorkBuddyTokens(startTimestamp)...))
-	tools := []string{"Hermes", "Codex", "Claude", "OpenCode", "WorkBuddy", "Other"}
+	tools := []string{"Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Other"}
 	knownTools := map[string]bool{}
 	for _, tool := range tools {
 		knownTools[tool] = true
@@ -1589,17 +1783,19 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, codexLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(6)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(startTimestamp) }()
+	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(startTimestamp) }()
 	var wbLogs []LogEntry
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(append(ccLogs, codexLogs...), hermesLogs...), wbLogs...)
+	allLogs := append(append(append(append(append(ccLogs, codexLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	sort.Slice(allLogs, func(i, j int) bool {
@@ -2149,10 +2345,12 @@ func getHeatmapData(days int) HeatmapResponse {
 
 	// daily tokens map
 	dailyTokens := map[string]int64{}
-	events := dedupEvents(append(append(append(
+	events := dedupEvents(append(append(append(append(append(
 		scanCCSwitchLogs(startTimestamp),
 		scanCodexTokens(startTimestamp)...),
 		scanHermesTokens(startTimestamp)...),
+		scanZCodeTokens(startTimestamp)...),
+		scanMiniMaxTokens(startTimestamp)...),
 		scanWorkBuddyTokens(startTimestamp)...))
 	for _, event := range events {
 		dStr := time.Unix(event.Timestamp, 0).Format("2006-01-02")
@@ -2372,17 +2570,19 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, mo
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, codexLogs, hermesLogs []LogEntry
+	var ccLogs, codexLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(6)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
+	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(startTimestamp) }()
+	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(startTimestamp) }()
 	var wbLogs []LogEntry
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(append(ccLogs, codexLogs...), hermesLogs...), wbLogs...)
+	allLogs := append(append(append(append(append(ccLogs, codexLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var filtered []LogEntry
