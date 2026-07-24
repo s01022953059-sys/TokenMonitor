@@ -410,6 +410,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
+### v1.4.51 (待发版)
+- TOP10 排名变化弹窗按钮对齐主题与图标风格：自动播放改为紫主色 + 播放/暂停 SVG，◀/▶ 切换为 24×24 chevron SVG，与 TopBar 的 SVG 风格保持一致；原先内联 `var(--text-primary)` / `var(--border-color)` 不存在的 CSS 变量修正为 `--text-main` / `--border-card`。
+- Windows 客户端补齐 ZCode 会话详情支持（Python 端之前已有）：现在 Go 端从 `~/.zcode/cli/db/db.sqlite` 的 `message` + `part` 表读取 user/assistant 文本消息，找不到正文时显示准确的本地提示；与 macOS Python 端行为对齐。
+
 ### v1.4.49 (待发版)
 - 修复 ZCode 会话详情看不到的问题：ZCode 之前走错详情分支（落到 Codex rollout 兜底），现在直接从本机 `~/.zcode/cli/db/db.sqlite` 的 `message`/`part` 表读取用户/助手文本消息；找不到正文时显示准确的本地提示。
 

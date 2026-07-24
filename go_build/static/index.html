@@ -1789,12 +1789,12 @@
             <div class="community-scroll-region" style="padding: 16px 20px;">
                 <div id="rankHistoryControls" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
                     <div style="display:flex;align-items:center;gap:8px;">
-                        <button id="rankPrevBtn" style="background:var(--bg-subtle);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">◀</button>
-                        <span id="rankDateLabel" style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:600;min-width:90px;text-align:center;">-</span>
-                        <button id="rankNextBtn" style="background:var(--bg-subtle);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;">▶</button>
+                        <button id="rankPrevBtn" aria-label="上一天" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:var(--bg-subtle);border:1px solid var(--border-card);color:var(--text-main);border-radius:6px;cursor:pointer;padding:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                        <span id="rankDateLabel" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;min-width:90px;text-align:center;">-</span>
+                        <button id="rankNextBtn" aria-label="下一天" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:var(--bg-subtle);border:1px solid var(--border-card);color:var(--text-main);border-radius:6px;cursor:pointer;padding:0;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;">
-                        <button id="rankPlayBtn" style="background:var(--neon-green);border:none;color:#000;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px;font-weight:600;">▶ 自动播放</button>
+                        <button id="rankPlayBtn" style="display:inline-flex;align-items:center;gap:6px;background:var(--tab-active-bg);border:1px solid var(--tab-active-border);color:var(--tab-active-text);border-radius:6px;padding:5px 14px;cursor:pointer;font-size:12px;font-weight:600;"><svg id="rankPlayIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 4 20 12 6 20"></polygon></svg><span id="rankPlayLabel">自动播放</span></button>
                         <span id="rankHistoryStatus" style="font-size:11px;color:var(--text-muted);"></span>
                     </div>
                 </div>
@@ -2805,6 +2805,10 @@
             '1.4.50': [
                 '整合 1.4.49/1.4.49a 的改动并重新发布：包含 ZCode 会话详情修复与社区 TOP10 动画。',
                 '版本号升到 1.4.50，沿用前两版的代码与摘要。'
+            ],
+            '1.4.51': [
+                'TOP10 排名变化弹窗的按钮对齐主色与图标风格：自动播放改为紫主色 + 播放/暂停 SVG 切换。',
+                'Windows 客户端补齐 ZCode 会话详情支持：现在从本机 SQLite 读取 user/assistant 文本消息。'
             ]
         });
 
@@ -3982,8 +3986,8 @@
                     '<span style="width:28px;text-align:center;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:' + (rank < 3 ? color : 'var(--text-muted)') + ';">' + (rank + 1) + '</span>' +
                     '<div style="flex:1;position:relative;height:24px;background:rgba(255,255,255,0.03);border-radius:4px;overflow:hidden;">' +
                     '<div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:4px;transition:width 600ms cubic-bezier(0.22,0.61,0.36,1);opacity:0.85;"></div>' +
-                    '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:' + (pct - 4) + '%;">' + escapeHtml(name) + '</span>' +
                     '</div>' +
+                    '<span style="flex:0 0 130px;min-width:0;text-align:left;font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
                     '<span style="width:70px;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:var(--text-primary);">' + formatTokens(entry.tokens || 0) + '</span>' +
                     '</div>';
             });
@@ -3996,12 +4000,28 @@
             document.getElementById('rankHistoryModal').classList.add('active');
             await loadRankHistory();
         });
+        function _setRankPlaying(playing) {
+            const btn = document.getElementById('rankPlayBtn');
+            const icon = document.getElementById('rankPlayIcon');
+            const label = document.getElementById('rankPlayLabel');
+            if (playing) {
+                btn.style.background = 'var(--text-muted)';
+                btn.style.borderColor = 'var(--text-muted)';
+                btn.style.color = '#000';
+                icon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+                label.textContent = '暂停';
+            } else {
+                btn.style.background = 'var(--tab-active-bg)';
+                btn.style.borderColor = 'var(--tab-active-border)';
+                btn.style.color = 'var(--tab-active-text)';
+                icon.innerHTML = '<polygon points="6 4 20 12 6 20"></polygon>';
+                label.textContent = '自动播放';
+            }
+        }
         document.getElementById('rankHistoryCloseBtn').addEventListener('click', () => {
             _rankHistory.playing = false;
             if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
-            const btn = document.getElementById('rankPlayBtn');
-            btn.textContent = '▶ 自动播放';
-            btn.style.background = 'var(--neon-green)';
+            _setRankPlaying(false);
             document.getElementById('rankHistoryModal').classList.remove('active');
         });
         document.getElementById('rankHistoryModal').addEventListener('click', (e) => {
@@ -4018,17 +4038,14 @@
             if (_rankHistory.index < _rankHistory.snapshots.length - 1) { _rankHistory.index++; renderRankHistory(); }
         });
         document.getElementById('rankPlayBtn').addEventListener('click', () => {
-            const btn = document.getElementById('rankPlayBtn');
             if (_rankHistory.playing) {
                 _rankHistory.playing = false;
                 if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
-                btn.textContent = '▶ 自动播放';
-                btn.style.background = 'var(--neon-green)';
+                _setRankPlaying(false);
             } else {
                 if (_rankHistory.snapshots.length < 2) return;
                 _rankHistory.playing = true;
-                btn.textContent = '⏸ 暂停';
-                btn.style.background = 'var(--text-muted)';
+                _setRankPlaying(true);
                 _rankHistory.timer = setInterval(() => {
                     _rankHistory.index = (_rankHistory.index + 1) % _rankHistory.snapshots.length;
                     renderRankHistory();

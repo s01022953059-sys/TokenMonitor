@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.50"
+var appVersion = "1.4.51"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -2041,6 +2041,134 @@ func claudeMessageText(value interface{}) string {
 	return strings.Join(parts, "\n")
 }
 
+func findZCodeSessionFile(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	dbPath := zcodeDBPath()
+	if _, err := os.Stat(dbPath); err != nil {
+		return ""
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+	var ok int
+	row := db.QueryRow("SELECT 1 FROM session WHERE id = ? LIMIT 1", sessionID)
+	if err := row.Scan(&ok); err != nil {
+		return ""
+	}
+	return dbPath
+}
+
+// parseZCodeMessages 从 ZCode 的 message + part 表读取 user/assistant 文本消息。
+//
+// ZCode 把消息元数据存在 `message` 表的 `data` JSON 字段里 (`role` / `time`)。
+// 文本正文存在同 message_id 的 `part` 表 (`type='text'` 的 `data.text` 字段)。
+// 这里与 Python 端 scanner.py:_parse_zcode_messages 实现等价, 错误时返回空切片。
+func parseZCodeMessages(dbPath, sessionID string, maxMessages int) ([]SessionMessage, error) {
+	if maxMessages <= 0 {
+		maxMessages = 500
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	// Step 1: 用 json_extract 粗筛 role, 取同 session 内 user/assistant 消息。
+	rows, err := db.Query(`
+		SELECT id, json_extract(data, '$.role') AS role, time_created
+		FROM message
+		WHERE session_id = ?
+		  AND json_extract(data, '$.role') IN ('user', 'assistant')
+		ORDER BY time_created ASC
+	`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type messageRow struct {
+		id          string
+		role        string
+		timeCreated int64
+	}
+	var messageRows []messageRow
+	for rows.Next() {
+		var id, role string
+		var tCreated int64
+		if err := rows.Scan(&id, &role, &tCreated); err != nil {
+			continue
+		}
+		messageRows = append(messageRows, messageRow{id: id, role: role, timeCreated: tCreated})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(messageRows) == 0 {
+		return []SessionMessage{}, nil
+	}
+
+	// Step 2: 批量取这批 message 的所有 text part。
+	placeholders := make([]string, len(messageRows))
+	args := make([]interface{}, 0, len(messageRows)+1)
+	args = append(args, sessionID)
+	for i, m := range messageRows {
+		placeholders[i] = "?"
+		args = append(args, m.id)
+	}
+	partQuery := `
+		SELECT message_id, data
+		FROM part
+		WHERE session_id = ?
+		  AND message_id IN (` + strings.Join(placeholders, ",") + `)
+		  AND json_extract(data, '$.type') = 'text'
+		ORDER BY message_id, time_created ASC
+	`
+	partRows, err := db.Query(partQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer partRows.Close()
+	partTexts := make(map[string][]string, len(messageRows))
+	for partRows.Next() {
+		var messageID, data string
+		if err := partRows.Scan(&messageID, &data); err != nil {
+			continue
+		}
+		var obj map[string]interface{}
+		if json.Unmarshal([]byte(data), &obj) != nil {
+			continue
+		}
+		if t, ok := obj["text"].(string); ok && t != "" {
+			partTexts[messageID] = append(partTexts[messageID], t)
+		}
+	}
+
+	messages := make([]SessionMessage, 0, len(messageRows))
+	for _, m := range messageRows {
+		parts := partTexts[m.id]
+		text := strings.TrimSpace(strings.Join(parts, "\n"))
+		if text == "" {
+			continue
+		}
+		if len(text) > 5000 {
+			text = text[:5000] + "\n...(内容过长已截断)"
+		}
+		ts := ""
+		if m.timeCreated > 0 {
+			ts = time.Unix(m.timeCreated/1000, 0).Format("2006-01-02 15:04:05")
+		}
+		messages = append(messages, SessionMessage{Role: m.role, Text: text, Timestamp: ts})
+		if len(messages) >= maxMessages {
+			break
+		}
+	}
+	return messages, nil
+}
+
 func parseClaudeMessages(path string, maxMessages int) ([]SessionMessage, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -2326,6 +2454,35 @@ func getSessionDetailWithTimestamp(sessionID string, page, pageSize int, timesta
 		}
 		messages, err := parseWorkBuddyMessages(path, 500)
 		if err != nil {
+			return resp
+		}
+		resp.Messages = messages
+		resp.Total = len(messages)
+		resp.TotalPages = (resp.Total + pageSize - 1) / pageSize
+		if resp.TotalPages < 1 {
+			resp.TotalPages = 1
+		}
+		start := (page - 1) * pageSize
+		end := start + pageSize
+		if start >= resp.Total {
+			resp.Messages = []SessionMessage{}
+		} else {
+			if end > resp.Total {
+				end = resp.Total
+			}
+			resp.Messages = resp.Messages[start:end]
+		}
+		return resp
+	}
+	if tool == "ZCode" {
+		resp.DetailSource = "zcode"
+		path := findZCodeSessionFile(sessionID)
+		if path == "" {
+			return resp
+		}
+		messages, err := parseZCodeMessages(path, sessionID, 500)
+		if err != nil {
+			fmt.Printf("[-] ZCode session_detail 出错: %v\n", err)
 			return resp
 		}
 		resp.Messages = messages
