@@ -3218,6 +3218,19 @@ func main() {
 		}
 		writeJSON(w, status, result)
 	})
+	// 社区 TOP10 排名变化弹窗 (Windows 此前未注册, 前端 fetch /api/community/history 一直 404, 修复 v1.4.51 follow-up)。
+	http.HandleFunc("/api/community/history", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "status": "method_not_allowed", "message": "仅支持 GET"})
+			return
+		}
+		writeJSON(w, 200, getCommunityHistory(30))
+	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)
 	staticContent, _ := fs.Sub(staticFS, "static")

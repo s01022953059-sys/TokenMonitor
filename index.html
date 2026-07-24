@@ -4038,7 +4038,6 @@
             if (_rankHistory.index < _rankHistory.snapshots.length - 1) { _rankHistory.index++; renderRankHistory(); }
         });
         document.getElementById('rankPlayBtn').addEventListener('click', () => {
-            const btn = document.getElementById('rankPlayBtn');
             if (_rankHistory.playing) {
                 _rankHistory.playing = false;
                 if (_rankHistory.timer) { clearInterval(_rankHistory.timer); _rankHistory.timer = null; }
