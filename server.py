@@ -32,10 +32,10 @@ from urllib import request as urlrequest
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile
+    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile
+    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -1054,6 +1054,14 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
                     "user_id": get_user_id(),
                     "report": report_result,
                 })
+            except Exception as exc:
+                self._write_json(500, {"error": str(exc)})
+            return
+
+        if self.path == "/api/community/history" or self.path.startswith("/api/community/history?"):
+            try:
+                history = get_community_history(days=30)
+                self._write_json(200, history)
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})
             return

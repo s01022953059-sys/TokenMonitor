@@ -21,6 +21,11 @@ type fakeStore struct {
 	written      *reportDocument
 	writeSHA     string
 	err          error
+	listReports  []reportDocument
+	listErr      error
+	archived     []byte
+	archiveDate  string
+	archiveErr   error
 }
 
 func (s *fakeStore) Get(_ context.Context, id string) (*reportDocument, string, error) {
@@ -34,6 +39,16 @@ func (s *fakeStore) Write(_ context.Context, doc reportDocument, sha string) err
 	s.written = &doc
 	s.writeSHA = sha
 	return s.err
+}
+
+func (s *fakeStore) ListReports(_ context.Context) ([]reportDocument, error) {
+	return s.listReports, s.listErr
+}
+
+func (s *fakeStore) WriteArchive(_ context.Context, date string, data []byte) error {
+	s.archiveDate = date
+	s.archived = data
+	return s.archiveErr
 }
 
 func testSecret() string {
@@ -194,5 +209,86 @@ func TestUnknownToolStillGroupedAsOther(t *testing.T) {
 	}
 	if store.written.ByTool["Other"] != 500 {
 		t.Fatalf("unknown tool not grouped as Other: %#v", store.written.ByTool)
+	}
+}
+
+func TestArchiveCreatesTop10Snapshot(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	reports := []reportDocument{
+		{ID: "User_A001", ReportDate: "2026-07-24", TodayTokens: 1000, ByTool: map[string]int64{"Codex": 1000}, DisplayName: "Alice", UpdatedAt: "2026-07-24T11:00:00Z"},
+		{ID: "User_B002", ReportDate: "2026-07-24", TodayTokens: 2000, ByTool: map[string]int64{"ZCode": 2000}, DisplayName: "Bob", UpdatedAt: "2026-07-24T11:30:00Z"},
+		{ID: "User_C003", ReportDate: "2026-07-23", TodayTokens: 500, ByTool: map[string]int64{"Codex": 500}, DisplayName: "Carol", UpdatedAt: "2026-07-23T20:00:00Z"},
+	}
+	store := &fakeStore{listReports: reports}
+	handler := &relayHandler{store: store, now: func() time.Time { return now }}
+
+	if err := handler.runArchive(); err != nil {
+		t.Fatalf("runArchive error: %v", err)
+	}
+
+	if store.archiveDate != "2026-07-24" {
+		t.Fatalf("archive date: got %s want 2026-07-24", store.archiveDate)
+	}
+
+	var snapshot archiveSnapshot
+	if err := json.Unmarshal(store.archived, &snapshot); err != nil {
+		t.Fatalf("unmarshal archive: %v", err)
+	}
+
+	// Carol (report_date=07-23) 不计入当天活跃, 只有 Alice + Bob
+	if snapshot.ActiveUsers != 2 {
+		t.Fatalf("active users: got %d want 2", snapshot.ActiveUsers)
+	}
+	if snapshot.TotalUsers != 3 {
+		t.Fatalf("total users: got %d want 3", snapshot.TotalUsers)
+	}
+
+	// TOP10 按 token 降序: Bob(2000) > Alice(1000)
+	if len(snapshot.Leaderboard) != 2 {
+		t.Fatalf("leaderboard length: got %d want 2", len(snapshot.Leaderboard))
+	}
+	if snapshot.Leaderboard[0].ID != "User_B002" || snapshot.Leaderboard[0].Tokens != 2000 {
+		t.Fatalf("first place: got %+v", snapshot.Leaderboard[0])
+	}
+	if snapshot.Leaderboard[1].ID != "User_A001" || snapshot.Leaderboard[1].Tokens != 1000 {
+		t.Fatalf("second place: got %+v", snapshot.Leaderboard[1])
+	}
+	if snapshot.Leaderboard[0].Tool != "ZCode" {
+		t.Fatalf("tool format: got %s want ZCode", snapshot.Leaderboard[0].Tool)
+	}
+}
+
+func TestArchiveEndpointReturnsOK(t *testing.T) {
+	store := &fakeStore{listReports: []reportDocument{}}
+	handler := &relayHandler{store: store, now: func() time.Time {
+		return time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	}}
+	body, _ := json.Marshal(map[string]string{})
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/archive", bytes.NewReader(body)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestArchiveDeduplicatesByID(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	// 同一用户两份报告, 保留 UpdatedAt 更新的
+	reports := []reportDocument{
+		{ID: "User_A001", ReportDate: "2026-07-24", TodayTokens: 100, UpdatedAt: "2026-07-24T10:00:00Z"},
+		{ID: "User_A001", ReportDate: "2026-07-24", TodayTokens: 500, UpdatedAt: "2026-07-24T11:00:00Z"},
+	}
+	store := &fakeStore{listReports: reports}
+	handler := &relayHandler{store: store, now: func() time.Time { return now }}
+
+	handler.runArchive()
+
+	var snapshot archiveSnapshot
+	json.Unmarshal(store.archived, &snapshot)
+	if len(snapshot.Leaderboard) != 1 {
+		t.Fatalf("expected 1 entry after dedup, got %d", len(snapshot.Leaderboard))
+	}
+	if snapshot.Leaderboard[0].Tokens != 500 {
+		t.Fatalf("expected 500 tokens (latest), got %d", snapshot.Leaderboard[0].Tokens)
 	}
 }

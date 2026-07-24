@@ -15,7 +15,9 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -57,6 +59,8 @@ type reportDocument struct {
 type reportStore interface {
 	Get(ctx context.Context, id string) (*reportDocument, string, error)
 	Write(ctx context.Context, doc reportDocument, sha string) error
+	ListReports(ctx context.Context) ([]reportDocument, error)
+	WriteArchive(ctx context.Context, date string, data []byte) error
 }
 
 type relayHandler struct {
@@ -75,6 +79,8 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleReport(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/profile":
 		h.handleProfile(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/archive":
+		h.handleArchive(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "接口不存在")
 	}
@@ -151,6 +157,116 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "status": "synced", "message": "匿名统计已同步", "reported_at": doc.UpdatedAt,
+	})
+}
+
+// archiveEntry 是每日快照里的一条 TOP10 记录。
+type archiveEntry struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Tokens      int64  `json:"tokens"`
+	Tool        string `json:"tool"`
+}
+
+// archiveSnapshot 是一天的完整快照。
+type archiveSnapshot struct {
+	Date        string         `json:"date"`
+	GeneratedAt string         `json:"generated_at"`
+	TotalUsers  int            `json:"total_users"`
+	ActiveUsers int            `json:"active_users"`
+	Leaderboard []archiveEntry `json:"leaderboard"`
+}
+
+// formatArchiveTools 按 token 降序拼接工具名, 对齐客户端 _format_report_tools。
+func formatArchiveTools(byTool map[string]int64) string {
+	type toolItem struct {
+		name   string
+		tokens int64
+	}
+	items := make([]toolItem, 0, len(byTool))
+	for name, tokens := range byTool {
+		if tokens > 0 {
+			items = append(items, toolItem{name, tokens})
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].tokens != items[j].tokens {
+			return items[i].tokens > items[j].tokens
+		}
+		return items[i].name < items[j].name
+	})
+	parts := make([]string, len(items))
+	for i, item := range items {
+		parts[i] = item.name
+	}
+	if len(parts) == 0 {
+		return "?"
+	}
+	return strings.Join(parts, " + ")
+}
+
+// runArchive 读取所有报告, 聚合当天 TOP10, 写入 GitCode archive。
+func (h *relayHandler) runArchive() error {
+	ctx := context.Background()
+	reports, err := h.store.ListReports(ctx)
+	if err != nil {
+		return fmt.Errorf("list reports: %w", err)
+	}
+
+	// 按 ID 去重, 保留最新
+	latest := map[string]reportDocument{}
+	for _, r := range reports {
+		if existing, ok := latest[r.ID]; !ok || r.UpdatedAt > existing.UpdatedAt {
+			latest[r.ID] = r
+		}
+	}
+
+	// 按 report_date 过滤当天
+	today := h.now().UTC().Format("2006-01-02")
+	var active []reportDocument
+	for _, r := range latest {
+		if r.ReportDate == today && r.TodayTokens > 0 {
+			active = append(active, r)
+		}
+	}
+
+	// 按 token 降序排序, 取 TOP10
+	sort.SliceStable(active, func(i, j int) bool {
+		return active[i].TodayTokens > active[j].TodayTokens
+	})
+	limit := 10
+	if len(active) < limit {
+		limit = len(active)
+	}
+	entries := make([]archiveEntry, 0, limit)
+	for i := 0; i < limit; i++ {
+		r := active[i]
+		entries = append(entries, archiveEntry{
+			ID:          r.ID,
+			DisplayName: r.DisplayName,
+			Tokens:      r.TodayTokens,
+			Tool:        formatArchiveTools(r.ByTool),
+		})
+	}
+
+	snapshot := archiveSnapshot{
+		Date:        today,
+		GeneratedAt: h.now().UTC().Format(time.RFC3339),
+		TotalUsers:  len(latest),
+		ActiveUsers: len(active),
+		Leaderboard: entries,
+	}
+	data, _ := json.MarshalIndent(snapshot, "", "  ")
+	return h.store.WriteArchive(ctx, today, data)
+}
+
+func (h *relayHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
+	if err := h.runArchive(); err != nil {
+		writeError(w, http.StatusBadGateway, "archive_failed", "归档失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "status": "archived", "message": "每日排行榜快照已归档",
 	})
 }
 
@@ -362,6 +478,111 @@ func (s *gitCodeStore) Write(ctx context.Context, doc reportDocument, sha string
 	return nil
 }
 
+// ListReports 读取 community/reports/ 目录下所有报告文件并解析。
+func (s *gitCodeStore) ListReports(ctx context.Context) ([]reportDocument, error) {
+	url := fmt.Sprintf("%s/contents/community/reports?ref=%s", s.apiBase, s.branch)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("gitcode list HTTP %d", resp.StatusCode)
+	}
+	var files []struct {
+		Name         string `json:"name"`
+		DownloadURL  string `json:"download_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
+		return nil, err
+	}
+	// 限制并发读取, 避免给 GitCode API 造成突发压力。
+	sem := make(chan struct{}, 8)
+	var mu sync.Mutex
+	var reports []reportDocument
+	var wg sync.WaitGroup
+	for _, f := range files {
+		if !strings.HasSuffix(f.Name, ".json") || f.DownloadURL == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(downloadURL string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+			req.Header.Set("Authorization", "Bearer "+s.token)
+			r, err := s.client.Do(req)
+			if err != nil {
+				return
+			}
+			defer r.Body.Close()
+			if r.StatusCode < 200 || r.StatusCode >= 300 {
+				return
+			}
+			var doc reportDocument
+			if json.NewDecoder(r.Body).Decode(&doc) != nil {
+				return
+			}
+			if doc.ID != "" {
+				mu.Lock()
+				reports = append(reports, doc)
+				mu.Unlock()
+			}
+		}(f.DownloadURL)
+	}
+	wg.Wait()
+	return reports, nil
+}
+
+// WriteArchive 将每日 TOP10 快照写入 community/archive/{date}.json。
+func (s *gitCodeStore) WriteArchive(ctx context.Context, date string, data []byte) error {
+	// 先尝试 GET 获取 sha (已存在则 PUT, 不存在则 POST)
+	url := fmt.Sprintf("%s/contents/community/archive/%s.json?ref=%s", s.apiBase, date, s.branch)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	sha := ""
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var payload struct {
+			SHA string `json:"sha"`
+		}
+		json.NewDecoder(resp.Body).Decode(&payload)
+		sha = payload.SHA
+	}
+	resp.Body.Close()
+
+	payload := map[string]interface{}{
+		"message": "community: archive " + date,
+		"content": base64.StdEncoding.EncodeToString(data),
+		"branch":  s.branch,
+	}
+	method := http.MethodPost
+	if sha != "" {
+		method = http.MethodPut
+		payload["sha"] = sha
+	}
+	body, _ := json.Marshal(payload)
+	url = fmt.Sprintf("%s/contents/community/archive/%s.json", s.apiBase, date)
+	req, _ = http.NewRequestWithContext(ctx, method, url, strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("gitcode archive write HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func main() {
 	token := strings.TrimSpace(os.Getenv("GITCODE_TOKEN"))
 	if token == "" {
@@ -393,5 +614,23 @@ func main() {
 		ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	log.Printf("community relay listening on %s", listenAddr)
+
+	// 每日 23:55 UTC 自动归档当天 TOP10 排行榜快照。
+	go func() {
+		for {
+			now := time.Now().UTC()
+			next := time.Date(now.Year(), now.Month(), now.Day(), 23, 55, 0, 0, time.UTC)
+			if now.After(next) {
+				next = next.Add(24 * time.Hour)
+			}
+			time.Sleep(next.Sub(now))
+			if err := handler.runArchive(); err != nil {
+				log.Printf("[-] daily archive failed: %v", err)
+			} else {
+				log.Printf("[+] daily archive completed for %s", time.Now().UTC().Format("2006-01-02"))
+			}
+		}
+	}()
+
 	log.Fatal(server.ListenAndServe())
 }

@@ -554,3 +554,45 @@ def get_community_stats(force_refresh=False):
     result["opted_in"] = is_opted_in()
     result["my_id"] = my_id
     return result
+
+
+def get_community_history(days=30):
+    """读取 community/archive/ 目录下的每日 TOP10 快照, 返回最近 N 天的排名历史。
+
+    归档文件由 VPS 中继每天 23:55 UTC 自动生成, 存于 GitCode community-data
+    分支的 community/archive/{date}.json。客户端无需 GitCode token, 走公开读取。
+
+    Returns:
+        {"snapshots": [{date, leaderboard: [...]}], "data_status": "ok"|"empty"}
+    """
+    token = None
+    archive_path = "community/archive"
+    files = _gitcode_api("GET", archive_path, token=token, require_auth=False)
+    if not isinstance(files, list):
+        return {"snapshots": [], "data_status": "empty"}
+
+    # 筛选 .json 文件, 按文件名(日期)降序, 取最近 N 天
+    archive_files = sorted(
+        [f for f in files if isinstance(f, dict) and str(f.get("name", "")).endswith(".json")],
+        key=lambda f: str(f.get("name", "")),
+        reverse=True,
+    )[:days]
+
+    if not archive_files:
+        return {"snapshots": [], "data_status": "empty"}
+
+    snapshots = []
+    for f in archive_files:
+        file_url = f.get("download_url") or f.get("url")
+        if not file_url:
+            continue
+        try:
+            snapshot, _ = _read_remote_json(file_url, token=token)
+            if isinstance(snapshot, dict) and snapshot.get("date"):
+                snapshots.append(snapshot)
+        except Exception:
+            continue
+
+    # 按日期升序返回 (旧→新), 方便前端时间轴播放
+    snapshots.sort(key=lambda s: s.get("date", ""))
+    return {"snapshots": snapshots, "data_status": "ok" if snapshots else "empty"}

@@ -743,7 +743,86 @@ func gitcodeGetDetailed(path, token string) (interface{}, int, error) {
 	return result, resp.StatusCode, nil
 }
 
-// gitcodeWrite 使用 POST 创建文件、PUT 更新文件。
+// getCommunityHistory 读取 community/archive/ 目录下的每日 TOP10 快照。
+func getCommunityHistory(days int) map[string]interface{} {
+	if days <= 0 {
+		days = 30
+	}
+	token := ""
+	listing, statusCode, err := gitcodeGetDetailed("community/archive", token)
+	if err != nil || statusCode < 200 || statusCode >= 300 {
+		return map[string]interface{}{"snapshots": []interface{}{}, "data_status": "empty"}
+	}
+	body, _ := json.Marshal(listing)
+	var files []map[string]interface{}
+	if json.Unmarshal(body, &files) != nil {
+		return map[string]interface{}{"snapshots": []interface{}{}, "data_status": "empty"}
+	}
+
+	// 筛选 .json 文件, 按文件名(日期)降序取最近 N 天
+	type archiveFile struct {
+		name string
+		url  string
+	}
+	var archiveFiles []archiveFile
+	for _, f := range files {
+		name, _ := f["name"].(string)
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		dlURL, _ := f["download_url"].(string)
+		if dlURL == "" {
+			dlURL, _ = f["url"].(string)
+		}
+		if dlURL == "" {
+			continue
+		}
+		archiveFiles = append(archiveFiles, archiveFile{name: name, url: dlURL})
+	}
+	// 按文件名降序 (新→旧)
+	sort.SliceStable(archiveFiles, func(i, j int) bool {
+		return archiveFiles[i].name > archiveFiles[j].name
+	})
+	if len(archiveFiles) > days {
+		archiveFiles = archiveFiles[:days]
+	}
+
+	client := newProxyHTTPClient(8)
+	var snapshots []interface{}
+	for _, af := range archiveFiles {
+		req, _ := http.NewRequest("GET", af.url, nil)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			continue
+		}
+		var snapshot interface{}
+		if json.Unmarshal(respBody, &snapshot) == nil {
+			if m, ok := snapshot.(map[string]interface{}); ok && m["date"] != nil {
+				snapshots = append(snapshots, m)
+			}
+		}
+	}
+
+	// 按日期升序 (旧→新)
+	sort.SliceStable(snapshots, func(i, j int) bool {
+		mi, _ := snapshots[i].(map[string]interface{})
+		mj, _ := snapshots[j].(map[string]interface{})
+		di, _ := mi["date"].(string)
+		dj, _ := mj["date"].(string)
+		return di < dj
+	})
+
+	status := "ok"
+	if len(snapshots) == 0 {
+		status = "empty"
+	}
+	return map[string]interface{}{"snapshots": snapshots, "data_status": status}
+}
 func gitcodeWrite(method, path string, data map[string]interface{}, token string) (interface{}, int, error) {
 	url := gitcodeCommunityAPI + "/contents/" + path
 	body, _ := json.Marshal(data)
