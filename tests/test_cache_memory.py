@@ -5,6 +5,7 @@
 2. heatmap_detail 按日拆分: 单日文件独立读写, 不再全量加载
 3. 旧格式迁移: 合并文件自动拆分为按日文件
 """
+import datetime
 import json
 import os
 import tempfile
@@ -30,8 +31,11 @@ class UsageMemoryCacheTests(unittest.TestCase):
         self.addCleanup(self.temp_dir.cleanup)
 
     def _write_cache(self, tokens):
+        # _load_usage_snapshot 只在缓存里的 summary.date 等于 today 时返回
+        # 非 None, 硬编历史日期会让跨日期后这个测试自然假阳性 fail。改用 today,
+        # 避免 _write_cache 与 _load_usage_snapshot 日期口径错位。
         data = {"saved_at": time.time(), "data": {
-            "summary": {"date": "2026-07-24", "total_tokens": tokens,
+            "summary": {"date": datetime.date.today().isoformat(), "total_tokens": tokens,
                         "input_tokens": 0, "output_tokens": 0,
                         "input_cached": 0, "input_uncached": 0,
                         "events_after_dedup": 0, "events_before_dedup": 0,
@@ -77,10 +81,42 @@ class UsageMemoryCacheTests(unittest.TestCase):
         """_save_usage_snapshot 写入后同步更新内存缓存。"""
         server._usage_cache_obj = None
         server._usage_cache_mtime = 0.0
-        server._save_usage_snapshot({"summary": {"date": "2026-07-24", "total_tokens": 999}})
+        today = datetime.date.today().isoformat()
+        server._save_usage_snapshot({"summary": {"date": today, "total_tokens": 999}})
         # 内存缓存应已更新
         self.assertIsNotNone(server._usage_cache_obj)
         self.assertEqual(server._usage_cache_obj["data"]["summary"]["total_tokens"], 999)
+        self.assertEqual(server._usage_cache_obj["data"]["summary"]["date"], today)
+
+    def test_load_returns_none_when_cache_date_is_not_today(self):
+        """_load_usage_snapshot 只在缓存里 summary.date == today 时返回非 None。
+        当缓存写的是过去的某天 (如 7.24), 加载会返回 None, 避免把昨天的统计数据
+        当成今天的呈现, 让使用者误以为今天还没有用量。
+
+        回归用例: 修复 _write_cache 之前的硬编 2026-07-24 会让 7.25 跑用例时
+        _write_cache 出 2026-07-24, _load_usage_snapshot 又判 != today 返 None,
+        上层 fake-assert 直接 NoneType 崩溃。改 _write_cache 用 today 后本回归覆盖。
+        """
+        # 直接在 cache_path 写一份非 today 的缓存
+        with open(self.cache_path, "w") as f:
+            json.dump({
+                "saved_at": time.time(),
+                "data": {
+                    "summary": {"date": "2026-07-24", "total_tokens": 100,
+                                "input_tokens": 0, "output_tokens": 0,
+                                "input_cached": 0, "input_uncached": 0,
+                                "events_after_dedup": 0, "events_before_dedup": 0,
+                                "deepseek_balance": "0", "deepseek_currency": "CNY",
+                                "deepseek_status": "Offline"},
+                    "by_tool": {}, "by_model": {}, "by_model_requests": {}, "recent_events": [],
+                },
+            }, f)
+        # 重置内存缓存强制重读
+        server._usage_cache_obj = None
+        server._usage_cache_mtime = 0.0
+        # 今天的日期与缓存里的 2026-07-24 不同, _load_usage_snapshot 应返 None
+        result = server._load_usage_snapshot()
+        self.assertIsNone(result)
 
 
 class HeatmapMemoryCacheTests(unittest.TestCase):

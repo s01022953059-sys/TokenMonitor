@@ -221,11 +221,14 @@ func (h *relayHandler) runArchive() error {
 		}
 	}
 
-	// 按 report_date 过滤当天
+	// 按 report_date 过滤当天。
+	// 当天上过报 (无论当日是否产生用量) 的用户都进 leaderboard,
+	// 让 0-token 占位用户也能在归档中露出, 客户端 TOP10 排名变化弹窗
+	// 会显示 "出现过但没操作" 的人, 而不是只显示有操作的两三个人。
 	today := h.now().UTC().Format("2006-01-02")
 	var active []reportDocument
 	for _, r := range latest {
-		if r.ReportDate == today && r.TodayTokens > 0 {
+		if r.ReportDate == today {
 			active = append(active, r)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -290,5 +291,106 @@ func TestArchiveDeduplicatesByID(t *testing.T) {
 	}
 	if snapshot.Leaderboard[0].Tokens != 500 {
 		t.Fatalf("expected 500 tokens (latest), got %d", snapshot.Leaderboard[0].Tokens)
+	}
+}
+
+// TestArchiveIncludesZeroTokenReports 复现 "7.24 统计只显示 2 人" 的 bug:
+// 当天 ReportDate 命中但 TodayTokens == 0 的用户 (今天刚开 app 没产生用量就上报一条占位)
+// 应当出现在 leaderboard (token=0), 不能被过滤掉, 否则排名变化弹窗里看不到 "当天出现过" 的人。
+func TestArchiveIncludesZeroTokenReports(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	reports := []reportDocument{
+		{ID: "User_A001", ReportDate: "2026-07-24", TodayTokens: 0, ByTool: map[string]int64{}, DisplayName: "Alice", UpdatedAt: "2026-07-24T08:00:00Z"},
+		{ID: "User_B002", ReportDate: "2026-07-24", TodayTokens: 2000, ByTool: map[string]int64{"ZCode": 2000}, DisplayName: "Bob", UpdatedAt: "2026-07-24T11:30:00Z"},
+		{ID: "User_C003", ReportDate: "2026-07-24", TodayTokens: 100, ByTool: map[string]int64{"Codex": 100}, DisplayName: "Carol", UpdatedAt: "2026-07-24T11:00:00Z"},
+		{ID: "User_D004", ReportDate: "2026-07-23", TodayTokens: 99999, ByTool: map[string]int64{"Codex": 99999}, DisplayName: "Yesterday", UpdatedAt: "2026-07-23T20:00:00Z"},
+	}
+	store := &fakeStore{listReports: reports}
+	handler := &relayHandler{store: store, now: func() time.Time { return now }}
+
+	if err := handler.runArchive(); err != nil {
+		t.Fatalf("runArchive error: %v", err)
+	}
+
+	var snapshot archiveSnapshot
+	if err := json.Unmarshal(store.archived, &snapshot); err != nil {
+		t.Fatalf("unmarshal archive: %v", err)
+	}
+
+	// 跨日期去重的总 user 数仍记作 4 (含昨日那位)
+	if snapshot.TotalUsers != 4 {
+		t.Fatalf("total users: got %d want 4", snapshot.TotalUsers)
+	}
+	// 7.24 当天 ReportDate 命中 3 个, leaderboard 应有 3 条 (含 0-token 的 Alice)
+	if len(snapshot.Leaderboard) != 3 {
+		t.Fatalf("leaderboard length: got %d want 3 (must include 0-token user)", len(snapshot.Leaderboard))
+	}
+	// Top1 = Bob (2000), Top2 = Carol (100), Top3 = Alice (0)
+	if snapshot.Leaderboard[0].ID != "User_B002" || snapshot.Leaderboard[0].Tokens != 2000 {
+		t.Fatalf("first place: got %+v", snapshot.Leaderboard[0])
+	}
+	if snapshot.Leaderboard[1].ID != "User_C003" || snapshot.Leaderboard[1].Tokens != 100 {
+		t.Fatalf("second place: got %+v", snapshot.Leaderboard[1])
+	}
+	// 关键: 0-token 用户应在 leaderboard 里 (不能在 fix 前被过滤掉)
+	var foundAlice bool
+	for _, e := range snapshot.Leaderboard {
+		if e.ID == "User_A001" {
+			foundAlice = true
+			if e.Tokens != 0 {
+				t.Fatalf("Alice TodayTokens: got %d want 0", e.Tokens)
+			}
+		}
+	}
+	if !foundAlice {
+		t.Fatalf("0-token user Alice missing from leaderboard (this is the bug)")
+	}
+	// 昨日 (2026-07-23) 的 Yesterday 不出现在 7.24 leaderboard
+	for _, e := range snapshot.Leaderboard {
+		if e.ID == "User_D004" {
+			t.Fatalf("Yesterday (07-23) leaked into 7.24 leaderboard: %+v", e)
+		}
+	}
+}
+
+// TestArchiveRespectsTop10LimitEvenWithZeroTokenEntries 11+ 个用户,
+func TestArchiveRespectsTop10LimitEvenWithZeroTokenEntries(t *testing.T) {
+	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
+	reports := make([]reportDocument, 0, 12)
+	for i := 0; i < 12; i++ {
+		// 前 2 名有 token, 后 10 名 0 token (以 ID 升序来避免重复)
+		tokens := int64(0)
+		if i < 2 {
+			tokens = int64(10000 - i*1000)
+		}
+		updated := "2026-07-24T08:00:00Z"
+		if i < 2 {
+			updated = "2026-07-24T10:00:00Z"
+		}
+		reports = append(reports, reportDocument{
+			ID: fmt.Sprintf("User_T%03d", i), ReportDate: "2026-07-24", TodayTokens: tokens,
+			ByTool: map[string]int64{}, DisplayName: fmt.Sprintf("user%d", i),
+			UpdatedAt: updated,
+		})
+	}
+	store := &fakeStore{listReports: reports}
+	handler := &relayHandler{store: store, now: func() time.Time { return now }}
+
+	if err := handler.runArchive(); err != nil {
+		t.Fatalf("runArchive error: %v", err)
+	}
+
+	var snapshot archiveSnapshot
+	if err := json.Unmarshal(store.archived, &snapshot); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// leaderboard 仍限制 10 条
+	if len(snapshot.Leaderboard) != 10 {
+		t.Fatalf("leaderboard length: got %d want 10 (cap)", len(snapshot.Leaderboard))
+	}
+	// Top1 仍是有 token 的 (10000), 不被 0-token 占位
+	if snapshot.Leaderboard[0].Tokens == 0 {
+		t.Fatalf("top1 should be the highest-token user, not zero")
 	}
 }
