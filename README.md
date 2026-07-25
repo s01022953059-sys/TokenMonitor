@@ -414,6 +414,7 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - TOP10 排名变化弹窗把原“上一天／下一天／自动播放”操作行改为与热力图一致的四段范围切换：近 30 天、近 90 天、近半年、近一年。打开弹窗或切换范围后，从区间最早一天自动播放到最新一天并自动停止，不再要求用户选择是否播放，也不再循环。
 - macOS Python 与 Windows Go 的 `/api/community/history` 同时支持 `days=30/90/180/365`；其他值安全回退到 30 天。前端按历史帧数自适应播放速度，并用上一帧位置和条形宽度驱动真实排名过渡动画。
 - 新增双端范围参数与前端静态契约测试，确保 macOS/Windows 前端保持完全一致，自动播放入口、四个范围和非循环行为不会回归。
+- **关于历史快照 leaderboard 不全的说明**：`community_relay runArchive` v1.4.53 之前过滤了 `TodayTokens > 0`，所以 `vps community-data` 分支上 `community/archive/{date}.json` 里仅含当日有 token 的用户。v1.4.53 已修此过滤；但**当天归档跑过一次就写死了**，原始 report 文件被次日上报覆盖后也无法重算历史快照（用户 `report_date` 字段已不再是 7.24）。重写历史 archive 文件会引入数据错位，因此不做回填——下次 23:55 UTC 自动归档会包含当日所有当日 report（含 0-token 占位用户）。客户端打开弹窗或切到「近 7 天」时若仍未见 0-token 用户，说明 VPS 还没部署 v1.4.53 后代码，需要运维手动 `cd community_relay && /usr/local/bin/token-monitor-community-relay --version` 确认。
 
 ### v1.4.52
 - 修复 Windows 客户端 TOP10 排名变化弹窗 404：`go_build/main.go` 在 `/api/community/profile` 之后注册 `/api/community/history`，调 `getCommunityHistory(30)`，按社区路由统一模板（`setCORSHeaders` + OPTIONS 短路 + GET-only + `writeJSON`）。根因：v1.4.49a 引入排名变化弹窗时只写了函数，忘记注册 HTTP 路由，macOS 走 Python 后端正常，Windows 端一直静默 404。
