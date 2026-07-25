@@ -28,6 +28,7 @@ except ImportError:
     fcntl = None  # Windows
 from urllib import error as urlerror
 from urllib import request as urlrequest
+from urllib.parse import parse_qs, urlparse
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
@@ -81,6 +82,18 @@ USAGE_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_USAGE_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/usage_cache.json"),
 )
+
+
+def _parse_community_history_days(path):
+    """Return one of the four UI-supported ranking-history ranges."""
+    raw = parse_qs(urlparse(path).query).get("days", ["30"])[0]
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return 30
+    return days if days in {30, 90, 180, 365} else 30
+
+
 HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
@@ -1060,7 +1073,7 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == "/api/community/history" or self.path.startswith("/api/community/history?"):
             try:
-                history = get_community_history(days=30)
+                history = get_community_history(days=_parse_community_history_days(self.path))
                 self._write_json(200, history)
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})

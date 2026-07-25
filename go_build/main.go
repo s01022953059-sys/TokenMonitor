@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.52"
+var appVersion = "1.4.53"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -63,6 +63,19 @@ var sessionDetailCache = map[sessionDetailCacheKey][]SessionMessage{}
 var sessionDetailCacheOrder []sessionDetailCacheKey
 var sessionDetailInflight = map[sessionDetailCacheKey]chan struct{}{}
 var sessionDetailParser = parseSessionMessages
+
+func parseCommunityHistoryDays(r *http.Request) int {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil {
+		return 30
+	}
+	switch days {
+	case 30, 90, 180, 365:
+		return days
+	default:
+		return 30
+	}
+}
 
 // ───── 数据结构 (与 Python 版 JSON 输出完全对齐) ─────
 
@@ -3229,7 +3242,7 @@ func main() {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "status": "method_not_allowed", "message": "仅支持 GET"})
 			return
 		}
-		writeJSON(w, 200, getCommunityHistory(30))
+		writeJSON(w, 200, getCommunityHistory(parseCommunityHistoryDays(r)))
 	})
 
 	// 静态文件 (嵌入的 index.html + chart.js)

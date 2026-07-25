@@ -69,6 +69,24 @@ func TestCommunityHistoryRouteRegistered(t *testing.T) {
 	}
 }
 
+func TestParseCommunityHistoryDays(t *testing.T) {
+	cases := map[string]int{
+		"/api/community/history":           30,
+		"/api/community/history?days=30":   30,
+		"/api/community/history?days=90":   90,
+		"/api/community/history?days=180":  180,
+		"/api/community/history?days=365":  365,
+		"/api/community/history?days=7":    30,
+		"/api/community/history?days=nope": 30,
+	}
+	for rawURL, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, rawURL, nil)
+		if got := parseCommunityHistoryDays(req); got != want {
+			t.Fatalf("parseCommunityHistoryDays(%q) = %d, want %d", rawURL, got, want)
+		}
+	}
+}
+
 // TestCommunityHistoryRouteIntegration 起一个最小 httptest server,
 // 复用 main() 风格的 setCORSHeaders 行为, 验证 /api/community/history 的 HTTP 层契约:
 //

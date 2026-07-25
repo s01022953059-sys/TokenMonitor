@@ -410,6 +410,11 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
+### v1.4.53
+- TOP10 排名变化弹窗把原“上一天／下一天／自动播放”操作行改为与热力图一致的四段范围切换：近 30 天、近 90 天、近半年、近一年。打开弹窗或切换范围后，从区间最早一天自动播放到最新一天并自动停止，不再要求用户选择是否播放，也不再循环。
+- macOS Python 与 Windows Go 的 `/api/community/history` 同时支持 `days=30/90/180/365`；其他值安全回退到 30 天。前端按历史帧数自适应播放速度，并用上一帧位置和条形宽度驱动真实排名过渡动画。
+- 新增双端范围参数与前端静态契约测试，确保 macOS/Windows 前端保持完全一致，自动播放入口、四个范围和非循环行为不会回归。
+
 ### v1.4.52
 - 修复 Windows 客户端 TOP10 排名变化弹窗 404：`go_build/main.go` 在 `/api/community/profile` 之后注册 `/api/community/history`，调 `getCommunityHistory(30)`，按社区路由统一模板（`setCORSHeaders` + OPTIONS 短路 + GET-only + `writeJSON`）。根因：v1.4.49a 引入排名变化弹窗时只写了函数，忘记注册 HTTP 路由，macOS 走 Python 后端正常，Windows 端一直静默 404。
 - AGENTS.md 增加第 7 条约定：每次发现 bug 或根据反馈改动代码，必须在同一次提交中补充或扩充测试用例（Python 放在 `tests/`，Go 放在 `go_build/*_test.go`），覆盖该修复的场景、输入和预期输出。
