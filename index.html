@@ -685,6 +685,12 @@
             font-size: 15px;
             line-height: 1;
         }
+        .rank-history-icon {
+            width: 14px;
+            height: 14px;
+            flex: none;
+            stroke-width: 1.8;
+        }
         .community-refresh-btn.is-refreshing .community-refresh-icon {
             animation: community-refresh-spin 0.8s linear infinite;
         }
@@ -1941,7 +1947,7 @@
             <div class="modal-header">
                 <h3>社区用量排行</h3>
                 <div class="community-header-actions">
-                    <button id="rankHistoryBtn" class="community-refresh-btn" title="查看 TOP10 排名趋势" aria-label="查看排名趋势"><span aria-hidden="true">📊</span><span>排名趋势</span></button>
+                    <button id="rankHistoryBtn" class="community-refresh-btn" title="查看 TOP10 排名趋势" aria-label="查看排名趋势"><svg class="rank-history-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 3 3 5-6"/></svg><span>排名趋势</span></button>
                     <button id="communityRefreshBtn" class="community-refresh-btn" title="获取最新社区数据" aria-label="强制刷新社区数据"><span class="community-refresh-icon" aria-hidden="true">↻</span><span>刷新</span></button>
                     <button id="communityCloseBtn" class="close-btn">&times;</button>
                 </div>
@@ -3085,6 +3091,10 @@
             '1.4.55': [
                 '修复活动热力图星期标签整体上移，月份标题保持单行并与日期网格使用固定轨道。',
                 '新增浏览器几何回归测试，确保星期标签与七行日期格逐行精确对齐。'
+            ],
+            '1.4.56': [
+                '排名趋势改为并发读取、静默预取和缓存优先展示，重复打开无需等待。',
+                '优化趋势入口图标与姓名防重叠布局，密集排名仍能清晰对应。'
             ]
         });
 
@@ -4181,6 +4191,7 @@
         document.getElementById('communityOpenBtn').addEventListener('click', () => {
             document.getElementById('communityModal').classList.add('active');
             loadCommunity();
+            window.setTimeout(() => { void prefetchRankHistory(30); }, 200);
         });
         document.getElementById('communityRefreshBtn').addEventListener('click', async () => {
             const button = document.getElementById('communityRefreshBtn');
@@ -4206,14 +4217,48 @@
         });
 
         // ===== 排名变化动画 =====
-        let _rankHistory = { days: 30, chart: null, requestId: 0 };
+        const RANK_HISTORY_CACHE_TTL = 5 * 60 * 1000;
+        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v1-';
+        let _rankHistory = { days: 30, chart: null, requestId: 0, cache: new Map(), requests: new Map() };
         const RANK_LINE_COLORS = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#e11d48','#14b8a6'];
+
+        function layoutRankHistoryEndLabels(items, top, bottom, minGap) {
+            if (!Array.isArray(items) || items.length === 0) return [];
+            const sorted = items.map(item => ({...item, labelY: Math.max(top, Math.min(bottom, item.y))}))
+                .sort((a, b) => a.labelY - b.labelY);
+            const gap = sorted.length > 1 ? Math.min(minGap, Math.max(0, (bottom - top) / (sorted.length - 1))) : 0;
+            for (let index = 1; index < sorted.length; index += 1) {
+                sorted[index].labelY = Math.max(sorted[index].labelY, sorted[index - 1].labelY + gap);
+            }
+            if (sorted[sorted.length - 1].labelY > bottom) {
+                sorted[sorted.length - 1].labelY = bottom;
+                for (let index = sorted.length - 2; index >= 0; index -= 1) {
+                    sorted[index].labelY = Math.min(sorted[index].labelY, sorted[index + 1].labelY - gap);
+                }
+            }
+            if (sorted[0].labelY < top) {
+                const offset = top - sorted[0].labelY;
+                sorted.forEach(item => { item.labelY += offset; });
+            }
+            return sorted;
+        }
+
+        function fitRankHistoryLabel(ctx, value, maxWidth) {
+            const text = String(value || '?');
+            if (ctx.measureText(text).width <= maxWidth) return text;
+            const chars = Array.from(text);
+            while (chars.length > 1 && ctx.measureText(chars.join('') + '…').width > maxWidth) chars.pop();
+            return chars.join('') + '…';
+        }
+
         const rankHistoryEndLabels = {
             id: 'rankHistoryEndLabels',
             afterDatasetsDraw(chart) {
                 const ctx = chart.ctx;
                 const narrow = chart.width < 620;
                 ctx.save();
+                ctx.font = (narrow ? '10px' : '11px') + ' Outfit, sans-serif';
+                const items = [];
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     let lastIndex = -1;
                     dataset.data.forEach((value, index) => {
@@ -4222,23 +4267,78 @@
                     if (lastIndex < 0) return;
                     const point = chart.getDatasetMeta(datasetIndex).data[lastIndex];
                     if (!point) return;
-                    const labelLimit = narrow ? 7 : 13;
-                    const label = dataset.label.length > labelLimit ? dataset.label.slice(0, labelLimit - 1) + '…' : dataset.label;
-                    ctx.strokeStyle = dataset.borderColor;
+                    items.push({point, dataset, y: point.y});
+                });
+                const labels = layoutRankHistoryEndLabels(
+                    items,
+                    chart.chartArea.top + 8,
+                    chart.chartArea.bottom - 8,
+                    narrow ? 14 : 16
+                );
+                const labelX = chart.chartArea.right + (narrow ? 11 : 13);
+                const maxWidth = Math.max(36, chart.width - labelX - 4);
+                labels.forEach(item => {
+                    const label = fitRankHistoryLabel(ctx, item.dataset.label, maxWidth);
+                    ctx.strokeStyle = item.dataset.borderColor;
                     ctx.globalAlpha = 0.28;
                     ctx.beginPath();
-                    ctx.moveTo(point.x + 4, point.y);
-                    ctx.lineTo(chart.chartArea.right + 5, point.y);
+                    ctx.moveTo(item.point.x + 4, item.point.y);
+                    ctx.lineTo(chart.chartArea.right + 4, item.point.y);
+                    ctx.lineTo(chart.chartArea.right + 8, item.labelY);
                     ctx.stroke();
                     ctx.globalAlpha = 1;
-                    ctx.fillStyle = dataset.borderColor;
-                    ctx.font = (narrow ? '10px' : '11px') + ' Outfit, sans-serif';
+                    ctx.fillStyle = item.dataset.borderColor;
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(label, chart.chartArea.right + 9, point.y);
+                    ctx.fillText(label, labelX, item.labelY);
                 });
                 ctx.restore();
             }
         };
+
+        function readRankHistoryCache(days) {
+            let entry = _rankHistory.cache.get(days) || null;
+            if (!entry) {
+                try {
+                    entry = JSON.parse(localStorage.getItem(RANK_HISTORY_CACHE_PREFIX + days) || 'null');
+                    if (entry && entry.data) _rankHistory.cache.set(days, entry);
+                } catch (_) {
+                    entry = null;
+                }
+            }
+            return entry && entry.data ? entry : null;
+        }
+
+        function writeRankHistoryCache(days, data) {
+            const entry = {savedAt: Date.now(), data};
+            _rankHistory.cache.set(days, entry);
+            try {
+                localStorage.setItem(RANK_HISTORY_CACHE_PREFIX + days, JSON.stringify(entry));
+            } catch (_) {
+                // WebView 禁用本地存储时仍保留当前进程内缓存。
+            }
+        }
+
+        function fetchRankHistoryData(days) {
+            if (_rankHistory.requests.has(days)) return _rankHistory.requests.get(days);
+            const request = fetch(API_BASE + '/api/community/history?days=' + days, {cache: 'no-store'})
+                .then(resp => {
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return resp.json();
+                })
+                .then(data => {
+                    writeRankHistoryCache(days, data);
+                    return data;
+                })
+                .finally(() => { _rankHistory.requests.delete(days); });
+            _rankHistory.requests.set(days, request);
+            return request;
+        }
+
+        function prefetchRankHistory(days = 30) {
+            const cached = readRankHistoryCache(days);
+            if (cached && Date.now() - Number(cached.savedAt || 0) < RANK_HISTORY_CACHE_TTL) return Promise.resolve(cached.data);
+            return fetchRankHistoryData(days).catch(() => null);
+        }
 
         function destroyRankHistoryChart() {
             if (_rankHistory.chart) _rankHistory.chart.destroy();
@@ -4253,18 +4353,27 @@
             });
         }
 
-        async function loadRankHistory(days = _rankHistory.days) {
+        async function loadRankHistory(days = _rankHistory.days, options = {}) {
             const emptyEl = document.getElementById('rankHistoryEmpty');
             const statusEl = document.getElementById('rankHistoryStatus');
             const requestId = ++_rankHistory.requestId;
             _rankHistory.days = [30, 90, 180, 365].includes(Number(days)) ? Number(days) : 30;
             updateRankHistoryRange(_rankHistory.days);
-            try {
+            const cached = readRankHistoryCache(_rankHistory.days);
+            const hasCachedData = cached && Array.isArray(cached.data.dates) && cached.data.dates.length > 0 &&
+                Array.isArray(cached.data.series) && cached.data.series.length > 0;
+            if (hasCachedData) {
+                emptyEl.hidden = true;
+                renderRankHistory(cached.data);
+                if (options.forceRefresh !== true && Date.now() - Number(cached.savedAt || 0) < RANK_HISTORY_CACHE_TTL) return;
+                statusEl.textContent += ' · 正在更新';
+            } else {
                 statusEl.textContent = '加载中...';
                 emptyEl.hidden = false;
                 emptyEl.textContent = '加载排名历史数据中...';
-                const resp = await fetch(API_BASE + '/api/community/history?days=' + _rankHistory.days);
-                const data = await resp.json();
+            }
+            try {
+                const data = await fetchRankHistoryData(_rankHistory.days);
                 if (requestId !== _rankHistory.requestId) return;
                 const series = Array.isArray(data.series) ? data.series.slice(0, 10) : [];
                 const dates = Array.isArray(data.dates) ? data.dates : [];
@@ -4280,6 +4389,11 @@
                 renderRankHistory(data);
             } catch (e) {
                 if (requestId !== _rankHistory.requestId) return;
+                if (hasCachedData) {
+                    renderRankHistory(cached.data);
+                    statusEl.textContent += ' · 已显示缓存';
+                    return;
+                }
                 destroyRankHistoryChart();
                 emptyEl.hidden = false;
                 emptyEl.textContent = '排名趋势加载失败，请稍后重试';
@@ -4336,7 +4450,7 @@
                     maintainAspectRatio: false,
                     animation: reducedMotion ? false : { duration: 900, easing: 'easeOutQuart' },
                     interaction: { mode: 'nearest', intersect: false, axis: 'xy' },
-                    layout: { padding: { top: 10, right: narrow ? 68 : 120, bottom: 4, left: 0 } },
+                    layout: { padding: { top: 10, right: narrow ? 92 : 142, bottom: 4, left: 0 } },
                     scales: {
                         x: {
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestCommunityInt64(t *testing.T) {
@@ -82,6 +85,46 @@ func TestBuildCommunityRankSeriesCountsAllParticipantsAndLimitsTopTen(t *testing
 	legacy := buildCommunityRankSeries([]communityHistorySnapshot{{Date: "2026-07-25", Leaderboard: snapshots[0].Leaderboard}})
 	if legacy["participant_count_complete"] != false {
 		t.Fatalf("legacy snapshots must be marked incomplete: %#v", legacy)
+	}
+}
+
+func TestFetchCommunityHistorySnapshotsUsesBoundedConcurrencyAndKeepsOrder(t *testing.T) {
+	files := make([]communityArchiveFile, 12)
+	for i := range files {
+		files[i] = communityArchiveFile{name: "2026-07-" + strconv.Itoa(i+1), url: strconv.Itoa(i + 1)}
+	}
+	active := 0
+	peak := 0
+	var mu sync.Mutex
+	fetch := func(url string) (communityHistorySnapshot, error) {
+		day, _ := strconv.Atoi(url)
+		mu.Lock()
+		active++
+		if active > peak {
+			peak = active
+		}
+		mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
+		mu.Lock()
+		active--
+		mu.Unlock()
+		if day == 6 {
+			return communityHistorySnapshot{}, errors.New("temporary failure")
+		}
+		return communityHistorySnapshot{Date: "2026-07-" + strconv.Itoa(day)}, nil
+	}
+
+	snapshots := fetchCommunityHistorySnapshots(files, 8, fetch)
+	if peak <= 1 || peak > 8 {
+		t.Fatalf("unexpected peak concurrency: %d", peak)
+	}
+	if len(snapshots) != 11 {
+		t.Fatalf("got %d snapshots, want 11", len(snapshots))
+	}
+	for i := 1; i < len(snapshots); i++ {
+		if snapshots[i-1].Date > snapshots[i].Date {
+			t.Fatalf("snapshots are not date ordered: %#v", snapshots)
+		}
 	}
 }
 

@@ -31,6 +31,8 @@ var (
 	communityCache   = make(map[string]interface{})
 	communityCacheTs int64
 	communityCacheMu sync.Mutex
+	historyCache     = make(map[int]communityHistoryCacheEntry)
+	historyCacheMu   sync.Mutex
 )
 
 const (
@@ -764,6 +766,16 @@ type communityHistorySnapshot struct {
 	Leaderboard  []communityHistoryEntry `json:"leaderboard"`
 }
 
+type communityArchiveFile struct {
+	name string
+	url  string
+}
+
+type communityHistoryCacheEntry struct {
+	data map[string]interface{}
+	ts   time.Time
+}
+
 type communityRankSeries struct {
 	ID          string  `json:"id"`
 	DisplayName string  `json:"display_name,omitempty"`
@@ -896,10 +908,62 @@ func buildCommunityRankSeries(snapshots []communityHistorySnapshot) map[string]i
 	return map[string]interface{}{"dates": dates, "series": series, "participant_count": len(totals), "participant_count_complete": participantCountComplete}
 }
 
+func fetchCommunityHistorySnapshots(files []communityArchiveFile, maxWorkers int, fetch func(string) (communityHistorySnapshot, error)) []communityHistorySnapshot {
+	if len(files) == 0 {
+		return nil
+	}
+	if maxWorkers <= 0 || maxWorkers > len(files) {
+		maxWorkers = len(files)
+	}
+	type fetchJob struct {
+		index int
+		file  communityArchiveFile
+	}
+	type fetchResult struct {
+		snapshot communityHistorySnapshot
+		ok       bool
+	}
+	jobs := make(chan fetchJob)
+	results := make([]fetchResult, len(files))
+	var workers sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				snapshot, err := fetch(job.file.url)
+				if err == nil && snapshot.Date != "" {
+					results[job.index] = fetchResult{snapshot: snapshot, ok: true}
+				}
+			}
+		}()
+	}
+	for index, file := range files {
+		jobs <- fetchJob{index: index, file: file}
+	}
+	close(jobs)
+	workers.Wait()
+
+	snapshots := make([]communityHistorySnapshot, 0, len(files))
+	for _, result := range results {
+		if result.ok {
+			snapshots = append(snapshots, result.snapshot)
+		}
+	}
+	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].Date < snapshots[j].Date })
+	return snapshots
+}
+
 // getCommunityHistory 读取 community/archive/ 目录下的每日排名快照。
 func getCommunityHistory(days int) map[string]interface{} {
 	if days <= 0 {
 		days = 30
+	}
+	historyCacheMu.Lock()
+	cached, hasCached := historyCache[days]
+	historyCacheMu.Unlock()
+	if hasCached && time.Since(cached.ts) < 5*time.Minute {
+		return cached.data
 	}
 	token := ""
 	listing, statusCode, err := gitcodeGetDetailed("community/archive", token)
@@ -913,11 +977,7 @@ func getCommunityHistory(days int) map[string]interface{} {
 	}
 
 	// 筛选 .json 文件, 按文件名(日期)降序取最近 N 天
-	type archiveFile struct {
-		name string
-		url  string
-	}
-	var archiveFiles []archiveFile
+	var archiveFiles []communityArchiveFile
 	for _, f := range files {
 		name, _ := f["name"].(string)
 		if !strings.HasSuffix(name, ".json") {
@@ -930,7 +990,7 @@ func getCommunityHistory(days int) map[string]interface{} {
 		if dlURL == "" {
 			continue
 		}
-		archiveFiles = append(archiveFiles, archiveFile{name: name, url: dlURL})
+		archiveFiles = append(archiveFiles, communityArchiveFile{name: name, url: dlURL})
 	}
 	// 按文件名降序 (新→旧)
 	sort.SliceStable(archiveFiles, func(i, j int) bool {
@@ -941,26 +1001,23 @@ func getCommunityHistory(days int) map[string]interface{} {
 	}
 
 	client := newProxyHTTPClient(8)
-	var snapshots []communityHistorySnapshot
-	for _, af := range archiveFiles {
-		req, _ := http.NewRequest("GET", af.url, nil)
+	snapshots := fetchCommunityHistorySnapshots(archiveFiles, 8, func(url string) (communityHistorySnapshot, error) {
+		req, _ := http.NewRequest("GET", url, nil)
 		resp, err := client.Do(req)
 		if err != nil {
-			continue
+			return communityHistorySnapshot{}, err
 		}
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 		resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			continue
+			return communityHistorySnapshot{}, io.ErrUnexpectedEOF
 		}
 		var snapshot communityHistorySnapshot
-		if json.Unmarshal(respBody, &snapshot) == nil && snapshot.Date != "" {
-			snapshots = append(snapshots, snapshot)
+		if err := json.Unmarshal(respBody, &snapshot); err != nil {
+			return communityHistorySnapshot{}, err
 		}
-	}
-
-	// 按日期升序 (旧→新)
-	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].Date < snapshots[j].Date })
+		return snapshot, nil
+	})
 
 	status := "ok"
 	if len(snapshots) == 0 {
@@ -969,6 +1026,9 @@ func getCommunityHistory(days int) map[string]interface{} {
 	result := buildCommunityRankSeries(snapshots)
 	result["snapshots"] = snapshots
 	result["data_status"] = status
+	historyCacheMu.Lock()
+	historyCache[days] = communityHistoryCacheEntry{data: result, ts: time.Now()}
+	historyCacheMu.Unlock()
 	return result
 }
 func gitcodeWrite(method, path string, data map[string]interface{}, token string) (interface{}, int, error) {

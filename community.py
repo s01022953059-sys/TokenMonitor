@@ -38,6 +38,7 @@ COMMUNITY_RELAY_URL = os.environ.get(
 )
 # 聚合缓存 (5 分钟 TTL)
 _aggregate_cache = {"data": None, "ts": 0}
+_history_cache = {}
 
 
 def _format_report_tools(by_tool):
@@ -53,6 +54,7 @@ def _format_report_tools(by_tool):
     items.sort(key=lambda item: (-item[1], item[0]))
     return " + ".join(tool for tool, _ in items) or "?"
 AGGREGATE_TTL = 300  # 5 分钟
+HISTORY_CACHE_TTL = 300  # 5 分钟
 LEADERBOARD_LIMIT = 10
 
 
@@ -635,6 +637,17 @@ def get_community_history(days=30):
     Returns:
         {"dates": [...], "series": [...], "participant_count": int, "data_status": "ok"|"empty"}
     """
+    try:
+        days = int(days)
+    except (TypeError, ValueError):
+        days = 30
+    if days <= 0:
+        days = 30
+
+    cached = _history_cache.get(days)
+    if cached and time.time() - cached["ts"] < HISTORY_CACHE_TTL:
+        return cached["data"]
+
     token = None
     archive_path = "community/archive"
     files = _gitcode_api("GET", archive_path, token=token, require_auth=False)
@@ -651,20 +664,30 @@ def get_community_history(days=30):
     if not archive_files:
         return {"snapshots": [], "dates": [], "series": [], "participant_count": 0, "participant_count_complete": True, "data_status": "empty"}
 
-    snapshots = []
-    for f in archive_files:
+    def read_snapshot(f):
         file_url = f.get("download_url") or f.get("url")
         if not file_url:
-            continue
+            return None
         try:
             snapshot, _ = _read_remote_json(file_url, token=token)
             if isinstance(snapshot, dict) and snapshot.get("date"):
-                snapshots.append(snapshot)
+                return snapshot
         except Exception:
-            continue
+            pass
+        return None
+
+    snapshots = []
+    # 每日归档互不依赖，用有限并发压缩网络等待；失败文件单独跳过。
+    with ThreadPoolExecutor(max_workers=min(8, len(archive_files))) as executor:
+        futures = [executor.submit(read_snapshot, f) for f in archive_files]
+        for future in as_completed(futures):
+            snapshot = future.result()
+            if snapshot is not None:
+                snapshots.append(snapshot)
 
     # 按日期升序返回 (旧→新), 方便前端时间轴播放
     snapshots.sort(key=lambda s: s.get("date", ""))
     result = _build_rank_history_series(snapshots)
     result.update({"snapshots": snapshots, "data_status": "ok" if snapshots else "empty"})
+    _history_cache[days] = {"data": result, "ts": time.time()}
     return result

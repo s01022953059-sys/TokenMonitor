@@ -35,6 +35,8 @@ class CommunityTests(unittest.TestCase):
 
         community._aggregate_cache["data"] = None
         community._aggregate_cache["ts"] = 0
+        if hasattr(community, "_history_cache"):
+            community._history_cache.clear()
 
     def test_new_user_id_is_always_eight_characters(self):
         self.assertRegex(community._new_user_id(), r"^User_[A-Z0-9]{8}$")
@@ -351,6 +353,58 @@ class CommunityTests(unittest.TestCase):
         self.assertGreater(peak, 1)
         self.assertLessEqual(peak, 8)
         self.assertEqual(result["today_active_users"], 12)
+
+    def test_history_archives_are_read_concurrently_in_date_order(self):
+        files = [
+            {
+                "name": f"2026-07-{day:02d}.json",
+                "download_url": f"https://example.test/{day}",
+            }
+            for day in range(1, 13)
+        ]
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+
+        def slow_read(url, token=None):
+            nonlocal active, peak
+            day = int(url.rsplit("/", 1)[-1])
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            if day == 6:
+                return None, "HTTP 502"
+            return {
+                "date": f"2026-07-{day:02d}",
+                "participants": [{"id": f"User_{day:02d}", "tokens": day}],
+            }, None
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=slow_read):
+            result = community.get_community_history(30)
+
+        self.assertGreater(peak, 1)
+        self.assertLessEqual(peak, 8)
+        self.assertEqual(
+            result["dates"],
+            [f"2026-07-{day:02d}" for day in range(1, 13) if day != 6],
+        )
+
+    def test_history_cache_avoids_reloading_archives_within_ttl(self):
+        files = [{"name": "2026-07-28.json", "download_url": "https://example.test/28"}]
+        snapshot = {"date": "2026-07-28", "participants": [{"id": "User_28", "tokens": 28}]}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files) as list_call, \
+             mock.patch.object(community, "_read_remote_json", return_value=(snapshot, None)) as read_call:
+            first = community.get_community_history(30)
+            second = community.get_community_history(30)
+
+        self.assertEqual(first["dates"], second["dates"])
+        self.assertEqual(list_call.call_count, 1)
+        self.assertEqual(read_call.call_count, 1)
 
 
 if __name__ == "__main__":
