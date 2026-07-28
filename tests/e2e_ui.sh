@@ -131,6 +131,15 @@ printf '%s\n' "$SNAPSHOT" | grep -q "近一年.*\[active\]"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_365 至"
 printf '%s\n' "$SNAPSHOT" | grep -q "$EXPECTED_TODAY ("
 
+# 星期标签必须与日期格的对应行中心重合，不能从月份标题行开始导致整体上移。
+WEEKDAY_ALIGNMENT_OUTPUT=$($PWCLI eval "() => { const label = [...document.querySelectorAll('.heatmap-weekday-labels span')].find(item => item.innerText.trim() === '一'); const cell = document.querySelector('.heatmap-week:first-child .heatmap-cell-day:first-child'); if (!label || !cell) return 'missing'; const labelRect = label.getBoundingClientRect(); const cellRect = cell.getBoundingClientRect(); return Math.abs((labelRect.top + labelRect.height / 2) - (cellRect.top + cellRect.height / 2)).toFixed(2); }")
+WEEKDAY_ALIGNMENT=$(printf '%s\n' "$WEEKDAY_ALIGNMENT_OUTPUT" | sed -nE 's/^"([0-9.]+)"$/\1/p' | head -1)
+python3 - "$WEEKDAY_ALIGNMENT" <<'PY'
+import sys
+value = sys.argv[1]
+assert value != "missing" and float(value) <= 0.5, f"weekday/grid center offset: {value}px"
+PY
+
 # 每日调用详情是 macOS 曾出现长时间卡住的路径：点击当天格子后不能一直停在加载态。
 "$PWCLI" eval "() => document.querySelector('.heatmap-cell-day[data-date=\"$EXPECTED_TODAY\"]').click()" >/dev/null
 DETAIL_TEXT=""

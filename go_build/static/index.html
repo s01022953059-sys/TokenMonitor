@@ -1409,6 +1409,8 @@
             display: flex;
             gap: 2px;
             font-size: 9px;
+            height: 13px;
+            line-height: 13px;
             color: var(--text-muted);
             margin-bottom: 4px;
             width: max-content;
@@ -1418,6 +1420,7 @@
             /* 必须与 .heatmap-week 的列宽一致，否则近一年会逐列向右漂移。 */
             flex: 0 0 13px;
             text-align: left;
+            white-space: nowrap;
         }
         .heatmap-weekday-labels {
             display: flex;
@@ -1429,7 +1432,8 @@
             min-width: 22px;
             align-items: flex-start;
             justify-content: flex-start;
-            padding-top: 0;
+            box-sizing: border-box;
+            padding-top: 17px;
         }
         .heatmap-weekday-labels span {
             height: 13px;
@@ -1677,6 +1681,8 @@
             display: flex;
             gap: 2px;
             font-size: 9px;
+            height: 13px;
+            line-height: 13px;
             color: var(--text-muted);
             margin-bottom: 4px;
             width: max-content;
@@ -1686,6 +1692,7 @@
             /* 必须与 .heatmap-week 的列宽一致，否则近一年会逐列向右漂移。 */
             flex: 0 0 13px;
             text-align: left;
+            white-space: nowrap;
         }
         .heatmap-weekday-labels {
             display: flex;
@@ -1697,7 +1704,8 @@
             min-width: 22px;
             align-items: flex-start;
             justify-content: flex-start;
-            padding-top: 0;
+            box-sizing: border-box;
+            padding-top: 17px;
         }
         .heatmap-weekday-labels span {
             height: 13px;
@@ -3073,6 +3081,10 @@
             '1.4.54': [
                 '社区 TOP10 改为按日期展示排名折线，周期内出现过的全部用户参与统计，最终展示累计用量最高的 10 位。',
                 '首页新增 Agent 与模型的双向折叠明细，可直接查看内部 Token 用量和占比。'
+            ],
+            '1.4.55': [
+                '修复活动热力图星期标签整体上移，月份标题保持单行并与日期网格使用固定轨道。',
+                '新增浏览器几何回归测试，确保星期标签与七行日期格逐行精确对齐。'
             ]
         });
 

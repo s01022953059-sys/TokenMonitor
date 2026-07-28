@@ -6,6 +6,7 @@
 
 本测试确保双端 index.html 都有正确的 CSS 契约:
 - .heatmap-weekday-labels 容器宽度足够容纳最宽汉字 + 不应被强制折行
+- 星期标签顶部预留与月份标题完全相同的固定轨道高度
 - 每个 span 自身 nowrap 且左对齐
 - 7 个 span 与 7 个日期列 (heatmap-week 内 7 行) 对齐
 """
@@ -93,6 +94,30 @@ class HeatmapWeekdayAlignmentTests(unittest.TestCase):
                     container_left,
                     f"{label}: 容器需要 text-align: left 或 align-items: flex-start 让左边缘对齐",
                 )
+
+    def test_weekday_labels_reserve_the_month_header_track(self):
+        """星期列必须跳过月份标题轨道，第一行标签中心才能对齐第一行日期格。"""
+        for label, html_path in [
+            ("mac", ROOT / "index.html"),
+            ("windows", ROOT / "go_build" / "static" / "index.html"),
+        ]:
+            with self.subTest(client=label):
+                html = _read(html_path)
+                month_blocks = re.findall(r"\.heatmap-month-labels\s*\{[^}]*\}", html)
+                weekday_blocks = re.findall(r"\.heatmap-weekday-labels\s*\{[^}]*\}", html)
+                self.assertTrue(month_blocks, f"{label}: 找不到月份标题样式")
+                self.assertTrue(weekday_blocks, f"{label}: 找不到星期标签样式")
+                for block in month_blocks:
+                    self.assertRegex(block, r"height:\s*13px", f"{label}: 月份标题高度必须固定为 13px")
+                    self.assertRegex(block, r"line-height:\s*13px", f"{label}: 月份标题行高必须固定为 13px")
+                    self.assertRegex(block, r"margin-bottom:\s*4px", f"{label}: 月份标题与格子间距必须为 4px")
+                month_span_blocks = re.findall(r"\.heatmap-month-labels\s+span\s*\{[^}]*\}", html)
+                self.assertTrue(month_span_blocks, f"{label}: 找不到月份文字样式")
+                for block in month_span_blocks:
+                    self.assertRegex(block, r"white-space:\s*nowrap", f"{label}: 月份文字不能折成两行")
+                for block in weekday_blocks:
+                    self.assertRegex(block, r"padding-top:\s*17px", f"{label}: 星期列必须预留 13px + 4px 的月份轨道")
+                    self.assertRegex(block, r"box-sizing:\s*border-box", f"{label}: 星期列 padding 必须计入自身尺寸")
 
     def test_weekday_label_html_template_has_seven_spans(self):
         """HTML 模板必须生成 7 个 span, 与 7 行周列对齐 (每个 span 对应一周一行)。
