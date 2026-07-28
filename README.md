@@ -81,7 +81,7 @@
 - 安装后自动加入匿名社区统计，启动约 5 秒完成首次上报，之后每 5 分钟静默同步；无需手动加入，需要时可点击标题栏“刷新”获取最新聚合
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动上报入口，仅保留“刷新”按钮
-- 排名趋势按日期绘制 1–10 名折线；所选周期内出现过的全部人员都会参与累计统计，最终只展示累计用量最高的 TOP10，悬停可查看当天名次和 Token
+- 排名趋势按日期绘制 1–10 名连续折线；缺失归档日不生成虚假排名点，但会连接前后两个真实排名，避免折线中断。所选周期内出现过的全部人员都会参与累计统计，最终只展示累计用量最高的 TOP10，悬停可查看当天名次和 Token
 - 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。折线末端姓名按实际字体高度留出独立行距，并使用背景隔离和引导线对应数据点，避免多人同名次时文字重叠
 - 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
@@ -392,10 +392,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.57](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.57)
+最新版本：[v1.4.58](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.58)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.57/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.57/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.58/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.58/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -412,6 +412,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.58
+- 排名趋势跨过缺失归档日期连接前后真实排名，折线保持连续且不生成虚假数据点。
 
 ### v1.4.57
 - 排名趋势姓名按实际字体高度扩大间距并增加背景隔离，解决密集名次下仍然难以辨认的问题。

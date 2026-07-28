@@ -3099,6 +3099,10 @@
             '1.4.57': [
                 '进一步扩大排名趋势姓名间距，并按实际字体高度动态调整。',
                 '为姓名增加独立背景隔离，避免折线穿过文字影响辨识。'
+            ],
+            '1.4.58': [
+                '排名趋势跨过缺失归档日期连接前后真实排名，折线不再中断。',
+                '缺失日期仍保持为空，不生成虚假排名数据点。'
             ]
         });
 
@@ -4457,7 +4461,7 @@
                     pointBorderWidth: 1.5,
                     pointBorderColor: getThemeVar('--chart-point-border'),
                     tension: 0.22,
-                    spanGaps: false,
+                    spanGaps: true,
                     fill: false
                 };
             });

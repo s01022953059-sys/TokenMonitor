@@ -54,6 +54,8 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn("_rankHistory.cache", script)
         self.assertIn("participant_count", script)
         self.assertIn("series.slice(0, 10)", script)
+        self.assertIn("spanGaps: true", script)
+        self.assertNotIn("spanGaps: false", script)
         self.assertIn('class="rank-history-icon"', mac_html)
         self.assertNotIn("📊", mac_html)
         self.assertIn("prefers-reduced-motion: reduce", mac_html)
