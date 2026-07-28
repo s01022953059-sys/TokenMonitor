@@ -39,6 +39,32 @@ class CommunityTests(unittest.TestCase):
     def test_new_user_id_is_always_eight_characters(self):
         self.assertRegex(community._new_user_id(), r"^User_[A-Z0-9]{8}$")
 
+    def test_rank_history_counts_all_participants_but_returns_top_ten_series(self):
+        snapshots = []
+        for day in ("2026-07-26", "2026-07-27"):
+            participants = [
+                {
+                    "id": f"User_{index:02d}",
+                    "display_name": f"用户{index:02d}",
+                    "tokens": (12 - index) * (100 if day.endswith("26") else 200),
+                }
+                for index in range(12)
+            ]
+            snapshots.append({"date": day, "participants": participants, "leaderboard": participants[:10]})
+
+        result = community._build_rank_history_series(snapshots)
+
+        self.assertEqual(result["participant_count"], 12)
+        self.assertTrue(result["participant_count_complete"])
+        self.assertEqual(result["dates"], ["2026-07-26", "2026-07-27"])
+        self.assertEqual(len(result["series"]), 10)
+        self.assertEqual(result["series"][0]["id"], "User_00")
+        self.assertEqual(result["series"][0]["ranks"], [1, 1])
+        self.assertNotIn("User_11", [item["id"] for item in result["series"]])
+
+        legacy = community._build_rank_history_series([{"date": "2026-07-25", "leaderboard": snapshots[0]["leaderboard"]}])
+        self.assertFalse(legacy["participant_count_complete"])
+
     def test_external_community_requests_follow_system_proxy(self):
         request = community.urllib.request.Request("https://community.example.test/report")
         response = mock.MagicMock()

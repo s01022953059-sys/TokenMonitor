@@ -27,6 +27,7 @@ def usage_snapshot(total=123):
         "by_tool": {"Codex": {"total_tokens": total}},
         "by_model": {"test": total},
         "by_model_requests": {"test": 1},
+        "by_tool_model": {"Codex": {"test": total}},
         "recent_events": [],
     }
 
@@ -47,6 +48,7 @@ class UsageCacheTests(unittest.TestCase):
         self.assertLess(elapsed, 0.1)
         self.assertEqual(result["cache_state"], "warming")
         self.assertEqual(result["summary"]["total_tokens"], 0)
+        self.assertEqual(result["by_tool_model"], {})
         refresh.assert_called_once()
 
     def test_fresh_cache_returns_without_scanning(self):
@@ -75,6 +77,23 @@ class UsageCacheTests(unittest.TestCase):
 
         self.assertEqual(result["cache_state"], "stale")
         self.assertEqual(result["summary"]["total_tokens"], 456)
+        refresh.assert_called_once()
+
+    def test_legacy_cache_without_tool_model_breakdown_refreshes_in_background(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "usage.json")
+            legacy = usage_snapshot(789)
+            legacy.pop("by_tool_model")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"saved_at": time.time(), "data": legacy}, stream)
+            with mock.patch.object(server, "USAGE_CACHE_PATH", path), mock.patch.object(
+                server, "_start_usage_refresh", return_value=True
+            ) as refresh:
+                result = server.get_cached_usage()
+
+        self.assertEqual(result["summary"]["total_tokens"], 789)
+        self.assertEqual(result["by_tool_model"], {})
+        self.assertEqual(result["cache_state"], "stale")
         refresh.assert_called_once()
 
     def test_concurrent_refresh_requests_share_one_scan(self):

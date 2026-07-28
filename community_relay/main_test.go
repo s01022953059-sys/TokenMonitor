@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -174,7 +175,7 @@ func TestStorageFailureIsHidden(t *testing.T) {
 
 func TestNewToolsNotGroupedAsOther(t *testing.T) {
 	cases := []struct {
-		tool  string
+		tool   string
 		tokens int64
 	}{
 		{"ZCode", 150000000},
@@ -350,6 +351,32 @@ func TestArchiveIncludesZeroTokenReports(t *testing.T) {
 		if e.ID == "User_D004" {
 			t.Fatalf("Yesterday (07-23) leaked into 7.24 leaderboard: %+v", e)
 		}
+	}
+}
+
+func TestArchiveStoresAllParticipantsButLeaderboardRemainsTopTen(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	reports := make([]reportDocument, 0, 12)
+	for i := 0; i < 12; i++ {
+		reports = append(reports, reportDocument{
+			ID: "User_" + strconv.Itoa(i), ReportDate: "2026-07-27", TodayTokens: int64(12 - i), UpdatedAt: "2026-07-27T11:00:00Z",
+		})
+	}
+	store := &fakeStore{listReports: reports}
+	handler := &relayHandler{store: store, now: func() time.Time { return now }}
+
+	if err := handler.runArchive(); err != nil {
+		t.Fatalf("runArchive error: %v", err)
+	}
+	var snapshot archiveSnapshot
+	if err := json.Unmarshal(store.archived, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Participants) != 12 {
+		t.Fatalf("participants=%d want 12", len(snapshot.Participants))
+	}
+	if len(snapshot.Leaderboard) != 10 {
+		t.Fatalf("leaderboard=%d want 10", len(snapshot.Leaderboard))
 	}
 }
 

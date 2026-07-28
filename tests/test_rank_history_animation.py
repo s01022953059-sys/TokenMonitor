@@ -23,7 +23,7 @@ class RankHistoryAnimationTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(expected, _parse_community_history_days(path))
 
-    def test_frontends_use_range_tabs_and_start_playback_automatically(self):
+    def test_frontends_use_date_rank_line_chart_with_top_ten_limit(self):
         mac_html = (ROOT / "index.html").read_text(encoding="utf-8")
         windows_html = (ROOT / "go_build" / "static" / "index.html").read_text(
             encoding="utf-8"
@@ -42,15 +42,18 @@ class RankHistoryAnimationTest(unittest.TestCase):
             self.assertIn(label, modal)
 
         self.assertIn('role="tablist"', modal)
+        self.assertIn('id="rankHistoryChart"', modal)
         self.assertIn("/api/community/history?days=", script)
-        self.assertIn("_rankHistory.index = 0", script)
-        self.assertIn("startRankHistoryPlayback", script)
-        self.assertIn("stopRankHistoryPlayback", script)
-        self.assertIn("天数据 · 已显示最新", script)
+        self.assertIn("new Chart", script)
+        self.assertIn("rankHistoryEndLabels", script)
+        self.assertIn("participant_count", script)
+        self.assertIn("series.slice(0, 10)", script)
+        self.assertIn("prefers-reduced-motion: reduce", mac_html)
+        self.assertNotIn("startRankHistoryPlayback", script)
+        self.assertNotIn("rank-history-bar", script)
         self.assertNotIn('id="rankPlayBtn"', modal)
         self.assertNotIn('id="rankPrevBtn"', modal)
         self.assertNotIn('id="rankNextBtn"', modal)
-        self.assertNotIn("% _rankHistory.snapshots.length", script)
 
 
 if __name__ == "__main__":

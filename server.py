@@ -163,6 +163,7 @@ def _empty_usage_snapshot():
         "by_tool": {},
         "by_model": {},
         "by_model_requests": {},
+        "by_tool_model": {},
         "recent_events": [],
         "cache_state": "warming",
     }
@@ -231,7 +232,9 @@ def get_cached_usage():
     cached = _load_usage_snapshot()
     if cached:
         result = dict(cached["data"])
-        if time.time() - float(cached.get("saved_at", 0)) > USAGE_CACHE_TTL:
+        schema_outdated = not isinstance(result.get("by_tool_model"), dict)
+        result.setdefault("by_tool_model", {})
+        if schema_outdated or time.time() - float(cached.get("saved_at", 0)) > USAGE_CACHE_TTL:
             result["cache_state"] = "stale"
             _start_usage_refresh()
         else:

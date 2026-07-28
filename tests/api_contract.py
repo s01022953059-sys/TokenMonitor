@@ -165,6 +165,10 @@ class APIContractTests(unittest.TestCase):
         self.assertIn("summary", usage)
         self.assertIn("by_tool", usage)
         self.assertIn("by_model", usage)
+        self.assertIn("by_tool_model", usage)
+        self.assertIsInstance(usage["by_tool_model"], dict)
+        for model_usage in usage["by_tool_model"].values():
+            self.assertIsInstance(model_usage, dict)
         self.assertGreaterEqual(usage["summary"].get("total_tokens", 0), 0)
 
         for days in (1, 7, 30, 365):

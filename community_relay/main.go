@@ -160,7 +160,7 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// archiveEntry 是每日快照里的一条 TOP10 记录。
+// archiveEntry 是每日快照里的一条参与者记录。
 type archiveEntry struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -170,11 +170,12 @@ type archiveEntry struct {
 
 // archiveSnapshot 是一天的完整快照。
 type archiveSnapshot struct {
-	Date        string         `json:"date"`
-	GeneratedAt string         `json:"generated_at"`
-	TotalUsers  int            `json:"total_users"`
-	ActiveUsers int            `json:"active_users"`
-	Leaderboard []archiveEntry `json:"leaderboard"`
+	Date         string         `json:"date"`
+	GeneratedAt  string         `json:"generated_at"`
+	TotalUsers   int            `json:"total_users"`
+	ActiveUsers  int            `json:"active_users"`
+	Participants []archiveEntry `json:"participants"`
+	Leaderboard  []archiveEntry `json:"leaderboard"`
 }
 
 // formatArchiveTools 按 token 降序拼接工具名, 对齐客户端 _format_report_tools。
@@ -205,7 +206,7 @@ func formatArchiveTools(byTool map[string]int64) string {
 	return strings.Join(parts, " + ")
 }
 
-// runArchive 读取所有报告, 聚合当天 TOP10, 写入 GitCode archive。
+// runArchive 读取所有报告，归档当天全量参与者并保留兼容用 TOP10。
 func (h *relayHandler) runArchive() error {
 	ctx := context.Background()
 	reports, err := h.store.ListReports(ctx)
@@ -233,31 +234,33 @@ func (h *relayHandler) runArchive() error {
 		}
 	}
 
-	// 按 token 降序排序, 取 TOP10
+	// 按 token 降序排序；participants 保留全量，leaderboard 只取 TOP10。
 	sort.SliceStable(active, func(i, j int) bool {
 		return active[i].TodayTokens > active[j].TodayTokens
 	})
-	limit := 10
-	if len(active) < limit {
-		limit = len(active)
-	}
-	entries := make([]archiveEntry, 0, limit)
-	for i := 0; i < limit; i++ {
+	participants := make([]archiveEntry, 0, len(active))
+	for i := 0; i < len(active); i++ {
 		r := active[i]
-		entries = append(entries, archiveEntry{
+		participants = append(participants, archiveEntry{
 			ID:          r.ID,
 			DisplayName: r.DisplayName,
 			Tokens:      r.TodayTokens,
 			Tool:        formatArchiveTools(r.ByTool),
 		})
 	}
+	limit := 10
+	if len(participants) < limit {
+		limit = len(participants)
+	}
+	entries := append([]archiveEntry(nil), participants[:limit]...)
 
 	snapshot := archiveSnapshot{
-		Date:        today,
-		GeneratedAt: h.now().UTC().Format(time.RFC3339),
-		TotalUsers:  len(latest),
-		ActiveUsers: len(active),
-		Leaderboard: entries,
+		Date:         today,
+		GeneratedAt:  h.now().UTC().Format(time.RFC3339),
+		TotalUsers:   len(latest),
+		ActiveUsers:  len(active),
+		Participants: participants,
+		Leaderboard:  entries,
 	}
 	data, _ := json.MarshalIndent(snapshot, "", "  ")
 	return h.store.WriteArchive(ctx, today, data)
@@ -495,8 +498,8 @@ func (s *gitCodeStore) ListReports(ctx context.Context) ([]reportDocument, error
 		return nil, fmt.Errorf("gitcode list HTTP %d", resp.StatusCode)
 	}
 	var files []struct {
-		Name         string `json:"name"`
-		DownloadURL  string `json:"download_url"`
+		Name        string `json:"name"`
+		DownloadURL string `json:"download_url"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
 		return nil, err

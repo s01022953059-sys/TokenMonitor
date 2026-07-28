@@ -556,20 +556,90 @@ def get_community_stats(force_refresh=False):
     return result
 
 
+def _build_rank_history_series(snapshots, limit=10):
+    """将每日全量参与者转换为按周期累计用量筛选的排名折线。"""
+    ordered = sorted(
+        [snapshot for snapshot in snapshots if isinstance(snapshot, dict) and snapshot.get("date")],
+        key=lambda snapshot: str(snapshot.get("date")),
+    )
+    dates = [str(snapshot.get("date")) for snapshot in ordered]
+    participant_count_complete = all(isinstance(snapshot.get("participants"), list) for snapshot in ordered)
+    daily = []
+    members = {}
+
+    for snapshot in ordered:
+        rows = snapshot.get("participants")
+        if not isinstance(rows, list):
+            rows = snapshot.get("leaderboard") if isinstance(snapshot.get("leaderboard"), list) else []
+        by_id = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            member_id = str(row.get("id") or row.get("display_name") or "").strip()
+            if not member_id:
+                continue
+            try:
+                tokens = max(0, int(row.get("tokens") or 0))
+            except (TypeError, ValueError):
+                tokens = 0
+            normalized = {
+                "id": member_id,
+                "display_name": str(row.get("display_name") or ""),
+                "tokens": tokens,
+            }
+            previous = by_id.get(member_id)
+            if previous is None or tokens >= previous["tokens"]:
+                by_id[member_id] = normalized
+
+        ranked = sorted(by_id.values(), key=lambda row: (-row["tokens"], row["display_name"] or row["id"], row["id"]))
+        day_values = {}
+        for rank, row in enumerate(ranked, 1):
+            day_values[row["id"]] = {"rank": rank if rank <= limit else 0, "tokens": row["tokens"]}
+            member = members.setdefault(row["id"], {
+                "id": row["id"], "display_name": row["display_name"], "total_tokens": 0, "appearances": 0,
+            })
+            if row["display_name"]:
+                member["display_name"] = row["display_name"]
+            member["total_tokens"] += row["tokens"]
+            member["appearances"] += 1
+        daily.append(day_values)
+
+    selected = sorted(
+        members.values(),
+        key=lambda member: (-member["total_tokens"], -member["appearances"], member["display_name"] or member["id"], member["id"]),
+    )[:limit]
+    series = []
+    for member in selected:
+        ranks = []
+        tokens = []
+        for day_values in daily:
+            point = day_values.get(member["id"])
+            ranks.append(point["rank"] if point else 0)
+            tokens.append(point["tokens"] if point else 0)
+        series.append({**member, "ranks": ranks, "tokens": tokens})
+
+    return {
+        "dates": dates,
+        "series": series,
+        "participant_count": len(members),
+        "participant_count_complete": participant_count_complete,
+    }
+
+
 def get_community_history(days=30):
-    """读取 community/archive/ 目录下的每日 TOP10 快照, 返回最近 N 天的排名历史。
+    """读取每日参与者快照，返回最近 N 天最多十人的排名趋势。
 
     归档文件由 VPS 中继每天 23:55 UTC 自动生成, 存于 GitCode community-data
     分支的 community/archive/{date}.json。客户端无需 GitCode token, 走公开读取。
 
     Returns:
-        {"snapshots": [{date, leaderboard: [...]}], "data_status": "ok"|"empty"}
+        {"dates": [...], "series": [...], "participant_count": int, "data_status": "ok"|"empty"}
     """
     token = None
     archive_path = "community/archive"
     files = _gitcode_api("GET", archive_path, token=token, require_auth=False)
     if not isinstance(files, list):
-        return {"snapshots": [], "data_status": "empty"}
+        return {"snapshots": [], "dates": [], "series": [], "participant_count": 0, "participant_count_complete": True, "data_status": "empty"}
 
     # 筛选 .json 文件, 按文件名(日期)降序, 取最近 N 天
     archive_files = sorted(
@@ -579,7 +649,7 @@ def get_community_history(days=30):
     )[:days]
 
     if not archive_files:
-        return {"snapshots": [], "data_status": "empty"}
+        return {"snapshots": [], "dates": [], "series": [], "participant_count": 0, "participant_count_complete": True, "data_status": "empty"}
 
     snapshots = []
     for f in archive_files:
@@ -595,4 +665,6 @@ def get_community_history(days=30):
 
     # 按日期升序返回 (旧→新), 方便前端时间轴播放
     snapshots.sort(key=lambda s: s.get("date", ""))
-    return {"snapshots": snapshots, "data_status": "ok" if snapshots else "empty"}
+    result = _build_rank_history_series(snapshots)
+    result.update({"snapshots": snapshots, "data_status": "ok" if snapshots else "empty"})
+    return result

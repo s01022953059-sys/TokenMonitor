@@ -978,6 +978,7 @@ def get_today_usage():
     by_tool = {}
     by_model = {}
     by_model_requests = {}
+    by_tool_model = {}
 
     for log in all_logs:
         t_tokens = log["total_tokens"]
@@ -1005,6 +1006,10 @@ def get_today_usage():
         by_model[model] = by_model.get(model, 0) + t_tokens
         by_model_requests[model] = by_model_requests.get(model, 0) + 1
 
+        # 工具与模型交叉统计，供首页二级展开双向复用。
+        tool_models = by_tool_model.setdefault(tool, {})
+        tool_models[model] = tool_models.get(model, 0) + t_tokens
+
     # 获取 DeepSeek 官方实时余额
     ds_balance = get_deepseek_balance()
 
@@ -1026,6 +1031,7 @@ def get_today_usage():
         "by_tool": by_tool,
         "by_model": by_model,
         "by_model_requests": by_model_requests,
+        "by_tool_model": by_tool_model,
         # 最新 30 条事件日志
         "recent_events": all_logs[-30:]
     }

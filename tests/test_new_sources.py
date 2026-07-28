@@ -281,6 +281,43 @@ class CrossSourceDedupTests(unittest.TestCase):
         # summary.total_tokens 含新工具
         self.assertEqual(usage["summary"]["total_tokens"], 350)
 
+    def test_today_usage_includes_deduplicated_tool_model_breakdown(self):
+        """二级统计使用去重后的事件，并同时支持工具→模型与模型→工具。"""
+        now = int(datetime.datetime.now().timestamp())
+        codex_gpt = {
+            "timestamp": now, "tool": "Codex", "model": "gpt-5.5",
+            "input_tokens": 80, "output_tokens": 20, "total_tokens": 100,
+            "input_cached": 0, "input_uncached": 80, "session_id": "codex-1",
+        }
+        duplicate = dict(codex_gpt, timestamp=now + 1, session_id="duplicate")
+        codex_glm = {
+            "timestamp": now + 10, "tool": "Codex", "model": "glm-5.2",
+            "input_tokens": 160, "output_tokens": 40, "total_tokens": 200,
+            "input_cached": 0, "input_uncached": 160, "session_id": "codex-2",
+        }
+        claude_gpt = {
+            "timestamp": now + 20, "tool": "Claude", "model": "gpt-5.5",
+            "input_tokens": 40, "output_tokens": 10, "total_tokens": 50,
+            "input_cached": 0, "input_uncached": 40, "session_id": "claude-1",
+        }
+        empty = mock.Mock(return_value=[])
+        with mock.patch.object(scanner, "scan_cc_switch_logs", return_value=[codex_gpt, codex_glm, claude_gpt]), \
+             mock.patch.object(scanner, "scan_codex_tokens", return_value=[duplicate]), \
+             mock.patch.object(scanner, "scan_antigravity_tokens", empty), \
+             mock.patch.object(scanner, "scan_hermes_tokens", empty), \
+             mock.patch.object(scanner, "scan_zcode_tokens", empty), \
+             mock.patch.object(scanner, "scan_minimax_tokens", empty), \
+             mock.patch.object(scanner, "scan_workbuddy_tokens", empty), \
+             mock.patch.object(scanner, "get_deepseek_balance", return_value={}):
+            usage = scanner.get_today_usage()
+
+        self.assertEqual(usage["summary"]["total_tokens"], 350)
+        self.assertEqual(usage["by_tool_model"]["Codex"], {
+            "gpt-5.5": 100,
+            "glm-5.2": 200,
+        })
+        self.assertEqual(usage["by_tool_model"]["Claude"], {"gpt-5.5": 50})
+
 
 class AppTypeNormalizationTests(unittest.TestCase):
     """cc-switch app_type 归一化: 新工具不能被误归为 Other。

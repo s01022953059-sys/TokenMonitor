@@ -40,7 +40,8 @@ class UsageMemoryCacheTests(unittest.TestCase):
                         "input_cached": 0, "input_uncached": 0,
                         "events_after_dedup": 0, "events_before_dedup": 0,
                         "deepseek_balance": "0", "deepseek_currency": "CNY", "deepseek_status": "Offline"},
-            "by_tool": {}, "by_model": {}, "by_model_requests": {}, "recent_events": [],
+            "by_tool": {}, "by_model": {}, "by_model_requests": {},
+            "by_tool_model": {}, "recent_events": [],
         }}
         with open(self.cache_path, "w") as f:
             json.dump(data, f)
@@ -108,7 +109,8 @@ class UsageMemoryCacheTests(unittest.TestCase):
                                 "events_after_dedup": 0, "events_before_dedup": 0,
                                 "deepseek_balance": "0", "deepseek_currency": "CNY",
                                 "deepseek_status": "Offline"},
-                    "by_tool": {}, "by_model": {}, "by_model_requests": {}, "recent_events": [],
+                    "by_tool": {}, "by_model": {}, "by_model_requests": {},
+                    "by_tool_model": {}, "recent_events": [],
                 },
             }, f)
         # 重置内存缓存强制重读

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"testing"
 )
 
@@ -48,6 +49,39 @@ func TestFormatCommunityToolsShowsAllToolsByUsage(t *testing.T) {
 	}
 	if got := formatCommunityTools(map[string]int64{"Claude": 0}); got != "?" {
 		t.Fatalf("formatCommunityTools() empty = %q, want %q", got, "?")
+	}
+}
+
+func TestBuildCommunityRankSeriesCountsAllParticipantsAndLimitsTopTen(t *testing.T) {
+	snapshots := []communityHistorySnapshot{}
+	for _, date := range []string{"2026-07-26", "2026-07-27"} {
+		entries := make([]communityHistoryEntry, 0, 12)
+		for i := 0; i < 12; i++ {
+			multiplier := int64(100)
+			if date == "2026-07-27" {
+				multiplier = 200
+			}
+			entries = append(entries, communityHistoryEntry{
+				ID: "User_" + strconv.Itoa(i), DisplayName: "User " + strconv.Itoa(i), Tokens: int64(12-i) * multiplier,
+			})
+		}
+		snapshots = append(snapshots, communityHistorySnapshot{Date: date, Participants: entries, Leaderboard: entries[:10]})
+	}
+
+	result := buildCommunityRankSeries(snapshots)
+	series := result["series"].([]communityRankSeries)
+	if result["participant_count"] != 12 || len(series) != 10 {
+		t.Fatalf("participant_count=%v series=%d", result["participant_count"], len(series))
+	}
+	if result["participant_count_complete"] != true {
+		t.Fatalf("expected complete participant count: %#v", result)
+	}
+	if series[0].ID != "User_0" || len(series[0].Ranks) != 2 || series[0].Ranks[0] != 1 || series[0].Ranks[1] != 1 {
+		t.Fatalf("unexpected first series: %+v", series[0])
+	}
+	legacy := buildCommunityRankSeries([]communityHistorySnapshot{{Date: "2026-07-25", Leaderboard: snapshots[0].Leaderboard}})
+	if legacy["participant_count_complete"] != false {
+		t.Fatalf("legacy snapshots must be marked incomplete: %#v", legacy)
 	}
 }
 
@@ -233,10 +267,10 @@ func TestBuildToolDistributionJSONOrderByUsageDesc(t *testing.T) {
 
 func TestBuildToolDistributionJSONTiebreakByName(t *testing.T) {
 	raw := buildToolDistributionJSON(map[string]int64{
-		"Claude":  10,
-		"Codex":   10,
-		"ZCode":   10,
-		"Hermes":  10,
+		"Claude": 10,
+		"Codex":  10,
+		"ZCode":  10,
+		"Hermes": 10,
 	})
 	keys := jsonKeys(t, raw)
 	want := []string{"Claude", "Codex", "Hermes", "ZCode"}

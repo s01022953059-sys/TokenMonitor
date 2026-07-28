@@ -390,16 +390,27 @@
             overflow-y: visible;
         }
 
+        .legend-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
         .legend-item {
             background: var(--bg-subtle);
             border: 1px solid var(--border-subtle);
-            border-radius: 12px;
+            border-radius: 8px;
             padding: 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             transition: all 0.2s ease;
             min-height: 48px;
+            width: 100%;
+            color: var(--text-main);
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
         }
 
         .legend-item:hover {
@@ -407,12 +418,85 @@
             border-color: var(--border-hover);
         }
 
+        .legend-item:focus-visible {
+            outline: 2px solid var(--btn-hover-accent);
+            outline-offset: 2px;
+        }
+
+        .legend-item.no-details {
+            cursor: default;
+        }
+
+        .legend-item-trailing {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .legend-chevron {
+            width: 16px;
+            flex: 0 0 16px;
+            color: var(--text-muted);
+            font-size: 18px;
+            line-height: 1;
+            text-align: center;
+            transform: rotate(0deg);
+            transition: transform 0.18s ease;
+        }
+
+        .legend-item[aria-expanded="true"] .legend-chevron {
+            transform: rotate(90deg);
+        }
+
+        .legend-details {
+            padding: 2px 0 3px;
+        }
+
+        .legend-details[hidden] {
+            display: none;
+        }
+
+        .legend-detail-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            min-height: 30px;
+            padding: 5px 16px 5px 36px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .legend-detail-row + .legend-detail-row {
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .legend-detail-name {
+            overflow: hidden;
+            color: var(--text-main);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .legend-detail-value {
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+        }
+
         .tool-info {
             display: flex;
             align-items: center;
             gap: 10px;
+            min-width: 0;
             font-size: 13px;
             font-weight: 600;
+        }
+
+        .tool-info > span:last-child {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .tool-dot {
@@ -457,6 +541,13 @@
             }
             header p {
                 line-height: 24px;
+            }
+            .legend-item {
+                padding: 10px 12px;
+            }
+            .legend-detail-row {
+                padding-right: 12px;
+                padding-left: 30px;
             }
         }
 
@@ -807,7 +898,7 @@
             justify-content: space-between;
             gap: 12px;
             min-height: 22px;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             padding: 0 4px;
             color: var(--text-muted);
             font-size: 11px;
@@ -817,6 +908,46 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             font-weight: 650;
+        }
+        .rank-history-chart-shell {
+            position: relative;
+            width: 100%;
+            height: min(52vh, 470px);
+            min-height: 360px;
+            padding: 8px 0 0;
+            border-top: 1px solid var(--border-card);
+        }
+        .rank-history-chart-shell canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .rank-history-empty {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            text-align: center;
+            padding: 40px;
+        }
+        .rank-history-empty[hidden] {
+            display: none;
+        }
+        @media (max-width: 640px) {
+            .rank-history-range .tab-btn {
+                padding: 8px 4px;
+                font-size: 11px;
+            }
+            .rank-history-meta {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 3px;
+            }
+            .rank-history-chart-shell {
+                height: 400px;
+                min-height: 340px;
+            }
         }
 
         /* 折线图绘制区 */
@@ -1802,7 +1933,7 @@
             <div class="modal-header">
                 <h3>社区用量排行</h3>
                 <div class="community-header-actions">
-                    <button id="rankHistoryBtn" class="community-refresh-btn" title="查看每日 TOP10 排名变化" aria-label="排名变化动画"><span aria-hidden="true">📊</span><span>排名变化</span></button>
+                    <button id="rankHistoryBtn" class="community-refresh-btn" title="查看 TOP10 排名趋势" aria-label="查看排名趋势"><span aria-hidden="true">📊</span><span>排名趋势</span></button>
                     <button id="communityRefreshBtn" class="community-refresh-btn" title="获取最新社区数据" aria-label="强制刷新社区数据"><span class="community-refresh-icon" aria-hidden="true">↻</span><span>刷新</span></button>
                     <button id="communityCloseBtn" class="close-btn">&times;</button>
                 </div>
@@ -1817,7 +1948,7 @@
     <div id="rankHistoryModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>TOP 10 排名变化</h3>
+                <h3>TOP 10 排名趋势</h3>
                 <div class="community-header-actions">
                     <button id="rankHistoryCloseBtn" class="close-btn">&times;</button>
                 </div>
@@ -1833,8 +1964,9 @@
                     <span id="rankDateLabel" class="rank-history-date">-</span>
                     <span id="rankHistoryStatus"></span>
                 </div>
-                <div id="rankHistoryContainer" style="position:relative;height:400px;overflow:hidden;">
-                    <div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">加载排名历史数据中...</div>
+                <div id="rankHistoryContainer" class="rank-history-chart-shell">
+                    <canvas id="rankHistoryChart" role="img" aria-label="按日期展示的社区 TOP10 排名折线图"></canvas>
+                    <div id="rankHistoryEmpty" class="rank-history-empty">加载排名历史数据中...</div>
                 </div>
             </div>
         </div>
@@ -2351,6 +2483,85 @@
                 ? location.origin
                 : 'http://127.0.0.1:15723');
 
+        const expandedLegendItems = new Set();
+
+        function sortedUsageEntries(usageMap) {
+            return Object.entries(usageMap || {})
+                .map(([name, value]) => [name, Number(value) || 0])
+                .filter(([, value]) => value > 0)
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-CN'));
+        }
+
+        function renderExpandableLegendItem(container, options) {
+            const {
+                key, label, value, percent, color, title = '', children = []
+            } = options;
+            const group = document.createElement('div');
+            group.className = 'legend-group';
+
+            let keyHash = 0;
+            for (let index = 0; index < key.length; index += 1) {
+                keyHash = ((keyHash << 5) - keyHash + key.charCodeAt(index)) | 0;
+            }
+            const detailsId = 'legend-details-' + key.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40) + '-' + Math.abs(keyHash);
+            const hasChildren = children.length > 0;
+            const expanded = hasChildren && expandedLegendItems.has(key);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'legend-item' + (hasChildren ? '' : ' no-details');
+            button.title = hasChildren ? title : '';
+            button.setAttribute('aria-expanded', String(expanded));
+            button.setAttribute('aria-controls', detailsId);
+            if (!hasChildren) button.setAttribute('aria-disabled', 'true');
+            button.innerHTML = `
+                <span class="tool-info">
+                    <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
+                    <span>${escapeHtml(label)}</span>
+                </span>
+                <span class="legend-item-trailing">
+                    <span class="tool-value" style="color: ${color};">
+                        ${formatTokens(value)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
+                    </span>
+                    ${hasChildren ? '<span class="legend-chevron" aria-hidden="true">›</span>' : ''}
+                </span>
+            `;
+
+            const details = document.createElement('div');
+            details.id = detailsId;
+            details.className = 'legend-details';
+            details.hidden = !expanded;
+            children.forEach(([childName, childValue]) => {
+                const childPercent = value > 0 ? ((childValue / value) * 100).toFixed(1) : '0.0';
+                const row = document.createElement('div');
+                row.className = 'legend-detail-row';
+                row.innerHTML = `
+                    <span class="legend-detail-name">${escapeHtml(childName)}</span>
+                    <span class="legend-detail-value">${formatTokens(childValue)} (${childPercent}%)</span>
+                `;
+                details.appendChild(row);
+            });
+
+            if (hasChildren) {
+                button.addEventListener('click', () => {
+                    const nextExpanded = button.getAttribute('aria-expanded') !== 'true';
+                    button.setAttribute('aria-expanded', String(nextExpanded));
+                    details.hidden = !nextExpanded;
+                    if (nextExpanded) expandedLegendItems.add(key);
+                    else expandedLegendItems.delete(key);
+                });
+                button.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        button.click();
+                    }
+                });
+            }
+
+            group.appendChild(button);
+            group.appendChild(details);
+            container.appendChild(group);
+        }
+
         async function updateData() {
             try {
                 const response = await fetch(API_BASE + '/api/usage');
@@ -2410,24 +2621,22 @@
                 const toolValues = tools.map(t => toolMajor[t]);
                 // 按排名取色: top1 永远蓝, top2 永远绿, ... 不按工具名字映射
                 const toolColorArr = tools.map((t, idx) => getRankColor(idx));
+                const toolModelUsage = data.by_tool_model || {};
 
                 tools.forEach((tool, idx) => {
                     const toolVal = toolMajor[tool];
                     const percent = data.summary.total_tokens > 0 ? ((toolVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = toolColorArr[idx];
 
-                    const item = document.createElement('div');
-                    item.className = 'legend-item';
-                    item.innerHTML = `
-                        <div class="tool-info">
-                            <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
-                            <span>${tool}</span>
-                        </div>
-                        <div class="tool-value" style="color: ${color};">
-                            ${formatTokens(toolVal)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
-                        </div>
-                    `;
-                    toolLegendContainer.appendChild(item);
+                    renderExpandableLegendItem(toolLegendContainer, {
+                        key: `tool-${tool}`,
+                        label: tool,
+                        value: toolVal,
+                        percent,
+                        color,
+                        title: '展开查看该 Agent 使用的模型',
+                        children: sortedUsageEntries(toolModelUsage[tool])
+                    });
                 });
 
                 toolChartInstance.data.labels = toolLabels;
@@ -2462,6 +2671,18 @@
                     modelMajorRequests['Other'] = (modelMajorRequests['Other'] || 0) + modelOtherRequests;
                 }
 
+                // 将工具→模型矩阵转置为模型→Agent；被 1% 规则合并的模型统一归入 Other。
+                const modelAgentUsage = {};
+                for (const [tool, modelUsage] of Object.entries(toolModelUsage)) {
+                    for (const [model, rawValue] of Object.entries(modelUsage || {})) {
+                        const value = Number(rawValue) || 0;
+                        if (value <= 0) continue;
+                        const displayModel = Object.prototype.hasOwnProperty.call(modelMajor, model) ? model : 'Other';
+                        if (!modelAgentUsage[displayModel]) modelAgentUsage[displayModel] = {};
+                        modelAgentUsage[displayModel][tool] = (modelAgentUsage[displayModel][tool] || 0) + value;
+                    }
+                }
+
                 const models = Object.keys(modelMajor).sort((a, b) =>
                     modelMajor[b] - modelMajor[a] || a.localeCompare(b, 'zh-CN')
                 );
@@ -2476,19 +2697,15 @@
                     const percent = data.summary.total_tokens > 0 ? ((modelVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = modelColorArr[idx];
 
-                    const item = document.createElement('div');
-                    item.className = 'legend-item';
-                    item.title = (modelMajorRequests[model] || 0) + ' 次 · 本机已记录请求';
-                    item.innerHTML = `
-                        <div class="tool-info">
-                            <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
-                            <span>${model}</span>
-                        </div>
-                        <div class="tool-value" style="color: ${color};">
-                            ${formatTokens(modelVal)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
-                        </div>
-                    `;
-                    modelLegendContainer.appendChild(item);
+                    renderExpandableLegendItem(modelLegendContainer, {
+                        key: `model-${model}`,
+                        label: model,
+                        value: modelVal,
+                        percent,
+                        color,
+                        title: (modelMajorRequests[model] || 0) + ' 次 · 展开查看使用该模型的 Agent',
+                        children: sortedUsageEntries(modelAgentUsage[model])
+                    });
                 });
 
                 modelChartInstance.data.labels = modelLabels;
@@ -2852,6 +3069,10 @@
             '1.4.53': [
                 'TOP10 排名变化弹窗升级为时间范围切换：把原 ◀日期▶/自动播放 一行改为与热力图一致的四段范围（近 30 天 / 近 90 天 / 近半年 / 近一年），打开弹窗或切范围后从区间最早一天自动逐帧推进到最新一天并停止，不再循环。',
                 '后端 `/api/community/history` 双端同时支持 `?days=30/90/180/365`，其他值安全回退到 30；前后端均新增测试保证行为契约与镜像一致。'
+            ],
+            '1.4.54': [
+                '社区 TOP10 改为按日期展示排名折线，周期内出现过的全部用户参与统计，最终展示累计用量最高的 10 位。',
+                '首页新增 Agent 与模型的双向折叠明细，可直接查看内部 Token 用量和占比。'
             ]
         });
 
@@ -3973,37 +4194,43 @@
         });
 
         // ===== 排名变化动画 =====
-        let _rankHistory = { snapshots: [], index: 0, days: 30, timer: null, requestId: 0, lastFrame: new Map() };
-        const RANK_BAR_HEIGHT = 38;
-        const RANK_BAR_GAP = 4;
+        let _rankHistory = { days: 30, chart: null, requestId: 0 };
+        const RANK_LINE_COLORS = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#e11d48','#14b8a6'];
+        const rankHistoryEndLabels = {
+            id: 'rankHistoryEndLabels',
+            afterDatasetsDraw(chart) {
+                const ctx = chart.ctx;
+                const narrow = chart.width < 620;
+                ctx.save();
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    let lastIndex = -1;
+                    dataset.data.forEach((value, index) => {
+                        if (value !== null && value !== undefined) lastIndex = index;
+                    });
+                    if (lastIndex < 0) return;
+                    const point = chart.getDatasetMeta(datasetIndex).data[lastIndex];
+                    if (!point) return;
+                    const labelLimit = narrow ? 7 : 13;
+                    const label = dataset.label.length > labelLimit ? dataset.label.slice(0, labelLimit - 1) + '…' : dataset.label;
+                    ctx.strokeStyle = dataset.borderColor;
+                    ctx.globalAlpha = 0.28;
+                    ctx.beginPath();
+                    ctx.moveTo(point.x + 4, point.y);
+                    ctx.lineTo(chart.chartArea.right + 5, point.y);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = dataset.borderColor;
+                    ctx.font = (narrow ? '10px' : '11px') + ' Outfit, sans-serif';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, chart.chartArea.right + 9, point.y);
+                });
+                ctx.restore();
+            }
+        };
 
-        function stopRankHistoryPlayback() {
-            if (_rankHistory.timer) clearTimeout(_rankHistory.timer);
-            _rankHistory.timer = null;
-        }
-
-        function rankHistoryPlaybackDelay() {
-            const frames = Math.max(1, _rankHistory.snapshots.length - 1);
-            return Math.max(100, Math.min(1200, Math.round(30000 / frames)));
-        }
-
-        function startRankHistoryPlayback() {
-            stopRankHistoryPlayback();
-            if (_rankHistory.snapshots.length < 2) return;
-            _rankHistory.index = 0;
-            _rankHistory.lastFrame = new Map();
-            renderRankHistory();
-            const advance = () => {
-                if (_rankHistory.index >= _rankHistory.snapshots.length - 1) {
-                    stopRankHistoryPlayback();
-                    document.getElementById('rankHistoryStatus').textContent = _rankHistory.snapshots.length + ' 天数据 · 已播放至最新';
-                    return;
-                }
-                _rankHistory.index++;
-                renderRankHistory();
-                _rankHistory.timer = setTimeout(advance, rankHistoryPlaybackDelay());
-            };
-            _rankHistory.timer = setTimeout(advance, rankHistoryPlaybackDelay());
+        function destroyRankHistoryChart() {
+            if (_rankHistory.chart) _rankHistory.chart.destroy();
+            _rankHistory.chart = null;
         }
 
         function updateRankHistoryRange(days) {
@@ -4015,91 +4242,142 @@
         }
 
         async function loadRankHistory(days = _rankHistory.days) {
-            const container = document.getElementById('rankHistoryContainer');
+            const emptyEl = document.getElementById('rankHistoryEmpty');
             const statusEl = document.getElementById('rankHistoryStatus');
             const requestId = ++_rankHistory.requestId;
-            stopRankHistoryPlayback();
             _rankHistory.days = [30, 90, 180, 365].includes(Number(days)) ? Number(days) : 30;
             updateRankHistoryRange(_rankHistory.days);
             try {
                 statusEl.textContent = '加载中...';
+                emptyEl.hidden = false;
+                emptyEl.textContent = '加载排名历史数据中...';
                 const resp = await fetch(API_BASE + '/api/community/history?days=' + _rankHistory.days);
                 const data = await resp.json();
                 if (requestId !== _rankHistory.requestId) return;
-                _rankHistory.snapshots = data.snapshots || [];
-                _rankHistory.index = 0;
-                _rankHistory.lastFrame = new Map();
-                if (_rankHistory.snapshots.length === 0) {
-                    container.innerHTML = '<div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">暂无排名历史数据，每天 23:55 自动归档</div>';
+                const series = Array.isArray(data.series) ? data.series.slice(0, 10) : [];
+                const dates = Array.isArray(data.dates) ? data.dates : [];
+                if (series.length === 0 || dates.length === 0) {
+                    destroyRankHistoryChart();
+                    emptyEl.hidden = false;
+                    emptyEl.textContent = '暂无排名历史数据，每天归档后会在这里形成趋势';
+                    document.getElementById('rankDateLabel').textContent = '-';
                     statusEl.textContent = '';
                     return;
                 }
-                if (_rankHistory.snapshots.length === 1) {
-                    statusEl.textContent = '1 天数据 · 已显示最新';
-                    renderRankHistory();
-                    return;
-                }
-                statusEl.textContent = _rankHistory.snapshots.length + ' 天数据 · 自动播放中';
-                startRankHistoryPlayback();
+                emptyEl.hidden = true;
+                renderRankHistory(data);
             } catch (e) {
                 if (requestId !== _rankHistory.requestId) return;
-                container.innerHTML = '<div style="text-align:center;padding:80px 0;color:var(--text-muted);font-size:13px;">加载失败，请稍后重试</div>';
+                destroyRankHistoryChart();
+                emptyEl.hidden = false;
+                emptyEl.textContent = '排名趋势加载失败，请稍后重试';
                 statusEl.textContent = '';
             }
         }
 
-        function renderRankHistory() {
-            const container = document.getElementById('rankHistoryContainer');
-            const snapshots = _rankHistory.snapshots;
-            if (!snapshots.length) return;
-            const idx = _rankHistory.index;
-            const snap = snapshots[idx];
-            const leaderboard = snap.leaderboard || [];
-            const date = snap.date || '-';
-            const maxTokens = leaderboard.length > 0 ? Math.max(...leaderboard.map(e => e.tokens || 0), 1) : 1;
+        function renderRankHistory(data) {
+            const dates = Array.isArray(data.dates) ? data.dates : [];
+            const series = (Array.isArray(data.series) ? data.series : []).slice(0, 10);
+            if (!dates.length || !series.length) return;
 
-            document.getElementById('rankDateLabel').textContent = date;
-            // 每一帧根据上一帧的位置和条形宽度进入，确保自动播放是真实动画而非静态切页。
-            const colors = ['#3b82f6','#ec4899','#10b981','#14b8a6','#e11d48','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16'];
-            let html = '<div style="position:relative;height:100%;">';
-            const nextFrame = new Map();
-            leaderboard.forEach((entry, rank) => {
-                const pct = Math.max(2, ((entry.tokens || 0) / maxTokens) * 100);
-                const color = colors[rank % colors.length];
-                const name = entry.display_name || entry.id || '?';
-                const top = rank * (RANK_BAR_HEIGHT + RANK_BAR_GAP);
-                const key = String(entry.id || name);
-                nextFrame.set(key, { top, pct });
-                html += '<div class="rank-history-row" data-rank-key="' + escapeHtml(key) + '" style="position:absolute;left:0;right:0;height:' + RANK_BAR_HEIGHT + 'px;top:' + top + 'px;display:flex;align-items:center;gap:8px;padding:0 4px;opacity:1;transition:transform 600ms cubic-bezier(0.22,0.61,0.36,1),opacity 300ms ease;">' +
-                    '<span style="width:28px;text-align:center;font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;color:' + (rank < 3 ? color : 'var(--text-muted)') + ';">' + (rank + 1) + '</span>' +
-                    '<div style="flex:1;position:relative;height:24px;background:rgba(255,255,255,0.03);border-radius:4px;overflow:hidden;">' +
-                    '<div class="rank-history-bar" data-target-width="' + pct + '" style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:4px;transition:width 600ms cubic-bezier(0.22,0.61,0.36,1);opacity:0.85;"></div>' +
-                    '</div>' +
-                    '<span style="flex:0 0 130px;min-width:0;text-align:left;font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
-                    '<span style="width:70px;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-weight:600;color:var(--text-primary);">' + formatTokens(entry.tokens || 0) + '</span>' +
-                    '</div>';
+            const participantCount = Number(data.participant_count) || series.length;
+            const participantLabel = data.participant_count_complete === false ? '至少 ' + participantCount : '统计 ' + participantCount;
+            const firstDate = dates[0];
+            const lastDate = dates[dates.length - 1];
+            document.getElementById('rankDateLabel').textContent = firstDate === lastDate ? firstDate : firstDate + ' — ' + lastDate;
+            document.getElementById('rankHistoryStatus').textContent = dates.length + ' 个归档日 · ' + participantLabel + ' 位参与者 · 展示 TOP ' + series.length;
+
+            destroyRankHistoryChart();
+            const canvas = document.getElementById('rankHistoryChart');
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const narrow = canvas.clientWidth < 620;
+            const datasets = series.map((item, index) => {
+                const color = RANK_LINE_COLORS[index % RANK_LINE_COLORS.length];
+                const name = item.display_name || item.id || '?';
+                const ranks = Array.isArray(item.ranks) ? item.ranks : [];
+                return {
+                    label: name,
+                    data: dates.map((_, pointIndex) => {
+                        const rank = Number(ranks[pointIndex]) || 0;
+                        return rank >= 1 && rank <= 10 ? rank : null;
+                    }),
+                    tokenValues: Array.isArray(item.tokens) ? item.tokens : [],
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: index < 3 ? 2.5 : 2,
+                    pointRadius: dates.length <= 31 ? 3 : 1.5,
+                    pointHoverRadius: 5,
+                    pointBorderWidth: 1.5,
+                    pointBorderColor: getThemeVar('--chart-point-border'),
+                    tension: 0.22,
+                    spanGaps: false,
+                    fill: false
+                };
             });
-            html += '</div>';
-            container.innerHTML = html;
-            container.style.height = Math.max(400, leaderboard.length * (RANK_BAR_HEIGHT + RANK_BAR_GAP) + 20) + 'px';
-            container.querySelectorAll('.rank-history-row').forEach(row => {
-                const previous = _rankHistory.lastFrame.get(row.dataset.rankKey);
-                const current = nextFrame.get(row.dataset.rankKey);
-                const bar = row.querySelector('.rank-history-bar');
-                if (previous && current) {
-                    row.style.transform = 'translateY(' + (previous.top - current.top) + 'px)';
-                    bar.style.width = previous.pct + '%';
-                } else {
-                    row.style.opacity = '0';
-                    bar.style.width = '0%';
+
+            _rankHistory.chart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels: dates, datasets },
+                plugins: [rankHistoryEndLabels],
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: reducedMotion ? false : { duration: 900, easing: 'easeOutQuart' },
+                    interaction: { mode: 'nearest', intersect: false, axis: 'xy' },
+                    layout: { padding: { top: 10, right: narrow ? 68 : 120, bottom: 4, left: 0 } },
+                    scales: {
+                        x: {
+                            grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
+                            border: { display: false },
+                            ticks: {
+                                color: getThemeVar('--text-muted'),
+                                font: { family: 'JetBrains Mono', size: narrow ? 9 : 10 },
+                                maxRotation: 0,
+                                autoSkip: true,
+                                maxTicksLimit: narrow ? 4 : 7,
+                                padding: 8,
+                                callback(value) {
+                                    const label = this.getLabelForValue(value);
+                                    return label ? label.slice(5) : '';
+                                }
+                            }
+                        },
+                        y: {
+                            min: 1,
+                            max: 10,
+                            reverse: true,
+                            grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
+                            border: { display: false },
+                            ticks: {
+                                stepSize: 1,
+                                color: getThemeVar('--text-muted'),
+                                font: { family: 'JetBrains Mono', size: 10 },
+                                padding: 9,
+                                callback(value) { return '第 ' + value + ' 名'; }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            displayColors: true,
+                            backgroundColor: getThemeVar('--modal-bg'),
+                            borderColor: getThemeVar('--border-card'),
+                            borderWidth: 1,
+                            titleColor: getThemeVar('--text-main'),
+                            bodyColor: getThemeVar('--text-main'),
+                            padding: 10,
+                            callbacks: {
+                                title(items) { return items.length ? dates[items[0].dataIndex] : ''; },
+                                label(context) {
+                                    const tokens = Number(context.dataset.tokenValues[context.dataIndex]) || 0;
+                                    return context.dataset.label + ' · 第 ' + context.raw + ' 名 · ' + formatTokens(tokens);
+                                }
+                            }
+                        }
+                    }
                 }
-                requestAnimationFrame(() => requestAnimationFrame(() => {
-                    row.style.transform = 'translateY(0)';
-                    row.style.opacity = '1';
-                    bar.style.width = bar.dataset.targetWidth + '%';
-                }));
             });
-            _rankHistory.lastFrame = nextFrame;
         }
 
         document.getElementById('rankHistoryBtn').addEventListener('click', async () => {
@@ -4112,12 +4390,12 @@
             await loadRankHistory(Number(button.dataset.days));
         });
         document.getElementById('rankHistoryCloseBtn').addEventListener('click', () => {
-            stopRankHistoryPlayback();
+            destroyRankHistoryChart();
             document.getElementById('rankHistoryModal').classList.remove('active');
         });
         document.getElementById('rankHistoryModal').addEventListener('click', (e) => {
             if (e.target === document.getElementById('rankHistoryModal')) {
-                stopRankHistoryPlayback();
+                destroyRankHistoryChart();
                 document.getElementById('rankHistoryModal').classList.remove('active');
             }
         });

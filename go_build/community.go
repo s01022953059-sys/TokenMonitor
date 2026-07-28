@@ -748,7 +748,155 @@ func gitcodeGetDetailed(path, token string) (interface{}, int, error) {
 	return result, resp.StatusCode, nil
 }
 
-// getCommunityHistory 读取 community/archive/ 目录下的每日 TOP10 快照。
+type communityHistoryEntry struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name,omitempty"`
+	Tokens      int64  `json:"tokens"`
+	Tool        string `json:"tool,omitempty"`
+}
+
+type communityHistorySnapshot struct {
+	Date         string                  `json:"date"`
+	GeneratedAt  string                  `json:"generated_at,omitempty"`
+	TotalUsers   int                     `json:"total_users,omitempty"`
+	ActiveUsers  int                     `json:"active_users,omitempty"`
+	Participants []communityHistoryEntry `json:"participants,omitempty"`
+	Leaderboard  []communityHistoryEntry `json:"leaderboard"`
+}
+
+type communityRankSeries struct {
+	ID          string  `json:"id"`
+	DisplayName string  `json:"display_name,omitempty"`
+	TotalTokens int64   `json:"total_tokens"`
+	Appearances int     `json:"appearances"`
+	Ranks       []int   `json:"ranks"`
+	Tokens      []int64 `json:"tokens"`
+}
+
+func buildCommunityRankSeries(snapshots []communityHistorySnapshot) map[string]interface{} {
+	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].Date < snapshots[j].Date })
+	participantCountComplete := true
+	type memberTotal struct {
+		id, name    string
+		tokens      int64
+		appearances int
+	}
+	totals := map[string]*memberTotal{}
+	dailyRanks := make([]map[string]int, len(snapshots))
+	dailyTokens := make([]map[string]int64, len(snapshots))
+	dates := make([]string, len(snapshots))
+
+	for dayIndex, snapshot := range snapshots {
+		if snapshot.Participants == nil {
+			participantCountComplete = false
+		}
+		dates[dayIndex] = snapshot.Date
+		entries := snapshot.Participants
+		if len(entries) == 0 {
+			entries = snapshot.Leaderboard
+		}
+		byID := map[string]communityHistoryEntry{}
+		for _, entry := range entries {
+			id := strings.TrimSpace(entry.ID)
+			if id == "" {
+				id = strings.TrimSpace(entry.DisplayName)
+			}
+			if id == "" {
+				continue
+			}
+			entry.ID = id
+			if entry.Tokens < 0 {
+				entry.Tokens = 0
+			}
+			previous, exists := byID[id]
+			if !exists || entry.Tokens >= previous.Tokens {
+				byID[id] = entry
+			}
+		}
+		ranked := make([]communityHistoryEntry, 0, len(byID))
+		for _, entry := range byID {
+			ranked = append(ranked, entry)
+		}
+		sort.SliceStable(ranked, func(i, j int) bool {
+			if ranked[i].Tokens != ranked[j].Tokens {
+				return ranked[i].Tokens > ranked[j].Tokens
+			}
+			left := ranked[i].DisplayName
+			if left == "" {
+				left = ranked[i].ID
+			}
+			right := ranked[j].DisplayName
+			if right == "" {
+				right = ranked[j].ID
+			}
+			if left != right {
+				return left < right
+			}
+			return ranked[i].ID < ranked[j].ID
+		})
+		dailyRanks[dayIndex] = map[string]int{}
+		dailyTokens[dayIndex] = map[string]int64{}
+		for rank, entry := range ranked {
+			shownRank := rank + 1
+			if shownRank > 10 {
+				shownRank = 0
+			}
+			dailyRanks[dayIndex][entry.ID] = shownRank
+			dailyTokens[dayIndex][entry.ID] = entry.Tokens
+			member := totals[entry.ID]
+			if member == nil {
+				member = &memberTotal{id: entry.ID, name: entry.DisplayName}
+				totals[entry.ID] = member
+			}
+			if entry.DisplayName != "" {
+				member.name = entry.DisplayName
+			}
+			member.tokens += entry.Tokens
+			member.appearances++
+		}
+	}
+
+	members := make([]*memberTotal, 0, len(totals))
+	for _, member := range totals {
+		members = append(members, member)
+	}
+	sort.SliceStable(members, func(i, j int) bool {
+		if members[i].tokens != members[j].tokens {
+			return members[i].tokens > members[j].tokens
+		}
+		if members[i].appearances != members[j].appearances {
+			return members[i].appearances > members[j].appearances
+		}
+		left := members[i].name
+		if left == "" {
+			left = members[i].id
+		}
+		right := members[j].name
+		if right == "" {
+			right = members[j].id
+		}
+		if left != right {
+			return left < right
+		}
+		return members[i].id < members[j].id
+	})
+	if len(members) > 10 {
+		members = members[:10]
+	}
+	series := make([]communityRankSeries, 0, len(members))
+	for _, member := range members {
+		ranks := make([]int, len(snapshots))
+		tokens := make([]int64, len(snapshots))
+		for dayIndex := range snapshots {
+			ranks[dayIndex] = dailyRanks[dayIndex][member.id]
+			tokens[dayIndex] = dailyTokens[dayIndex][member.id]
+		}
+		series = append(series, communityRankSeries{ID: member.id, DisplayName: member.name, TotalTokens: member.tokens, Appearances: member.appearances, Ranks: ranks, Tokens: tokens})
+	}
+	return map[string]interface{}{"dates": dates, "series": series, "participant_count": len(totals), "participant_count_complete": participantCountComplete}
+}
+
+// getCommunityHistory 读取 community/archive/ 目录下的每日排名快照。
 func getCommunityHistory(days int) map[string]interface{} {
 	if days <= 0 {
 		days = 30
@@ -756,12 +904,12 @@ func getCommunityHistory(days int) map[string]interface{} {
 	token := ""
 	listing, statusCode, err := gitcodeGetDetailed("community/archive", token)
 	if err != nil || statusCode < 200 || statusCode >= 300 {
-		return map[string]interface{}{"snapshots": []interface{}{}, "data_status": "empty"}
+		return map[string]interface{}{"snapshots": []interface{}{}, "dates": []string{}, "series": []communityRankSeries{}, "participant_count": 0, "participant_count_complete": true, "data_status": "empty"}
 	}
 	body, _ := json.Marshal(listing)
 	var files []map[string]interface{}
 	if json.Unmarshal(body, &files) != nil {
-		return map[string]interface{}{"snapshots": []interface{}{}, "data_status": "empty"}
+		return map[string]interface{}{"snapshots": []interface{}{}, "dates": []string{}, "series": []communityRankSeries{}, "participant_count": 0, "participant_count_complete": true, "data_status": "empty"}
 	}
 
 	// 筛选 .json 文件, 按文件名(日期)降序取最近 N 天
@@ -793,7 +941,7 @@ func getCommunityHistory(days int) map[string]interface{} {
 	}
 
 	client := newProxyHTTPClient(8)
-	var snapshots []interface{}
+	var snapshots []communityHistorySnapshot
 	for _, af := range archiveFiles {
 		req, _ := http.NewRequest("GET", af.url, nil)
 		resp, err := client.Do(req)
@@ -805,28 +953,23 @@ func getCommunityHistory(days int) map[string]interface{} {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			continue
 		}
-		var snapshot interface{}
-		if json.Unmarshal(respBody, &snapshot) == nil {
-			if m, ok := snapshot.(map[string]interface{}); ok && m["date"] != nil {
-				snapshots = append(snapshots, m)
-			}
+		var snapshot communityHistorySnapshot
+		if json.Unmarshal(respBody, &snapshot) == nil && snapshot.Date != "" {
+			snapshots = append(snapshots, snapshot)
 		}
 	}
 
 	// 按日期升序 (旧→新)
-	sort.SliceStable(snapshots, func(i, j int) bool {
-		mi, _ := snapshots[i].(map[string]interface{})
-		mj, _ := snapshots[j].(map[string]interface{})
-		di, _ := mi["date"].(string)
-		dj, _ := mj["date"].(string)
-		return di < dj
-	})
+	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].Date < snapshots[j].Date })
 
 	status := "ok"
 	if len(snapshots) == 0 {
 		status = "empty"
 	}
-	return map[string]interface{}{"snapshots": snapshots, "data_status": status}
+	result := buildCommunityRankSeries(snapshots)
+	result["snapshots"] = snapshots
+	result["data_status"] = status
+	return result
 }
 func gitcodeWrite(method, path string, data map[string]interface{}, token string) (interface{}, int, error) {
 	url := gitcodeCommunityAPI + "/contents/" + path

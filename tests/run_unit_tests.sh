@@ -78,6 +78,13 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('if (data.by_tool[t].total_tokens > 0)')) {
     throw new Error(`${file}: 工具占比不能把低用量工具隐藏到 Other`);
   }
+  if (!html.includes('function renderExpandableLegendItem') ||
+      !html.includes('data.by_tool_model || {}') ||
+      !html.includes("button.setAttribute('aria-expanded'") ||
+      !html.includes('expandedLegendItems') ||
+      !html.includes("displayModel = Object.prototype.hasOwnProperty.call(modelMajor, model) ? model : 'Other'")) {
+    throw new Error(`${file}: 首页缺少默认折叠的 Agent↔模型二级用量统计`);
+  }
   if (!html.includes('heatmapDetailToolFilter') ||
       !html.includes('heatmapDetailModelFilter') ||
       !html.includes('heatmapDetailStartTime') ||
