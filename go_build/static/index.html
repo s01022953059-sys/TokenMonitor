@@ -3095,6 +3095,10 @@
             '1.4.56': [
                 '排名趋势改为并发读取、静默预取和缓存优先展示，重复打开无需等待。',
                 '优化趋势入口图标与姓名防重叠布局，密集排名仍能清晰对应。'
+            ],
+            '1.4.57': [
+                '进一步扩大排名趋势姓名间距，并按实际字体高度动态调整。',
+                '为姓名增加独立背景隔离，避免折线穿过文字影响辨识。'
             ]
         });
 
@@ -4251,13 +4255,28 @@
             return chars.join('') + '…';
         }
 
+        function rankHistoryLabelMinGap(ctx, narrow) {
+            const metrics = ctx.measureText('Ag国');
+            const measuredHeight = Number(metrics.actualBoundingBoxAscent || 0) + Number(metrics.actualBoundingBoxDescent || 0);
+            return Math.max(narrow ? 22 : 28, Math.ceil(measuredHeight + 12));
+        }
+
+        function rankHistoryLabelBackground(ctx, x, y, width, height) {
+            ctx.save();
+            ctx.globalAlpha = 0.94;
+            ctx.fillStyle = getThemeVar('--modal-bg');
+            ctx.fillRect(x - 4, y - height / 2, width + 8, height);
+            ctx.restore();
+        }
+
         const rankHistoryEndLabels = {
             id: 'rankHistoryEndLabels',
             afterDatasetsDraw(chart) {
                 const ctx = chart.ctx;
                 const narrow = chart.width < 620;
                 ctx.save();
-                ctx.font = (narrow ? '10px' : '11px') + ' Outfit, sans-serif';
+                ctx.font = (narrow ? '10px' : '12px') + ' Outfit, sans-serif';
+                const minGap = rankHistoryLabelMinGap(ctx, narrow);
                 const items = [];
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     let lastIndex = -1;
@@ -4271,14 +4290,15 @@
                 });
                 const labels = layoutRankHistoryEndLabels(
                     items,
-                    chart.chartArea.top + 8,
-                    chart.chartArea.bottom - 8,
-                    narrow ? 14 : 16
+                    chart.chartArea.top + minGap / 2,
+                    chart.chartArea.bottom - minGap / 2,
+                    minGap
                 );
                 const labelX = chart.chartArea.right + (narrow ? 11 : 13);
                 const maxWidth = Math.max(36, chart.width - labelX - 4);
                 labels.forEach(item => {
                     const label = fitRankHistoryLabel(ctx, item.dataset.label, maxWidth);
+                    const textWidth = Math.min(maxWidth, ctx.measureText(label).width);
                     ctx.strokeStyle = item.dataset.borderColor;
                     ctx.globalAlpha = 0.28;
                     ctx.beginPath();
@@ -4287,6 +4307,7 @@
                     ctx.lineTo(chart.chartArea.right + 8, item.labelY);
                     ctx.stroke();
                     ctx.globalAlpha = 1;
+                    rankHistoryLabelBackground(ctx, labelX, item.labelY, textWidth, minGap - 6);
                     ctx.fillStyle = item.dataset.borderColor;
                     ctx.textBaseline = 'middle';
                     ctx.fillText(label, labelX, item.labelY);
