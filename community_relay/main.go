@@ -25,6 +25,7 @@ const maxRequestBytes = 16 * 1024
 const maxTokenCount int64 = 1_000_000_000_000
 
 var communityIDPattern = regexp.MustCompile(`^User_[A-Z0-9]{5,12}$`)
+var communityTimeZone = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 var allowedTools = map[string]bool{
 	"Codex": true, "Claude": true, "Hermes": true, "OpenCode": true,
@@ -67,6 +68,19 @@ type relayHandler struct {
 	store    reportStore
 	profiles *profileDatabase
 	now      func() time.Time
+}
+
+func communityArchiveDate(now time.Time) string {
+	return now.In(communityTimeZone).Format("2006-01-02")
+}
+
+func nextCommunityArchiveTime(now time.Time) time.Time {
+	localNow := now.In(communityTimeZone)
+	next := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 23, 55, 0, 0, communityTimeZone)
+	if localNow.After(next) {
+		next = next.AddDate(0, 0, 1)
+	}
+	return next
 }
 
 func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +223,7 @@ func formatArchiveTools(byTool map[string]int64) string {
 // runArchive 读取所有报告，归档当天全量参与者并保留兼容用 TOP10。
 func (h *relayHandler) runArchive() error {
 	ctx := context.Background()
+	now := h.now()
 	reports, err := h.store.ListReports(ctx)
 	if err != nil {
 		return fmt.Errorf("list reports: %w", err)
@@ -226,7 +241,7 @@ func (h *relayHandler) runArchive() error {
 	// 当天上过报 (无论当日是否产生用量) 的用户都进 leaderboard,
 	// 让 0-token 占位用户也能在归档中露出, 客户端 TOP10 排名变化弹窗
 	// 会显示 "出现过但没操作" 的人, 而不是只显示有操作的两三个人。
-	today := h.now().UTC().Format("2006-01-02")
+	today := communityArchiveDate(now)
 	var active []reportDocument
 	for _, r := range latest {
 		if r.ReportDate == today {
@@ -256,7 +271,7 @@ func (h *relayHandler) runArchive() error {
 
 	snapshot := archiveSnapshot{
 		Date:         today,
-		GeneratedAt:  h.now().UTC().Format(time.RFC3339),
+		GeneratedAt:  now.UTC().Format(time.RFC3339),
 		TotalUsers:   len(latest),
 		ActiveUsers:  len(active),
 		Participants: participants,
@@ -621,19 +636,16 @@ func main() {
 	}
 	log.Printf("community relay listening on %s", listenAddr)
 
-	// 每日 23:55 UTC 自动归档当天 TOP10 排行榜快照。
+	// 每日北京时间 23:55 自动归档当天 TOP10 排行榜快照。
 	go func() {
 		for {
-			now := time.Now().UTC()
-			next := time.Date(now.Year(), now.Month(), now.Day(), 23, 55, 0, 0, time.UTC)
-			if now.After(next) {
-				next = next.Add(24 * time.Hour)
-			}
+			now := time.Now()
+			next := nextCommunityArchiveTime(now)
 			time.Sleep(next.Sub(now))
 			if err := handler.runArchive(); err != nil {
 				log.Printf("[-] daily archive failed: %v", err)
 			} else {
-				log.Printf("[+] daily archive completed for %s", time.Now().UTC().Format("2006-01-02"))
+				log.Printf("[+] daily archive completed for %s", communityArchiveDate(time.Now()))
 			}
 		}
 	}()

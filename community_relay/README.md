@@ -8,6 +8,7 @@ The relay accepts anonymous numeric usage reports from Token Monitor clients and
 - Public prefix: `https://new.taqi.cc/token-monitor-community/`
 - Health check: `GET /health`
 - Report endpoint: `POST /v1/report`
+- Archive schedule: every day at `23:55 Asia/Shanghai`
 
 Required environment variables:
 

@@ -631,7 +631,7 @@ def _build_rank_history_series(snapshots, limit=10):
 def get_community_history(days=30):
     """读取每日参与者快照，返回最近 N 天最多十人的排名趋势。
 
-    归档文件由 VPS 中继每天 23:55 UTC 自动生成, 存于 GitCode community-data
+    归档文件由 VPS 中继每天北京时间 23:55 自动生成, 存于 GitCode community-data
     分支的 community/archive/{date}.json。客户端无需 GitCode token, 走公开读取。
 
     Returns:

@@ -3146,6 +3146,10 @@
             '1.4.61': [
                 '修复 TOP10 排名趋势第 1 名折线和圆点被顶部边缘裁切。',
                 '扩大右侧姓名安全区，长昵称会完整显示或自然省略。'
+            ],
+            '1.4.62': [
+                '右侧排名统一展示最近一个有数据的归档日，不再混用不同日期。',
+                '修复社区归档时区错误，并恢复 7 月 28 日的真实排名数据。'
             ]
         });
 
@@ -4258,7 +4262,7 @@
 
         // ===== 排名变化动画 =====
         const RANK_HISTORY_CACHE_TTL = 5 * 60 * 1000;
-        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v1-';
+        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v2-';
         let _rankHistory = { days: 30, chart: null, requestId: 0, cache: new Map(), requests: new Map() };
         const RANK_LINE_COLORS = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#e11d48','#14b8a6'];
 
@@ -4305,9 +4309,22 @@
             ctx.restore();
         }
 
+        function rankHistoryLatestDataIndex(datasets, dateCount) {
+            for (let index = Math.max(0, Number(dateCount) || 0) - 1; index >= 0; index -= 1) {
+                const hasRank = datasets.some(dataset => {
+                    const rank = Number(dataset && dataset.data ? dataset.data[index] : 0) || 0;
+                    return rank >= 1 && rank <= 10;
+                });
+                if (hasRank) return index;
+            }
+            return -1;
+        }
+
         const rankHistoryEndLabels = {
             id: 'rankHistoryEndLabels',
             afterDatasetsDraw(chart) {
+                const latestDataIndex = rankHistoryLatestDataIndex(chart.data.datasets, chart.data.labels.length);
+                if (latestDataIndex < 0) return;
                 const ctx = chart.ctx;
                 const narrow = chart.width < 620;
                 ctx.save();
@@ -4315,12 +4332,9 @@
                 const minGap = rankHistoryLabelMinGap(ctx, narrow);
                 const items = [];
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
-                    let lastIndex = -1;
-                    dataset.data.forEach((value, index) => {
-                        if (value !== null && value !== undefined) lastIndex = index;
-                    });
-                    if (lastIndex < 0) return;
-                    const point = chart.getDatasetMeta(datasetIndex).data[lastIndex];
+                    const rank = Number(dataset.data[latestDataIndex]) || 0;
+                    if (rank < 1 || rank > 10) return;
+                    const point = chart.getDatasetMeta(datasetIndex).data[latestDataIndex];
                     if (!point) return;
                     items.push({point, dataset, y: point.y});
                 });
@@ -4468,8 +4482,6 @@
             const firstDate = dates[0];
             const lastDate = dates[dates.length - 1];
             document.getElementById('rankDateLabel').textContent = firstDate === lastDate ? firstDate : firstDate + ' — ' + lastDate;
-            document.getElementById('rankHistoryStatus').textContent = dates.length + ' 个归档日 · ' + participantLabel + ' 位参与者 · 展示 TOP ' + series.length;
-
             destroyRankHistoryChart();
             const canvas = document.getElementById('rankHistoryChart');
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -4498,6 +4510,9 @@
                     fill: false
                 };
             });
+            const latestDataIndex = rankHistoryLatestDataIndex(datasets, dates.length);
+            const latestRankDate = latestDataIndex >= 0 ? dates[latestDataIndex] : '暂无';
+            document.getElementById('rankHistoryStatus').textContent = dates.length + ' 个归档日 · ' + participantLabel + ' 位参与者 · 展示 TOP ' + series.length + ' · 右侧排名 ' + latestRankDate;
 
             _rankHistory.chart = new Chart(canvas.getContext('2d'), {
                 type: 'line',

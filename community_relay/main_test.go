@@ -260,6 +260,20 @@ func TestArchiveCreatesTop10Snapshot(t *testing.T) {
 	}
 }
 
+func TestCommunityArchiveScheduleUsesAsiaShanghai(t *testing.T) {
+	now := time.Date(2026, 7, 28, 15, 54, 0, 0, time.UTC)
+	wantNext := time.Date(2026, 7, 28, 15, 55, 0, 0, time.UTC)
+	if got := nextCommunityArchiveTime(now); !got.Equal(wantNext) {
+		t.Fatalf("next archive: got %s want %s", got, wantNext)
+	}
+	if got := communityArchiveDate(wantNext); got != "2026-07-28" {
+		t.Fatalf("archive date: got %s want 2026-07-28", got)
+	}
+	if got := communityArchiveDate(time.Date(2026, 7, 28, 23, 55, 0, 0, time.UTC)); got != "2026-07-29" {
+		t.Fatalf("late UTC archive date: got %s want 2026-07-29", got)
+	}
+}
+
 func TestArchiveEndpointReturnsOK(t *testing.T) {
 	store := &fakeStore{listReports: []reportDocument{}}
 	handler := &relayHandler{store: store, now: func() time.Time {

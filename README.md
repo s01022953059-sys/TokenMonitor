@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.61**。
+当前发布版本：**v1.4.62**。
 
 ## 功能
 
@@ -82,7 +82,7 @@
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动上报入口，仅保留“刷新”按钮
 - 排名趋势按日期绘制 1–10 名连续折线；缺失归档日不生成虚假排名点，但会连接前后两个真实排名，避免折线中断。所选周期内出现过的全部人员都会参与累计统计，最终只展示累计用量最高的 TOP10，悬停可查看当天名次和 Token
-- 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。折线末端姓名按实际字体高度留出独立行距，并使用背景隔离和引导线对应数据点；画布顶部和右侧保留安全边距，避免第 1 名折线及长昵称被边缘裁切
+- 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。右侧姓名统一按最近一个有有效排名的归档日展示，并在状态栏标明日期；画布顶部和右侧保留安全边距，避免第 1 名折线及长昵称被边缘裁切
 - 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
@@ -316,7 +316,7 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 ```bash
 # 1. bump 版本号 (两处)
 #    Info.plist: <string>1.3.47</string>
-#    go_build/main.go: var appVersion = "1.4.61"
+#    go_build/main.go: var appVersion = "1.4.62"
 
 # 2. git 提交 + 打 tag
 git add -A
@@ -392,10 +392,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.61](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.61)
+最新版本：[v1.4.62](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.62)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.61/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.61/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.62/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.62/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -412,6 +412,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.62
+- 右侧排名统一展示最近一个有数据的归档日；修复 UTC 归档导致北京时间昨日数据为空的问题，并恢复 7 月 28 日真实排名。
 
 ### v1.4.61
 - 修复 TOP10 排名趋势顶部折线、圆点和右侧长昵称贴边裁切的问题。
@@ -442,7 +445,7 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - TOP10 排名变化弹窗把原“上一天／下一天／自动播放”操作行改为与热力图一致的四段范围切换：近 30 天、近 90 天、近半年、近一年。打开弹窗或切换范围后，从区间最早一天自动播放到最新一天并自动停止，不再要求用户选择是否播放，也不再循环。
 - macOS Python 与 Windows Go 的 `/api/community/history` 同时支持 `days=30/90/180/365`；其他值安全回退到 30 天。前端按历史帧数自适应播放速度，并用上一帧位置和条形宽度驱动真实排名过渡动画。
 - 新增双端范围参数与前端静态契约测试，确保 macOS/Windows 前端保持完全一致，自动播放入口、四个范围和非循环行为不会回归。
-- **关于历史快照 leaderboard 不全的说明**：`community_relay runArchive` v1.4.53 之前过滤了 `TodayTokens > 0`，所以 `vps community-data` 分支上 `community/archive/{date}.json` 里仅含当日有 token 的用户。v1.4.53 已修此过滤；但**当天归档跑过一次就写死了**，原始 report 文件被次日上报覆盖后也无法重算历史快照（用户 `report_date` 字段已不再是 7.24）。重写历史 archive 文件会引入数据错位，因此不做回填——下次 23:55 UTC 自动归档会包含当日所有当日 report（含 0-token 占位用户）。客户端打开弹窗或切到「近 7 天」时若仍未见 0-token 用户，说明 VPS 还没部署 v1.4.53 后代码，需要运维手动 `cd community_relay && /usr/local/bin/token-monitor-community-relay --version` 确认。
+- **关于历史快照 leaderboard 不全的说明**：`community_relay runArchive` v1.4.53 之前过滤了 `TodayTokens > 0`，所以早期 `community/archive/{date}.json` 仅含当日有 token 的用户。v1.4.62 起归档固定在北京时间 23:55 执行，避免 UTC 日期错位；7 月 28 日快照已按当天留存报告恢复，其他缺少原始报告的历史日期不生成推测数据。
 
 ### v1.4.52
 - 修复 Windows 客户端 TOP10 排名变化弹窗 404：`go_build/main.go` 在 `/api/community/profile` 之后注册 `/api/community/history`，调 `getCommunityHistory(30)`，按社区路由统一模板（`setCORSHeaders` + OPTIONS 短路 + GET-only + `writeJSON`）。根因：v1.4.49a 引入排名变化弹窗时只写了函数，忘记注册 HTTP 路由，macOS 走 Python 后端正常，Windows 端一直静默 404。
