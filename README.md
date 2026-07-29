@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.59**。
+当前发布版本：**v1.4.60**。
 
 ## 功能
 
@@ -44,7 +44,7 @@
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
 - 历史趋势弹窗：7/14/30 天，工具和模型两个维度
 - About 弹窗：版本号、更新状态与当前版本 1–2 条简短更新摘要（离线可见）
-- 深色 / 亮色主题自动跟随 macOS 或 Windows 系统外观，系统切换后应用实时同步
+- 深色 / 亮色主题默认跟随 macOS 或 Windows 系统外观，系统切换后应用实时同步；右上角按钮可临时预览另一主题，重启后恢复跟随系统
 - macOS / Windows 统一使用单一内容面，不在仪表盘外叠加页面外壳；Windows 托盘实时显示火焰与今日 Token 总量
 
 ### 活动热力图
@@ -316,7 +316,7 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 ```bash
 # 1. bump 版本号 (两处)
 #    Info.plist: <string>1.3.47</string>
-#    go_build/main.go: var appVersion = "1.4.59"
+#    go_build/main.go: var appVersion = "1.4.60"
 
 # 2. git 提交 + 打 tag
 git add -A
@@ -392,10 +392,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.59](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.59)
+最新版本：[v1.4.60](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.60)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.59/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.59/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.60/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.60/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -412,6 +412,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.60
+- 默认继续跟随系统明暗外观，并恢复右上角临时主题调试按钮；重启或系统外观变化后自动恢复跟随。
 
 ### v1.4.59
 - 明亮与黑暗模式自动跟随 macOS / Windows 系统外观，系统切换时页面和图表实时同步。

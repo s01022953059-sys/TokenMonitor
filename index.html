@@ -584,6 +584,7 @@
         .history-btn { right: 25px; }
         .heatmap-btn { right: 75px; }
         .community-btn { right: 125px; }
+        .theme-btn { right: 175px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -1760,6 +1761,19 @@
     </div>
 
     <div class="container">
+        <button id="themeToggleBtn" class="header-action-btn theme-btn" title="临时切换主题（重启后恢复跟随系统）" aria-label="临时切换主题（重启后恢复跟随系统）">
+            <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+        </button>
         <button id="historyOpenBtn" class="header-action-btn history-btn" title="查看历史统计趋势">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -2951,12 +2965,31 @@
 
         function applyTheme(theme) {
             document.documentElement.setAttribute('data-theme', theme);
+            updateThemeToggle(theme);
             updateDonutBorderColors(theme);
             refreshThemeSensitiveCharts();
         }
 
         function applySystemTheme() {
             applyTheme(getSystemTheme());
+        }
+
+        function toggleThemePreview() {
+            const current = document.documentElement.getAttribute('data-theme') || getSystemTheme();
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        }
+
+        function updateThemeToggle(theme) {
+            const button = document.getElementById('themeToggleBtn');
+            const icon = document.getElementById('themeIcon');
+            if (!button || !icon) return;
+            const nextTheme = theme === 'light' ? '黑暗' : '明亮';
+            const label = '临时切换为' + nextTheme + '模式（重启后恢复跟随系统）';
+            button.title = label;
+            button.setAttribute('aria-label', label);
+            icon.innerHTML = theme === 'light'
+                ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>'
+                : '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
         }
 
         function refreshThemeSensitiveCharts() {
@@ -3105,6 +3138,10 @@
             '1.4.59': [
                 '明亮与黑暗模式自动跟随 macOS 或 Windows 系统外观。',
                 '系统外观变化时页面与图表实时同步，不再受旧主题缓存影响。'
+            ],
+            '1.4.60': [
+                '明亮与黑暗模式继续默认跟随系统，并恢复右上角主题调试按钮。',
+                '按钮仅临时预览另一主题，重启或系统外观变化后自动恢复跟随。'
             ]
         });
 
@@ -3273,6 +3310,7 @@
             } else {
                 systemThemeQuery.addListener(applySystemTheme);
             }
+            document.getElementById('themeToggleBtn').addEventListener('click', toggleThemePreview);
 
             initCharts();
             loadAppInfo();
