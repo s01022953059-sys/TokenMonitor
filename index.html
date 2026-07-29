@@ -584,7 +584,6 @@
         .history-btn { right: 25px; }
         .heatmap-btn { right: 75px; }
         .community-btn { right: 125px; }
-        .theme-btn { right: 175px; }
         .about-btn { left: 25px; }
 
         /* 磨砂毛玻璃弹窗遮罩 */
@@ -1761,19 +1760,6 @@
     </div>
 
     <div class="container">
-        <button id="themeToggleBtn" class="header-action-btn theme-btn" title="切换亮色/暗色主题">
-            <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="5"></circle>
-                <line x1="12" y1="1" x2="12" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="23"></line>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-            </svg>
-        </button>
         <button id="historyOpenBtn" class="header-action-btn history-btn" title="查看历史统计趋势">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -2952,31 +2938,43 @@
             historyChartInstance.update();
         }
 
-        // ===== 主题切换系统 =====
+        // ===== 系统主题联动 =====
+        const systemThemeQuery = window.matchMedia('(prefers-color-scheme: light)');
+
         function getThemeVar(varName) {
             return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
         }
 
-        function getCurrentTheme() {
-            return localStorage.getItem('token-monitor-theme') || 'dark';
+        function getSystemTheme() {
+            return systemThemeQuery.matches ? 'light' : 'dark';
         }
 
         function applyTheme(theme) {
             document.documentElement.setAttribute('data-theme', theme);
-            localStorage.setItem('token-monitor-theme', theme);
-            updateThemeIcon(theme);
             updateDonutBorderColors(theme);
+            refreshThemeSensitiveCharts();
         }
 
-        function updateThemeIcon(theme) {
-            const iconEl = document.getElementById('themeIcon');
-            if (!iconEl) return;
-            if (theme === 'light') {
-                // 月亮图标
-                iconEl.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
-            } else {
-                // 太阳图标
-                iconEl.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+        function applySystemTheme() {
+            applyTheme(getSystemTheme());
+        }
+
+        function refreshThemeSensitiveCharts() {
+            if (historyChartInstance) {
+                const currentHistoryData = rawHistoryData;
+                historyChartInstance.destroy();
+                historyChartInstance = null;
+                const historyModal = document.getElementById('historyModal');
+                if (historyModal && historyModal.classList.contains('active') && currentHistoryData) {
+                    const params = getActiveParams();
+                    fetchHistoryAndRender(params.days, params.dim, currentHistoryData);
+                }
+            }
+            if (_rankHistory.chart) {
+                const cached = readRankHistoryCache(_rankHistory.days);
+                if (cached && document.getElementById('rankHistoryModal').classList.contains('active')) {
+                    renderRankHistory(cached.data);
+                }
             }
         }
 
@@ -3103,6 +3101,10 @@
             '1.4.58': [
                 '排名趋势跨过缺失归档日期连接前后真实排名，折线不再中断。',
                 '缺失日期仍保持为空，不生成虚假排名数据点。'
+            ],
+            '1.4.59': [
+                '明亮与黑暗模式自动跟随 macOS 或 Windows 系统外观。',
+                '系统外观变化时页面与图表实时同步，不再受旧主题缓存影响。'
             ]
         });
 
@@ -3255,34 +3257,22 @@
             }
         }
 
-        // 立即应用已保存的主题（在 DOM 加载前防止闪烁）
+        // 立即应用系统主题，并清理旧版本遗留的手动主题偏好。
         (function() {
-            const saved = getCurrentTheme();
-            document.documentElement.setAttribute('data-theme', saved);
+            try { localStorage.removeItem('token-monitor-theme'); } catch (_) {}
+            document.documentElement.setAttribute('data-theme', getSystemTheme());
         })();
 
         window.addEventListener('DOMContentLoaded', () => {
             const desktopShell = Boolean(window.__TOKEN_MONITOR_DESKTOP__) ||
                 new URLSearchParams(window.location.search).get('desktop') === '1';
             if (desktopShell) document.documentElement.setAttribute('data-desktop-shell', 'true');
-            // 初始化主题
-            const savedTheme = getCurrentTheme();
-            applyTheme(savedTheme);
-
-            // 绑定主题切换按钮
-            document.getElementById('themeToggleBtn').addEventListener('click', () => {
-                const current = getCurrentTheme();
-                applyTheme(current === 'dark' ? 'light' : 'dark');
-                // 重新渲染历史图表以更新颜色
-                if (historyChartInstance) {
-                    rawHistoryData = null; // 清缓存，强制重新生成带新颜色的 dataset
-                    const historyModal = document.getElementById('historyModal');
-                    if (historyModal.classList.contains('active')) {
-                        const params = getActiveParams();
-                        fetchHistoryAndRender(params.days, params.dim);
-                    }
-                }
-            });
+            applySystemTheme();
+            if (systemThemeQuery.addEventListener) {
+                systemThemeQuery.addEventListener('change', applySystemTheme);
+            } else {
+                systemThemeQuery.addListener(applySystemTheme);
+            }
 
             initCharts();
             loadAppInfo();
