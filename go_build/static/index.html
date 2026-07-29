@@ -3142,6 +3142,10 @@
             '1.4.60': [
                 '明亮与黑暗模式继续默认跟随系统，并恢复右上角主题调试按钮。',
                 '按钮仅临时预览另一主题，重启或系统外观变化后自动恢复跟随。'
+            ],
+            '1.4.61': [
+                '修复 TOP10 排名趋势第 1 名折线和圆点被顶部边缘裁切。',
+                '扩大右侧姓名安全区，长昵称会完整显示或自然省略。'
             ]
         });
 
@@ -4327,7 +4331,7 @@
                     minGap
                 );
                 const labelX = chart.chartArea.right + (narrow ? 11 : 13);
-                const maxWidth = Math.max(36, chart.width - labelX - 4);
+                const maxWidth = Math.max(36, chart.width - labelX - 16);
                 labels.forEach(item => {
                     const label = fitRankHistoryLabel(ctx, item.dataset.label, maxWidth);
                     const textWidth = Math.min(maxWidth, ctx.measureText(label).width);
@@ -4490,6 +4494,7 @@
                     pointBorderColor: getThemeVar('--chart-point-border'),
                     tension: 0.22,
                     spanGaps: true,
+                    clip: false,
                     fill: false
                 };
             });
@@ -4503,7 +4508,7 @@
                     maintainAspectRatio: false,
                     animation: reducedMotion ? false : { duration: 900, easing: 'easeOutQuart' },
                     interaction: { mode: 'nearest', intersect: false, axis: 'xy' },
-                    layout: { padding: { top: 10, right: narrow ? 92 : 142, bottom: 4, left: 0 } },
+                    layout: { padding: { top: 18, right: narrow ? 108 : 168, bottom: 10, left: 0 } },
                     scales: {
                         x: {
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },

@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.60**。
+当前发布版本：**v1.4.61**。
 
 ## 功能
 
@@ -82,7 +82,7 @@
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动上报入口，仅保留“刷新”按钮
 - 排名趋势按日期绘制 1–10 名连续折线；缺失归档日不生成虚假排名点，但会连接前后两个真实排名，避免折线中断。所选周期内出现过的全部人员都会参与累计统计，最终只展示累计用量最高的 TOP10，悬停可查看当天名次和 Token
-- 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。折线末端姓名按实际字体高度留出独立行距，并使用背景隔离和引导线对应数据点，避免多人同名次时文字重叠
+- 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。折线末端姓名按实际字体高度留出独立行距，并使用背景隔离和引导线对应数据点；画布顶部和右侧保留安全边距，避免第 1 名折线及长昵称被边缘裁切
 - 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
 - 社区页顶部动态栏轮播今日榜首、参与人数、社区总量和热门工具；悬停暂停，并遵循系统的减少动态效果设置
 - 社区页使用当天缓存优先展示并在后台刷新，应用启动后静默预取；网络短暂失败时保留最近一次成功数据
@@ -316,7 +316,7 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 ```bash
 # 1. bump 版本号 (两处)
 #    Info.plist: <string>1.3.47</string>
-#    go_build/main.go: var appVersion = "1.4.60"
+#    go_build/main.go: var appVersion = "1.4.61"
 
 # 2. git 提交 + 打 tag
 git add -A
@@ -392,10 +392,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.60](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.60)
+最新版本：[v1.4.61](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.61)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.60/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.60/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.61/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.61/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -412,6 +412,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.61
+- 修复 TOP10 排名趋势顶部折线、圆点和右侧长昵称贴边裁切的问题。
 
 ### v1.4.60
 - 默认继续跟随系统明暗外观，并恢复右上角临时主题调试按钮；重启或系统外观变化后自动恢复跟随。
