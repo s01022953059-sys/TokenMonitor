@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from server import _parse_community_history_days
+from server import _parse_community_history_days, _parse_community_history_range
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +23,19 @@ class RankHistoryAnimationTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(expected, _parse_community_history_days(path))
 
+    def test_history_range_only_accepts_calendar_periods(self):
+        cases = {
+            "/api/community/history": "",
+            "/api/community/history?range=week": "week",
+            "/api/community/history?range=month": "month",
+            "/api/community/history?range=quarter": "quarter",
+            "/api/community/history?range=year": "year",
+            "/api/community/history?range=90": "",
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(expected, _parse_community_history_range(path))
+
     def test_frontends_use_date_rank_line_chart_with_top_ten_limit(self):
         mac_html = (ROOT / "index.html").read_text(encoding="utf-8")
         windows_html = (ROOT / "go_build" / "static" / "index.html").read_text(
@@ -37,16 +50,19 @@ class RankHistoryAnimationTest(unittest.TestCase):
             "// ===== 热力图下钻 =====", 1
         )[0]
 
-        for days, label in ((30, "近 30 天"), (90, "近 90 天"), (180, "近半年"), (365, "近一年")):
-            self.assertIn(f'data-days="{days}"', modal)
+        for period, label in (("week", "本周"), ("month", "本月"), ("quarter", "本季度"), ("year", "本年度")):
+            self.assertIn(f'data-range="{period}"', modal)
             self.assertIn(label, modal)
+        for old_label in ("近 30 天", "近 90 天", "近半年", "近一年"):
+            self.assertNotIn(old_label, modal)
+        self.assertIn('class="tab-btn active" role="tab" aria-selected="true" data-range="week"', modal)
 
         self.assertIn('role="tablist"', modal)
         self.assertIn('id="rankHistoryChart"', modal)
         self.assertIn('id="rankRangeLeaderboard"', modal)
         self.assertIn('id="rankRangeSummaryMeta"', modal)
         self.assertIn("区间总榜", modal)
-        self.assertIn("/api/community/history?days=", script)
+        self.assertIn("/api/community/history?range=", script)
         self.assertIn("new Chart", script)
         self.assertIn("rankHistoryEndLabels", script)
         self.assertIn("rankHistoryLatestDataIndex", script)
@@ -61,7 +77,7 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn("const latestDataIndex = rankHistoryLatestDataIndex", script)
         self.assertIn("dataset.data[latestDataIndex]", script)
         self.assertIn("右侧排名", script)
-        self.assertIn("token-monitor-rank-history-v3-", script)
+        self.assertIn("token-monitor-rank-history-v4-", script)
         self.assertIn("layoutRankHistoryEndLabels", script)
         self.assertIn("rankHistoryLabelMinGap", script)
         self.assertIn("rankHistoryLabelBackground", script)

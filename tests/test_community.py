@@ -67,6 +67,19 @@ class CommunityTests(unittest.TestCase):
         legacy = community._build_rank_history_series([{"date": "2026-07-25", "leaderboard": snapshots[0]["leaderboard"]}])
         self.assertFalse(legacy["participant_count_complete"])
 
+    def test_rank_history_calendar_period_bounds(self):
+        today = datetime.date(2026, 5, 15)
+        expected = {
+            "week": ("2026-05-11", "2026-05-15"),
+            "month": ("2026-05-01", "2026-05-15"),
+            "quarter": ("2026-04-01", "2026-05-15"),
+            "year": ("2026-01-01", "2026-05-15"),
+        }
+        for period, bounds in expected.items():
+            with self.subTest(period=period):
+                start, end = community._community_history_date_bounds(period, today)
+                self.assertEqual((start.isoformat(), end.isoformat()), bounds)
+
     def test_rank_history_keeps_zero_usage_days_ranked_by_prior_history(self):
         snapshots = [
             {
@@ -424,6 +437,34 @@ class CommunityTests(unittest.TestCase):
             result["dates"],
             [f"2026-07-{day:02d}" for day in range(1, 13) if day != 6],
         )
+
+    def test_history_natural_week_only_reads_archives_within_calendar_bounds(self):
+        files = [
+            {
+                "name": f"2026-07-{day:02d}.json",
+                "download_url": f"https://example.test/{day}",
+            }
+            for day in range(24, 31)
+        ]
+
+        def read_snapshot(url, token=None):
+            day = int(url.rsplit("/", 1)[-1])
+            return {
+                "date": f"2026-07-{day:02d}",
+                "participants": [{"id": f"User_{day:02d}", "tokens": day}],
+            }, None
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=read_snapshot) as read_call:
+            result = community.get_community_history(
+                period="week",
+                today=datetime.date(2026, 7, 30),
+            )
+
+        self.assertEqual(result["dates"], ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30"])
+        self.assertEqual(result["range_start"], "2026-07-27")
+        self.assertEqual(result["range_end"], "2026-07-30")
+        self.assertEqual(read_call.call_count, 4)
 
     def test_history_cache_avoids_reloading_archives_within_ttl(self):
         files = [{"name": "2026-07-28.json", "download_url": "https://example.test/28"}]

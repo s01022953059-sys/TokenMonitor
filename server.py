@@ -94,6 +94,12 @@ def _parse_community_history_days(path):
     return days if days in {30, 90, 180, 365} else 30
 
 
+def _parse_community_history_range(path):
+    """Return a supported natural calendar period, or empty for legacy days requests."""
+    value = str(parse_qs(urlparse(path).query).get("range", [""])[0] or "").strip().lower()
+    return value if value in {"week", "month", "quarter", "year"} else ""
+
+
 HEATMAP_CACHE_PATH = os.environ.get(
     "TOKEN_MONITOR_HEATMAP_CACHE_FILE",
     os.path.expanduser("~/.token_monitor/heatmap_cache.json"),
@@ -1076,7 +1082,10 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path == "/api/community/history" or self.path.startswith("/api/community/history?"):
             try:
-                history = get_community_history(days=_parse_community_history_days(self.path))
+                history = get_community_history(
+                    days=_parse_community_history_days(self.path),
+                    period=_parse_community_history_range(self.path),
+                )
                 self._write_json(200, history)
             except Exception as exc:
                 self._write_json(500, {"error": str(exc)})

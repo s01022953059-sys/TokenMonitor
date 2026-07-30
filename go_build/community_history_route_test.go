@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestCommunityHistoryRouteRegistered 静态扫描 main.go AST,
@@ -83,6 +84,39 @@ func TestParseCommunityHistoryDays(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, rawURL, nil)
 		if got := parseCommunityHistoryDays(req); got != want {
 			t.Fatalf("parseCommunityHistoryDays(%q) = %d, want %d", rawURL, got, want)
+		}
+	}
+}
+
+func TestParseCommunityHistoryRange(t *testing.T) {
+	cases := map[string]string{
+		"/api/community/history":               "",
+		"/api/community/history?range=week":    "week",
+		"/api/community/history?range=month":   "month",
+		"/api/community/history?range=quarter": "quarter",
+		"/api/community/history?range=year":    "year",
+		"/api/community/history?range=90":      "",
+	}
+	for rawURL, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, rawURL, nil)
+		if got := parseCommunityHistoryRange(req); got != want {
+			t.Fatalf("parseCommunityHistoryRange(%q) = %q, want %q", rawURL, got, want)
+		}
+	}
+}
+
+func TestCommunityHistoryCalendarPeriodBounds(t *testing.T) {
+	today := time.Date(2026, 5, 15, 12, 0, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60))
+	cases := map[string]string{
+		"week":    "2026-05-11|2026-05-15",
+		"month":   "2026-05-01|2026-05-15",
+		"quarter": "2026-04-01|2026-05-15",
+		"year":    "2026-01-01|2026-05-15",
+	}
+	for period, want := range cases {
+		start, end, ok := communityHistoryDateBounds(period, today)
+		if !ok || start.Format("2006-01-02")+"|"+end.Format("2006-01-02") != want {
+			t.Fatalf("communityHistoryDateBounds(%q) = %s|%s, %v; want %s", period, start.Format("2006-01-02"), end.Format("2006-01-02"), ok, want)
 		}
 	}
 }

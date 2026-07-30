@@ -653,8 +653,26 @@ def _build_rank_history_series(snapshots, limit=10):
     }
 
 
-def get_community_history(days=30):
-    """读取每日参与者快照，返回最近 N 天最多十人的排名趋势。
+def _community_history_date_bounds(period, today=None):
+    """返回按北京时间计算的自然周、月、季度或年度边界。"""
+    if today is None:
+        beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
+        today = datetime.datetime.now(beijing_tz).date()
+    if period == "week":
+        start = today - datetime.timedelta(days=today.weekday())
+    elif period == "month":
+        start = today.replace(day=1)
+    elif period == "quarter":
+        start = today.replace(month=((today.month - 1) // 3) * 3 + 1, day=1)
+    elif period == "year":
+        start = today.replace(month=1, day=1)
+    else:
+        raise ValueError("unsupported community history period")
+    return start, today
+
+
+def get_community_history(days=30, period="", today=None):
+    """读取每日参与者快照，返回自然周期或兼容旧版最近 N 天的排名趋势。
 
     归档文件由 VPS 中继每天北京时间 23:55 自动生成, 存于 GitCode community-data
     分支的 community/archive/{date}.json。客户端无需 GitCode token, 走公开读取。
@@ -669,7 +687,15 @@ def get_community_history(days=30):
     if days <= 0:
         days = 30
 
-    cached = _history_cache.get(days)
+    period = str(period or "").strip().lower()
+    if period not in {"week", "month", "quarter", "year"}:
+        period = ""
+    range_start = range_end = None
+    if period:
+        range_start, range_end = _community_history_date_bounds(period, today)
+    cache_key = f"{period}:{range_end.isoformat()}" if period else days
+
+    cached = _history_cache.get(cache_key)
     if cached and time.time() - cached["ts"] < HISTORY_CACHE_TTL:
         return cached["data"]
 
@@ -679,12 +705,24 @@ def get_community_history(days=30):
     if not isinstance(files, list):
         return {"snapshots": [], "dates": [], "series": [], "participant_count": 0, "participant_count_complete": True, "data_status": "empty"}
 
-    # 筛选 .json 文件, 按文件名(日期)降序, 取最近 N 天
+    # 新版按自然周期边界筛选；旧版 days 请求继续取最近 N 个归档文件。
+    archive_files = [
+        f for f in files if isinstance(f, dict) and str(f.get("name", "")).endswith(".json")
+    ]
+    if period:
+        start_text = range_start.isoformat()
+        end_text = range_end.isoformat()
+        archive_files = [
+            f for f in archive_files
+            if start_text <= str(f.get("name", ""))[:-5] <= end_text
+        ]
     archive_files = sorted(
-        [f for f in files if isinstance(f, dict) and str(f.get("name", "")).endswith(".json")],
+        archive_files,
         key=lambda f: str(f.get("name", "")),
         reverse=True,
-    )[:days]
+    )
+    if not period:
+        archive_files = archive_files[:days]
 
     if not archive_files:
         return {"snapshots": [], "dates": [], "series": [], "participant_count": 0, "participant_count_complete": True, "data_status": "empty"}
@@ -713,6 +751,12 @@ def get_community_history(days=30):
     # 按日期升序返回 (旧→新), 方便前端时间轴播放
     snapshots.sort(key=lambda s: s.get("date", ""))
     result = _build_rank_history_series(snapshots)
-    result.update({"snapshots": snapshots, "data_status": "ok" if snapshots else "empty"})
-    _history_cache[days] = {"data": result, "ts": time.time()}
+    result.update({
+        "snapshots": snapshots,
+        "data_status": "ok" if snapshots else "empty",
+        "range": period,
+        "range_start": range_start.isoformat() if range_start else "",
+        "range_end": range_end.isoformat() if range_end else "",
+    })
+    _history_cache[cache_key] = {"data": result, "ts": time.time()}
     return result

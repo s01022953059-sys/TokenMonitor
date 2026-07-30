@@ -31,7 +31,7 @@ var (
 	communityCache   = make(map[string]interface{})
 	communityCacheTs int64
 	communityCacheMu sync.Mutex
-	historyCache     = make(map[int]communityHistoryCacheEntry)
+	historyCache     = make(map[string]communityHistoryCacheEntry)
 	historyCacheMu   sync.Mutex
 )
 
@@ -982,12 +982,46 @@ func fetchCommunityHistorySnapshots(files []communityArchiveFile, maxWorkers int
 }
 
 // getCommunityHistory 读取 community/archive/ 目录下的每日排名快照。
-func getCommunityHistory(days int) map[string]interface{} {
+func communityHistoryDateBounds(period string, today time.Time) (time.Time, time.Time, bool) {
+	location := time.FixedZone("Asia/Shanghai", 8*60*60)
+	today = today.In(location)
+	end := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, location)
+	start := end
+	switch period {
+	case "week":
+		weekday := (int(end.Weekday()) + 6) % 7
+		start = end.AddDate(0, 0, -weekday)
+	case "month":
+		start = time.Date(end.Year(), end.Month(), 1, 0, 0, 0, 0, location)
+	case "quarter":
+		quarterMonth := time.Month(((int(end.Month()) - 1) / 3 * 3) + 1)
+		start = time.Date(end.Year(), quarterMonth, 1, 0, 0, 0, 0, location)
+	case "year":
+		start = time.Date(end.Year(), time.January, 1, 0, 0, 0, 0, location)
+	default:
+		return time.Time{}, time.Time{}, false
+	}
+	return start, end, true
+}
+
+func getCommunityHistory(days int, periods ...string) map[string]interface{} {
 	if days <= 0 {
 		days = 30
 	}
+	period := ""
+	if len(periods) > 0 {
+		candidate := strings.ToLower(strings.TrimSpace(periods[0]))
+		if candidate == "week" || candidate == "month" || candidate == "quarter" || candidate == "year" {
+			period = candidate
+		}
+	}
+	rangeStart, rangeEnd, hasPeriod := communityHistoryDateBounds(period, time.Now())
+	cacheKey := strconv.Itoa(days)
+	if hasPeriod {
+		cacheKey = period + ":" + rangeEnd.Format("2006-01-02")
+	}
 	historyCacheMu.Lock()
-	cached, hasCached := historyCache[days]
+	cached, hasCached := historyCache[cacheKey]
 	historyCacheMu.Unlock()
 	if hasCached && time.Since(cached.ts) < 5*time.Minute {
 		return cached.data
@@ -1010,6 +1044,12 @@ func getCommunityHistory(days int) map[string]interface{} {
 		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
+		if hasPeriod {
+			archiveDay := strings.TrimSuffix(name, ".json")
+			if archiveDay < rangeStart.Format("2006-01-02") || archiveDay > rangeEnd.Format("2006-01-02") {
+				continue
+			}
+		}
 		dlURL, _ := f["download_url"].(string)
 		if dlURL == "" {
 			dlURL, _ = f["url"].(string)
@@ -1023,7 +1063,7 @@ func getCommunityHistory(days int) map[string]interface{} {
 	sort.SliceStable(archiveFiles, func(i, j int) bool {
 		return archiveFiles[i].name > archiveFiles[j].name
 	})
-	if len(archiveFiles) > days {
+	if !hasPeriod && len(archiveFiles) > days {
 		archiveFiles = archiveFiles[:days]
 	}
 
@@ -1053,8 +1093,16 @@ func getCommunityHistory(days int) map[string]interface{} {
 	result := buildCommunityRankSeries(snapshots)
 	result["snapshots"] = snapshots
 	result["data_status"] = status
+	result["range"] = period
+	if hasPeriod {
+		result["range_start"] = rangeStart.Format("2006-01-02")
+		result["range_end"] = rangeEnd.Format("2006-01-02")
+	} else {
+		result["range_start"] = ""
+		result["range_end"] = ""
+	}
 	historyCacheMu.Lock()
-	historyCache[days] = communityHistoryCacheEntry{data: result, ts: time.Now()}
+	historyCache[cacheKey] = communityHistoryCacheEntry{data: result, ts: time.Now()}
 	historyCacheMu.Unlock()
 	return result
 }

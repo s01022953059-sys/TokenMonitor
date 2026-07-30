@@ -2111,10 +2111,10 @@
             </div>
             <div class="community-scroll-region rank-history-body">
                 <div id="rankHistoryRange" class="tab-container rank-history-range" role="tablist" aria-label="排名变化时间范围">
-                    <button class="tab-btn active" role="tab" aria-selected="true" data-days="30">近 30 天</button>
-                    <button class="tab-btn" role="tab" aria-selected="false" data-days="90">近 90 天</button>
-                    <button class="tab-btn" role="tab" aria-selected="false" data-days="180">近半年</button>
-                    <button class="tab-btn" role="tab" aria-selected="false" data-days="365">近一年</button>
+                    <button class="tab-btn active" role="tab" aria-selected="true" data-range="week">本周</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" data-range="month">本月</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" data-range="quarter">本季度</button>
+                    <button class="tab-btn" role="tab" aria-selected="false" data-range="year">本年度</button>
                 </div>
                 <div class="rank-history-meta" aria-live="polite">
                     <span id="rankDateLabel" class="rank-history-date">-</span>
@@ -3155,7 +3155,7 @@
                 }
             }
             if (_rankHistory.chart) {
-                const cached = readRankHistoryCache(_rankHistory.days);
+                const cached = readRankHistoryCache(_rankHistory.range);
                 if (cached && document.getElementById('rankHistoryModal').classList.contains('active')) {
                     renderRankHistory(cached.data);
                 }
@@ -3309,6 +3309,10 @@
             '1.4.64': [
                 '用户修改社区昵称后，排名趋势折线标签会同步显示最新名称。',
                 '区间总榜按匿名 ID 使用最新公开昵称，历史 Token 与排名保持不变。'
+            ],
+            '1.4.65': [
+                '排名趋势范围优化为本周、本月、本季度和本年度，选择更直观。',
+                '四个范围按北京时间的自然周期读取归档，默认展示本周。'
             ]
         });
 
@@ -4404,7 +4408,7 @@
         document.getElementById('communityOpenBtn').addEventListener('click', () => {
             document.getElementById('communityModal').classList.add('active');
             loadCommunity();
-            window.setTimeout(() => { void prefetchRankHistory(30); }, 200);
+            window.setTimeout(() => { void prefetchRankHistory('week'); }, 200);
         });
         document.getElementById('communityRefreshBtn').addEventListener('click', async () => {
             const button = document.getElementById('communityRefreshBtn');
@@ -4431,8 +4435,9 @@
 
         // ===== 排名变化动画 =====
         const RANK_HISTORY_CACHE_TTL = 5 * 60 * 1000;
-        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v3-';
-        let _rankHistory = { days: 30, chart: null, requestId: 0, cache: new Map(), requests: new Map() };
+        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v4-';
+        const RANK_HISTORY_RANGES = ['week', 'month', 'quarter', 'year'];
+        let _rankHistory = { range: 'week', chart: null, requestId: 0, cache: new Map(), requests: new Map() };
         const RANK_LINE_COLORS = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#e11d48','#14b8a6'];
 
         function layoutRankHistoryEndLabels(items, top, bottom, minGap) {
@@ -4636,12 +4641,12 @@
             }
         };
 
-        function readRankHistoryCache(days) {
-            let entry = _rankHistory.cache.get(days) || null;
+        function readRankHistoryCache(range) {
+            let entry = _rankHistory.cache.get(range) || null;
             if (!entry) {
                 try {
-                    entry = JSON.parse(localStorage.getItem(RANK_HISTORY_CACHE_PREFIX + days) || 'null');
-                    if (entry && entry.data) _rankHistory.cache.set(days, entry);
+                    entry = JSON.parse(localStorage.getItem(RANK_HISTORY_CACHE_PREFIX + range) || 'null');
+                    if (entry && entry.data) _rankHistory.cache.set(range, entry);
                 } catch (_) {
                     entry = null;
                 }
@@ -4649,36 +4654,36 @@
             return entry && entry.data ? entry : null;
         }
 
-        function writeRankHistoryCache(days, data) {
+        function writeRankHistoryCache(range, data) {
             const entry = {savedAt: Date.now(), data};
-            _rankHistory.cache.set(days, entry);
+            _rankHistory.cache.set(range, entry);
             try {
-                localStorage.setItem(RANK_HISTORY_CACHE_PREFIX + days, JSON.stringify(entry));
+                localStorage.setItem(RANK_HISTORY_CACHE_PREFIX + range, JSON.stringify(entry));
             } catch (_) {
                 // WebView 禁用本地存储时仍保留当前进程内缓存。
             }
         }
 
-        function fetchRankHistoryData(days) {
-            if (_rankHistory.requests.has(days)) return _rankHistory.requests.get(days);
-            const request = fetch(API_BASE + '/api/community/history?days=' + days, {cache: 'no-store'})
+        function fetchRankHistoryData(range) {
+            if (_rankHistory.requests.has(range)) return _rankHistory.requests.get(range);
+            const request = fetch(API_BASE + '/api/community/history?range=' + encodeURIComponent(range), {cache: 'no-store'})
                 .then(resp => {
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     return resp.json();
                 })
                 .then(data => {
-                    writeRankHistoryCache(days, data);
+                    writeRankHistoryCache(range, data);
                     return data;
                 })
-                .finally(() => { _rankHistory.requests.delete(days); });
-            _rankHistory.requests.set(days, request);
+                .finally(() => { _rankHistory.requests.delete(range); });
+            _rankHistory.requests.set(range, request);
             return request;
         }
 
-        function prefetchRankHistory(days = 30) {
-            const cached = readRankHistoryCache(days);
+        function prefetchRankHistory(range = 'week') {
+            const cached = readRankHistoryCache(range);
             if (cached && Date.now() - Number(cached.savedAt || 0) < RANK_HISTORY_CACHE_TTL) return Promise.resolve(cached.data);
-            return fetchRankHistoryData(days).catch(() => null);
+            return fetchRankHistoryData(range).catch(() => null);
         }
 
         function destroyRankHistoryChart() {
@@ -4686,21 +4691,21 @@
             _rankHistory.chart = null;
         }
 
-        function updateRankHistoryRange(days) {
+        function updateRankHistoryRange(range) {
             document.querySelectorAll('#rankHistoryRange .tab-btn').forEach(btn => {
-                const active = Number(btn.dataset.days) === days;
+                const active = btn.dataset.range === range;
                 btn.classList.toggle('active', active);
                 btn.setAttribute('aria-selected', String(active));
             });
         }
 
-        async function loadRankHistory(days = _rankHistory.days, options = {}) {
+        async function loadRankHistory(range = _rankHistory.range, options = {}) {
             const emptyEl = document.getElementById('rankHistoryEmpty');
             const statusEl = document.getElementById('rankHistoryStatus');
             const requestId = ++_rankHistory.requestId;
-            _rankHistory.days = [30, 90, 180, 365].includes(Number(days)) ? Number(days) : 30;
-            updateRankHistoryRange(_rankHistory.days);
-            const cached = readRankHistoryCache(_rankHistory.days);
+            _rankHistory.range = RANK_HISTORY_RANGES.includes(range) ? range : 'week';
+            updateRankHistoryRange(_rankHistory.range);
+            const cached = readRankHistoryCache(_rankHistory.range);
             const hasCachedData = cached && Array.isArray(cached.data.dates) && cached.data.dates.length > 0 &&
                 Array.isArray(cached.data.series) && cached.data.series.length > 0;
             if (hasCachedData) {
@@ -4714,7 +4719,7 @@
                 emptyEl.textContent = '加载排名历史数据中...';
             }
             try {
-                const data = await fetchRankHistoryData(_rankHistory.days);
+                const data = await fetchRankHistoryData(_rankHistory.range);
                 if (requestId !== _rankHistory.requestId) return;
                 const series = Array.isArray(data.series) ? data.series.slice(0, 10) : [];
                 const dates = Array.isArray(data.dates) ? data.dates : [];
@@ -4853,12 +4858,12 @@
 
         document.getElementById('rankHistoryBtn').addEventListener('click', async () => {
             document.getElementById('rankHistoryModal').classList.add('active');
-            await loadRankHistory(_rankHistory.days);
+            await loadRankHistory(_rankHistory.range);
         });
         document.getElementById('rankHistoryRange').addEventListener('click', async (event) => {
             const button = event.target.closest('.tab-btn');
             if (!button) return;
-            await loadRankHistory(Number(button.dataset.days));
+            await loadRankHistory(button.dataset.range);
         });
         document.getElementById('rankHistoryCloseBtn').addEventListener('click', () => {
             destroyRankHistoryChart();
