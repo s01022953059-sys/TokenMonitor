@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"sync"
@@ -85,6 +86,49 @@ func TestBuildCommunityRankSeriesCountsAllParticipantsAndLimitsTopTen(t *testing
 	legacy := buildCommunityRankSeries([]communityHistorySnapshot{{Date: "2026-07-25", Leaderboard: snapshots[0].Leaderboard}})
 	if legacy["participant_count_complete"] != false {
 		t.Fatalf("legacy snapshots must be marked incomplete: %#v", legacy)
+	}
+}
+
+func TestBuildCommunityRankSeriesKeepsZeroUsageDaysRankedByPriorHistory(t *testing.T) {
+	snapshots := []communityHistorySnapshot{
+		{Date: "2026-07-26", Participants: []communityHistoryEntry{
+			{ID: "User_A", DisplayName: "A", Tokens: 1000},
+			{ID: "User_B", DisplayName: "B", Tokens: 10},
+		}},
+		{Date: "2026-07-27", Participants: []communityHistoryEntry{
+			{ID: "User_A", DisplayName: "A", Tokens: 1},
+			{ID: "User_B", DisplayName: "B", Tokens: 20},
+			{ID: "User_C", DisplayName: "C", Tokens: 2000},
+		}},
+		{Date: "2026-07-28", Participants: []communityHistoryEntry{}},
+	}
+
+	result := buildCommunityRankSeries(snapshots)
+	series := result["series"].([]communityRankSeries)
+	byID := map[string]communityRankSeries{}
+	for _, item := range series {
+		byID[item.ID] = item
+	}
+	wantRanks := map[string][]int{
+		"User_A": {1, 3, 2},
+		"User_B": {2, 2, 3},
+		"User_C": {3, 1, 1},
+	}
+	wantTokens := map[string][]int64{
+		"User_A": {1000, 1, 0},
+		"User_B": {10, 20, 0},
+		"User_C": {0, 2000, 0},
+	}
+	for id, want := range wantRanks {
+		got := byID[id]
+		if !reflect.DeepEqual(got.Ranks, want) || !reflect.DeepEqual(got.Tokens, wantTokens[id]) {
+			t.Fatalf("%s ranks/tokens = %v/%v, want %v/%v", id, got.Ranks, got.Tokens, want, wantTokens[id])
+		}
+		for _, rank := range got.Ranks {
+			if rank <= 0 {
+				t.Fatalf("%s contains missing rank: %v", id, got.Ranks)
+			}
+		}
 	}
 }
 

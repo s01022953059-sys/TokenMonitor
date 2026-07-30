@@ -893,6 +893,24 @@
             margin: 0 0 10px;
             border-radius: 14px;
         }
+        #rankHistoryModal .modal-content {
+            display: flex;
+            flex-direction: column;
+            width: min(96vw, 980px);
+            max-width: 980px;
+            max-height: min(92vh, 860px);
+            padding: 0;
+            overflow: hidden;
+        }
+        #rankHistoryModal .modal-header {
+            flex: none;
+            margin: 0;
+            padding: 26px 30px 18px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .rank-history-body {
+            padding: 16px 20px 22px;
+        }
         .rank-history-range .tab-btn {
             flex: 1 1 0;
             min-width: 0;
@@ -918,10 +936,9 @@
         .rank-history-chart-shell {
             position: relative;
             width: 100%;
-            height: min(52vh, 470px);
+            height: min(48vh, 420px);
             min-height: 360px;
             padding: 8px 0 0;
-            border-top: 1px solid var(--border-card);
         }
         .rank-history-chart-shell canvas {
             width: 100% !important;
@@ -940,7 +957,125 @@
         .rank-history-empty[hidden] {
             display: none;
         }
+        .rank-history-main {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 250px;
+            gap: 18px;
+            border-top: 1px solid var(--border-card);
+        }
+        .rank-range-summary {
+            max-height: min(48vh, 420px);
+            padding: 14px 0 0 18px;
+            overflow-y: auto;
+            border-left: 1px solid var(--border-card);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(100, 116, 139, 0.32) transparent;
+        }
+        .rank-range-summary[hidden] {
+            display: none;
+        }
+        .rank-range-summary-header {
+            display: flex;
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 2px;
+            margin-bottom: 6px;
+        }
+        .rank-range-summary-title {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .rank-range-summary-meta {
+            color: var(--text-muted);
+            font: 10px 'JetBrains Mono', monospace;
+            text-align: left;
+        }
+        .rank-range-columns {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .rank-range-columns.is-single {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .rank-range-list {
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .rank-range-item {
+            display: grid;
+            grid-template-columns: 22px 8px minmax(0, 1fr) auto 44px;
+            gap: 7px;
+            align-items: center;
+            min-height: 32px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .rank-range-position {
+            color: var(--text-muted);
+            font: 700 10px 'JetBrains Mono', monospace;
+            text-align: right;
+        }
+        .rank-range-color {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+        }
+        .rank-range-name {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--text-main);
+            font-size: 11px;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .rank-range-tokens {
+            color: var(--text-main);
+            font: 700 10px 'JetBrains Mono', monospace;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .rank-range-activity {
+            color: var(--text-muted);
+            font: 9px 'JetBrains Mono', monospace;
+            text-align: right;
+            white-space: nowrap;
+        }
+        @media (max-width: 820px) {
+            .rank-history-main {
+                display: block;
+            }
+            .rank-history-chart-shell {
+                height: 340px;
+                min-height: 320px;
+            }
+            .rank-range-summary {
+                max-height: none;
+                margin-top: 12px;
+                padding: 14px 0 0;
+                overflow: visible;
+                border-top: 1px solid var(--border-card);
+                border-left: 0;
+            }
+            .rank-range-columns {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                column-gap: 18px;
+            }
+        }
         @media (max-width: 640px) {
+            #rankHistoryModal .modal-content {
+                width: calc(100% - 24px);
+                max-height: calc(100vh - 24px);
+            }
+            #rankHistoryModal .modal-header {
+                padding: 20px 20px 16px;
+            }
+            .rank-history-body {
+                padding: 14px 14px 20px;
+            }
             .rank-history-range .tab-btn {
                 padding: 8px 4px;
                 font-size: 11px;
@@ -950,9 +1085,16 @@
                 flex-direction: column;
                 gap: 3px;
             }
-            .rank-history-chart-shell {
-                height: 400px;
-                min-height: 340px;
+            .rank-range-columns {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .rank-range-summary-header {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 2px;
+            }
+            .rank-range-summary-meta {
+                text-align: left;
             }
         }
 
@@ -1967,7 +2109,7 @@
                     <button id="rankHistoryCloseBtn" class="close-btn">&times;</button>
                 </div>
             </div>
-            <div class="community-scroll-region" style="padding: 16px 20px;">
+            <div class="community-scroll-region rank-history-body">
                 <div id="rankHistoryRange" class="tab-container rank-history-range" role="tablist" aria-label="排名变化时间范围">
                     <button class="tab-btn active" role="tab" aria-selected="true" data-days="30">近 30 天</button>
                     <button class="tab-btn" role="tab" aria-selected="false" data-days="90">近 90 天</button>
@@ -1978,9 +2120,18 @@
                     <span id="rankDateLabel" class="rank-history-date">-</span>
                     <span id="rankHistoryStatus"></span>
                 </div>
-                <div id="rankHistoryContainer" class="rank-history-chart-shell">
-                    <canvas id="rankHistoryChart" role="img" aria-label="按日期展示的社区 TOP10 排名折线图"></canvas>
-                    <div id="rankHistoryEmpty" class="rank-history-empty">加载排名历史数据中...</div>
+                <div class="rank-history-main">
+                    <div id="rankHistoryContainer" class="rank-history-chart-shell">
+                        <canvas id="rankHistoryChart" role="img" aria-label="按日期展示的社区 TOP10 排名折线图"></canvas>
+                        <div id="rankHistoryEmpty" class="rank-history-empty">加载排名历史数据中...</div>
+                    </div>
+                    <section id="rankRangeSummary" class="rank-range-summary" aria-labelledby="rankRangeSummaryTitle" hidden>
+                        <div class="rank-range-summary-header">
+                            <h4 id="rankRangeSummaryTitle" class="rank-range-summary-title">区间总榜</h4>
+                            <span id="rankRangeSummaryMeta" class="rank-range-summary-meta"></span>
+                        </div>
+                        <div id="rankRangeLeaderboard" class="rank-range-columns"></div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -3150,6 +3301,10 @@
             '1.4.62': [
                 '右侧排名统一展示最近一个有数据的归档日，不再混用不同日期。',
                 '修复社区归档时区错误，并恢复 7 月 28 日的真实排名数据。'
+            ],
+            '1.4.63': [
+                '排名趋势新增区间累计总榜，可同时查看累计 Token 与有记录天数。',
+                '当天未使用按 0 Token 保留排名点，多个 0 按此前历史表现稳定排序。'
             ]
         });
 
@@ -4262,7 +4417,7 @@
 
         // ===== 排名变化动画 =====
         const RANK_HISTORY_CACHE_TTL = 5 * 60 * 1000;
-        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v2-';
+        const RANK_HISTORY_CACHE_PREFIX = 'token-monitor-rank-history-v3-';
         let _rankHistory = { days: 30, chart: null, requestId: 0, cache: new Map(), requests: new Map() };
         const RANK_LINE_COLORS = ['#3b82f6','#ec4899','#10b981','#f59e0b','#8b5cf6','#06b6d4','#f97316','#84cc16','#e11d48','#14b8a6'];
 
@@ -4318,6 +4473,102 @@
                 if (hasRank) return index;
             }
             return -1;
+        }
+
+        function rankHistoryRangeRanking(series) {
+            return series.map((item, originalIndex) => {
+                const tokens = Array.isArray(item.tokens) ? item.tokens : [];
+                const ranks = Array.isArray(item.ranks) ? item.ranks : [];
+                const reportedTotal = Number(item.total_tokens);
+                const reportedAppearances = Number(item.appearances);
+                const totalTokens = Number.isFinite(reportedTotal) && reportedTotal >= 0
+                    ? reportedTotal
+                    : tokens.reduce((sum, value) => sum + Math.max(0, Number(value) || 0), 0);
+                const activeDays = Number.isFinite(reportedAppearances) && reportedAppearances >= 0
+                    ? Math.floor(reportedAppearances)
+                    : tokens.reduce((count, value, index) => count + ((Number(value) > 0 || Number(ranks[index]) > 0) ? 1 : 0), 0);
+                return {
+                    item,
+                    originalIndex,
+                    name: item.display_name || item.id || '?',
+                    totalTokens,
+                    activeDays
+                };
+            }).sort((left, right) =>
+                right.totalTokens - left.totalTokens ||
+                right.activeDays - left.activeDays ||
+                left.name.localeCompare(right.name) ||
+                left.originalIndex - right.originalIndex
+            );
+        }
+
+        function completeRankHistoryRanks(series, dateCount) {
+            const count = Math.max(0, Number(dateCount) || 0);
+            const ranks = series.map(() => Array(count).fill(0));
+            const historicalTokens = series.map(() => 0);
+            const historicalActiveDays = series.map(() => 0);
+            for (let dayIndex = 0; dayIndex < count; dayIndex += 1) {
+                const order = series.map((_, seriesIndex) => seriesIndex).sort((leftIndex, rightIndex) => {
+                    const left = series[leftIndex] || {};
+                    const right = series[rightIndex] || {};
+                    const leftTokens = Math.max(0, Number((left.tokens || [])[dayIndex]) || 0);
+                    const rightTokens = Math.max(0, Number((right.tokens || [])[dayIndex]) || 0);
+                    if (leftTokens !== rightTokens) return rightTokens - leftTokens;
+                    if (leftTokens === 0) {
+                        if (historicalTokens[leftIndex] !== historicalTokens[rightIndex]) {
+                            return historicalTokens[rightIndex] - historicalTokens[leftIndex];
+                        }
+                        if (historicalActiveDays[leftIndex] !== historicalActiveDays[rightIndex]) {
+                            return historicalActiveDays[rightIndex] - historicalActiveDays[leftIndex];
+                        }
+                    }
+                    const leftName = left.display_name || left.id || '?';
+                    const rightName = right.display_name || right.id || '?';
+                    return leftName.localeCompare(rightName) ||
+                        String(left.id || '').localeCompare(String(right.id || '')) ||
+                        leftIndex - rightIndex;
+                });
+                order.forEach((seriesIndex, rankIndex) => { ranks[seriesIndex][dayIndex] = rankIndex + 1; });
+                series.forEach((item, seriesIndex) => {
+                    const tokens = Math.max(0, Number(((item || {}).tokens || [])[dayIndex]) || 0);
+                    historicalTokens[seriesIndex] += tokens;
+                    if (tokens > 0) historicalActiveDays[seriesIndex] += 1;
+                });
+            }
+            return ranks;
+        }
+
+        function renderRankRangeLeaderboard(rangeRanking, archiveDayCount) {
+            const section = document.getElementById('rankRangeSummary');
+            const meta = document.getElementById('rankRangeSummaryMeta');
+            const container = document.getElementById('rankRangeLeaderboard');
+            if (!Array.isArray(rangeRanking) || rangeRanking.length === 0) {
+                section.hidden = true;
+                meta.textContent = '';
+                container.innerHTML = '';
+                return;
+            }
+            section.hidden = false;
+            meta.textContent = rangeRanking.length + ' 人 · ' + archiveDayCount + ' 个归档日 · 按累计 Token';
+            const splitAt = Math.ceil(rangeRanking.length / 2);
+            const groups = [rangeRanking.slice(0, splitAt), rangeRanking.slice(splitAt)].filter(group => group.length > 0);
+            container.classList.toggle('is-single', groups.length === 1);
+            container.innerHTML = groups.map((group, groupIndex) => {
+                const start = groupIndex === 0 ? 1 : splitAt + 1;
+                const rows = group.map((entry, rowIndex) => {
+                    const rank = start + rowIndex;
+                    const color = RANK_LINE_COLORS[(rank - 1) % RANK_LINE_COLORS.length];
+                    const name = escapeHtml(entry.name);
+                    return '<li class="rank-range-item">' +
+                        '<span class="rank-range-position">' + rank + '</span>' +
+                        '<span class="rank-range-color" style="background:' + color + '"></span>' +
+                        '<span class="rank-range-name" title="' + name + '">' + name + '</span>' +
+                        '<span class="rank-range-tokens" title="' + entry.totalTokens.toLocaleString() + ' Token">' + formatTokens(entry.totalTokens) + '</span>' +
+                        '<span class="rank-range-activity" title="有记录天数">' + entry.activeDays + '/' + archiveDayCount + ' 天</span>' +
+                    '</li>';
+                }).join('');
+                return '<ol class="rank-range-list" start="' + start + '">' + rows + '</ol>';
+            }).join('');
         }
 
         const rankHistoryEndLabels = {
@@ -4454,6 +4705,7 @@
                     emptyEl.textContent = '暂无排名历史数据，每天归档后会在这里形成趋势';
                     document.getElementById('rankDateLabel').textContent = '-';
                     statusEl.textContent = '';
+                    renderRankRangeLeaderboard([], 0);
                     return;
                 }
                 emptyEl.hidden = true;
@@ -4469,12 +4721,15 @@
                 emptyEl.hidden = false;
                 emptyEl.textContent = '排名趋势加载失败，请稍后重试';
                 statusEl.textContent = '';
+                renderRankRangeLeaderboard([], 0);
             }
         }
 
         function renderRankHistory(data) {
             const dates = Array.isArray(data.dates) ? data.dates : [];
-            const series = (Array.isArray(data.series) ? data.series : []).slice(0, 10);
+            const sourceSeries = (Array.isArray(data.series) ? data.series : []).slice(0, 10);
+            const rangeRanking = rankHistoryRangeRanking(sourceSeries);
+            const series = rangeRanking.map(entry => entry.item);
             if (!dates.length || !series.length) return;
 
             const participantCount = Number(data.participant_count) || series.length;
@@ -4486,16 +4741,13 @@
             const canvas = document.getElementById('rankHistoryChart');
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             const narrow = canvas.clientWidth < 620;
+            const completedRanks = completeRankHistoryRanks(series, dates.length);
             const datasets = series.map((item, index) => {
                 const color = RANK_LINE_COLORS[index % RANK_LINE_COLORS.length];
                 const name = item.display_name || item.id || '?';
-                const ranks = Array.isArray(item.ranks) ? item.ranks : [];
                 return {
                     label: name,
-                    data: dates.map((_, pointIndex) => {
-                        const rank = Number(ranks[pointIndex]) || 0;
-                        return rank >= 1 && rank <= 10 ? rank : null;
-                    }),
+                    data: completedRanks[index],
                     tokenValues: Array.isArray(item.tokens) ? item.tokens : [],
                     borderColor: color,
                     backgroundColor: color,
@@ -4513,6 +4765,7 @@
             const latestDataIndex = rankHistoryLatestDataIndex(datasets, dates.length);
             const latestRankDate = latestDataIndex >= 0 ? dates[latestDataIndex] : '暂无';
             document.getElementById('rankHistoryStatus').textContent = dates.length + ' 个归档日 · ' + participantLabel + ' 位参与者 · 展示 TOP ' + series.length + ' · 右侧排名 ' + latestRankDate;
+            renderRankRangeLeaderboard(rangeRanking, dates.length);
 
             _rankHistory.chart = new Chart(canvas.getContext('2d'), {
                 type: 'line',

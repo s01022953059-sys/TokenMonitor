@@ -593,10 +593,9 @@ def _build_rank_history_series(snapshots, limit=10):
             if previous is None or tokens >= previous["tokens"]:
                 by_id[member_id] = normalized
 
-        ranked = sorted(by_id.values(), key=lambda row: (-row["tokens"], row["display_name"] or row["id"], row["id"]))
         day_values = {}
-        for rank, row in enumerate(ranked, 1):
-            day_values[row["id"]] = {"rank": rank if rank <= limit else 0, "tokens": row["tokens"]}
+        for row in by_id.values():
+            day_values[row["id"]] = {"tokens": row["tokens"]}
             member = members.setdefault(row["id"], {
                 "id": row["id"], "display_name": row["display_name"], "total_tokens": 0, "appearances": 0,
             })
@@ -610,15 +609,36 @@ def _build_rank_history_series(snapshots, limit=10):
         members.values(),
         key=lambda member: (-member["total_tokens"], -member["appearances"], member["display_name"] or member["id"], member["id"]),
     )[:limit]
-    series = []
-    for member in selected:
-        ranks = []
-        tokens = []
-        for day_values in daily:
+    series_by_id = {
+        member["id"]: {**member, "ranks": [0] * len(daily), "tokens": [0] * len(daily)}
+        for member in selected
+    }
+    historical_tokens = {member["id"]: 0 for member in selected}
+    historical_active_days = {member["id"]: 0 for member in selected}
+    for day_index, day_values in enumerate(daily):
+        for member in selected:
             point = day_values.get(member["id"])
-            ranks.append(point["rank"] if point else 0)
-            tokens.append(point["tokens"] if point else 0)
-        series.append({**member, "ranks": ranks, "tokens": tokens})
+            series_by_id[member["id"]]["tokens"][day_index] = point["tokens"] if point else 0
+
+        def daily_rank_key(member):
+            member_id = member["id"]
+            tokens = series_by_id[member_id]["tokens"][day_index]
+            zero_history = (
+                -historical_tokens[member_id],
+                -historical_active_days[member_id],
+            ) if tokens == 0 else (0, 0)
+            return (-tokens, *zero_history, member["display_name"] or member_id, member_id)
+
+        for rank, member in enumerate(sorted(selected, key=daily_rank_key), 1):
+            series_by_id[member["id"]]["ranks"][day_index] = rank
+        for member in selected:
+            member_id = member["id"]
+            tokens = series_by_id[member_id]["tokens"][day_index]
+            historical_tokens[member_id] += tokens
+            if tokens > 0:
+                historical_active_days[member_id] += 1
+
+    series = [series_by_id[member["id"]] for member in selected]
 
     return {
         "dates": dates,

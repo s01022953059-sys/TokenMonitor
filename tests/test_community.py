@@ -67,6 +67,37 @@ class CommunityTests(unittest.TestCase):
         legacy = community._build_rank_history_series([{"date": "2026-07-25", "leaderboard": snapshots[0]["leaderboard"]}])
         self.assertFalse(legacy["participant_count_complete"])
 
+    def test_rank_history_keeps_zero_usage_days_ranked_by_prior_history(self):
+        snapshots = [
+            {
+                "date": "2026-07-26",
+                "participants": [
+                    {"id": "User_A", "display_name": "A", "tokens": 1000},
+                    {"id": "User_B", "display_name": "B", "tokens": 10},
+                ],
+            },
+            {
+                "date": "2026-07-27",
+                "participants": [
+                    {"id": "User_A", "display_name": "A", "tokens": 1},
+                    {"id": "User_B", "display_name": "B", "tokens": 20},
+                    {"id": "User_C", "display_name": "C", "tokens": 2000},
+                ],
+            },
+            {"date": "2026-07-28", "participants": []},
+        ]
+
+        result = community._build_rank_history_series(snapshots)
+        by_id = {item["id"]: item for item in result["series"]}
+
+        self.assertEqual(by_id["User_A"]["tokens"], [1000, 1, 0])
+        self.assertEqual(by_id["User_B"]["tokens"], [10, 20, 0])
+        self.assertEqual(by_id["User_C"]["tokens"], [0, 2000, 0])
+        self.assertEqual(by_id["User_A"]["ranks"], [1, 3, 2])
+        self.assertEqual(by_id["User_B"]["ranks"], [2, 2, 3])
+        self.assertEqual(by_id["User_C"]["ranks"], [3, 1, 1])
+        self.assertTrue(all(rank > 0 for item in result["series"] for rank in item["ranks"]))
+
     def test_external_community_requests_follow_system_proxy(self):
         request = community.urllib.request.Request("https://community.example.test/report")
         response = mock.MagicMock()

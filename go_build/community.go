@@ -794,7 +794,6 @@ func buildCommunityRankSeries(snapshots []communityHistorySnapshot) map[string]i
 		appearances int
 	}
 	totals := map[string]*memberTotal{}
-	dailyRanks := make([]map[string]int, len(snapshots))
 	dailyTokens := make([]map[string]int64, len(snapshots))
 	dates := make([]string, len(snapshots))
 
@@ -825,35 +824,8 @@ func buildCommunityRankSeries(snapshots []communityHistorySnapshot) map[string]i
 				byID[id] = entry
 			}
 		}
-		ranked := make([]communityHistoryEntry, 0, len(byID))
-		for _, entry := range byID {
-			ranked = append(ranked, entry)
-		}
-		sort.SliceStable(ranked, func(i, j int) bool {
-			if ranked[i].Tokens != ranked[j].Tokens {
-				return ranked[i].Tokens > ranked[j].Tokens
-			}
-			left := ranked[i].DisplayName
-			if left == "" {
-				left = ranked[i].ID
-			}
-			right := ranked[j].DisplayName
-			if right == "" {
-				right = ranked[j].ID
-			}
-			if left != right {
-				return left < right
-			}
-			return ranked[i].ID < ranked[j].ID
-		})
-		dailyRanks[dayIndex] = map[string]int{}
 		dailyTokens[dayIndex] = map[string]int64{}
-		for rank, entry := range ranked {
-			shownRank := rank + 1
-			if shownRank > 10 {
-				shownRank = 0
-			}
-			dailyRanks[dayIndex][entry.ID] = shownRank
+		for _, entry := range byID {
 			dailyTokens[dayIndex][entry.ID] = entry.Tokens
 			member := totals[entry.ID]
 			if member == nil {
@@ -895,15 +867,57 @@ func buildCommunityRankSeries(snapshots []communityHistorySnapshot) map[string]i
 	if len(members) > 10 {
 		members = members[:10]
 	}
-	series := make([]communityRankSeries, 0, len(members))
-	for _, member := range members {
-		ranks := make([]int, len(snapshots))
-		tokens := make([]int64, len(snapshots))
-		for dayIndex := range snapshots {
-			ranks[dayIndex] = dailyRanks[dayIndex][member.id]
-			tokens[dayIndex] = dailyTokens[dayIndex][member.id]
+	series := make([]communityRankSeries, len(members))
+	historicalTokens := map[string]int64{}
+	historicalActiveDays := map[string]int{}
+	for index, member := range members {
+		series[index] = communityRankSeries{ID: member.id, DisplayName: member.name, TotalTokens: member.tokens, Appearances: member.appearances, Ranks: make([]int, len(snapshots)), Tokens: make([]int64, len(snapshots))}
+	}
+	for dayIndex := range snapshots {
+		order := make([]int, len(series))
+		for index := range series {
+			order[index] = index
+			series[index].Tokens[dayIndex] = dailyTokens[dayIndex][series[index].ID]
 		}
-		series = append(series, communityRankSeries{ID: member.id, DisplayName: member.name, TotalTokens: member.tokens, Appearances: member.appearances, Ranks: ranks, Tokens: tokens})
+		sort.SliceStable(order, func(i, j int) bool {
+			left := series[order[i]]
+			right := series[order[j]]
+			leftTokens := left.Tokens[dayIndex]
+			rightTokens := right.Tokens[dayIndex]
+			if leftTokens != rightTokens {
+				return leftTokens > rightTokens
+			}
+			if leftTokens == 0 {
+				if historicalTokens[left.ID] != historicalTokens[right.ID] {
+					return historicalTokens[left.ID] > historicalTokens[right.ID]
+				}
+				if historicalActiveDays[left.ID] != historicalActiveDays[right.ID] {
+					return historicalActiveDays[left.ID] > historicalActiveDays[right.ID]
+				}
+			}
+			leftName := left.DisplayName
+			if leftName == "" {
+				leftName = left.ID
+			}
+			rightName := right.DisplayName
+			if rightName == "" {
+				rightName = right.ID
+			}
+			if leftName != rightName {
+				return leftName < rightName
+			}
+			return left.ID < right.ID
+		})
+		for rank, seriesIndex := range order {
+			series[seriesIndex].Ranks[dayIndex] = rank + 1
+		}
+		for index := range series {
+			tokens := series[index].Tokens[dayIndex]
+			historicalTokens[series[index].ID] += tokens
+			if tokens > 0 {
+				historicalActiveDays[series[index].ID]++
+			}
+		}
 	}
 	return map[string]interface{}{"dates": dates, "series": series, "participant_count": len(totals), "participant_count_complete": participantCountComplete}
 }
