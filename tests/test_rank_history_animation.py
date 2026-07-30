@@ -51,6 +51,8 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn("rankHistoryEndLabels", script)
         self.assertIn("rankHistoryLatestDataIndex", script)
         self.assertIn("rankHistoryRangeRanking", script)
+        self.assertIn("communityMemberNames", mac_html)
+        self.assertIn("rankHistoryDisplayName", script)
         self.assertIn("completeRankHistoryRanks", script)
         self.assertIn("renderRankRangeLeaderboard", script)
         self.assertIn("item.total_tokens", script)

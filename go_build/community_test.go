@@ -312,6 +312,19 @@ func TestCommunityProfileUsesRelayCredential(t *testing.T) {
 	}
 }
 
+func TestCommunityMemberNamesIncludesLatestPublicNames(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_OLD", DisplayName: ""},
+		{ID: "User_RENAMED", DisplayName: "琪琪"},
+		{ID: "User_OTHER", DisplayName: "小昆"},
+	}
+	got := communityMemberNames(reports)
+	want := map[string]string{"User_RENAMED": "琪琪", "User_OTHER": "小昆"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("communityMemberNames() = %#v, want %#v", got, want)
+	}
+}
+
 // jsonKeys 提取 json.RawMessage (对象) 的顶层 key 顺序, 供 JSON 序断言用。
 func jsonKeys(t *testing.T, raw json.RawMessage) []string {
 	t.Helper()

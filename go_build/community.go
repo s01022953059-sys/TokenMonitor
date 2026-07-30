@@ -68,6 +68,18 @@ func formatCommunityTools(byTool map[string]int64) string {
 	return strings.Join(names, " + ")
 }
 
+func communityMemberNames(reports []communityReportData) map[string]string {
+	names := map[string]string{}
+	for _, report := range reports {
+		id := strings.TrimSpace(report.ID)
+		name := strings.TrimSpace(report.DisplayName)
+		if id != "" && name != "" {
+			names[id] = name
+		}
+	}
+	return names
+}
+
 // buildToolDistributionJSON 把 by-tool 用量聚合转成 "tool -> pct" 的 JSON object 字符串,
 // 按 pct 降序、tool 名升序 tiebreak, 序列化后手动维持该顺序 (encoding/json 对 map 按 key 字母序, 会丢失排序)。
 // 抽出来便于单测, 对齐 Python 端 community._format_report_tools 与
@@ -693,6 +705,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 		"total_tokens_all":     totalTokensToday * 30,
 		"projected_30d_tokens": totalTokensToday * 30,
 		"leaderboard":          leaderboard,
+		"member_names":         communityMemberNames(reports),
 		"tool_distribution":    toolDistJSON,
 		"active_hours":         []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		"my_rank":              myRank,

@@ -3305,6 +3305,10 @@
             '1.4.63': [
                 '排名趋势新增区间累计总榜，可同时查看累计 Token 与有记录天数。',
                 '当天未使用按 0 Token 保留排名点，多个 0 按此前历史表现稳定排序。'
+            ],
+            '1.4.64': [
+                '用户修改社区昵称后，排名趋势折线标签会同步显示最新名称。',
+                '区间总榜按匿名 ID 使用最新公开昵称，历史 Token 与排名保持不变。'
             ]
         });
 
@@ -4007,6 +4011,7 @@
         let _communityFetchPromise = null;
         let _communityPresencePromise = null;
         let _communityActivityTimer = null;
+        const communityMemberNames = new Map();
 
         function communityTodayKey() {
             const now = new Date();
@@ -4220,6 +4225,15 @@
             const dataWarning = data.data_warning || '';
             const rankTotal = data.rank_total || todayActiveUsers;
             const activities = buildCommunityActivities(data);
+            Object.entries(data.member_names || {}).forEach(([id, name]) => {
+                if (id && name) communityMemberNames.set(String(id), String(name));
+            });
+            leaderboard.forEach(member => {
+                if (member && member.id && member.display_name) {
+                    communityMemberNames.set(String(member.id), String(member.display_name));
+                }
+            });
+            if (myId && myDisplayName) communityMemberNames.set(String(myId), String(myDisplayName));
             const activityStrip = activities.length ?
                 '<div id="communityActivityStrip" class="community-activity-strip" role="status" aria-live="polite">' +
                     '<div class="community-activity-label"><span class="community-activity-pulse"></span><span>社区动态</span></div>' +
@@ -4475,6 +4489,11 @@
             return -1;
         }
 
+        function rankHistoryDisplayName(item) {
+            const member = item || {};
+            return communityMemberNames.get(String(member.id || '')) || member.display_name || member.id || '?';
+        }
+
         function rankHistoryRangeRanking(series) {
             return series.map((item, originalIndex) => {
                 const tokens = Array.isArray(item.tokens) ? item.tokens : [];
@@ -4490,7 +4509,7 @@
                 return {
                     item,
                     originalIndex,
-                    name: item.display_name || item.id || '?',
+                    name: rankHistoryDisplayName(item),
                     totalTokens,
                     activeDays
                 };
@@ -4522,8 +4541,8 @@
                             return historicalActiveDays[rightIndex] - historicalActiveDays[leftIndex];
                         }
                     }
-                    const leftName = left.display_name || left.id || '?';
-                    const rightName = right.display_name || right.id || '?';
+                    const leftName = rankHistoryDisplayName(left);
+                    const rightName = rankHistoryDisplayName(right);
                     return leftName.localeCompare(rightName) ||
                         String(left.id || '').localeCompare(String(right.id || '')) ||
                         leftIndex - rightIndex;
@@ -4744,7 +4763,7 @@
             const completedRanks = completeRankHistoryRanks(series, dates.length);
             const datasets = series.map((item, index) => {
                 const color = RANK_LINE_COLORS[index % RANK_LINE_COLORS.length];
-                const name = item.display_name || item.id || '?';
+                const name = rankHistoryDisplayName(item);
                 return {
                     label: name,
                     data: completedRanks[index],

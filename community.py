@@ -529,6 +529,11 @@ def get_community_stats(force_refresh=False):
         "total_tokens_all": total_tokens_today * 30,  # 粗估月度
         "projected_30d_tokens": total_tokens_today * 30,
         "leaderboard": leaderboard,
+        "member_names": {
+            str(report.get("id")): str(report.get("display_name"))
+            for report in reports
+            if str(report.get("id") or "").strip() and str(report.get("display_name") or "").strip()
+        },
         "tool_distribution": tool_distribution,
         "active_hours": [0] * 24,  # 暂不收集小时数据
         "my_rank": my_rank,

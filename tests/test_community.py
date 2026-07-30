@@ -284,6 +284,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result["leaderboard"]], ["User_TEST1", "User_OTHER"])
         self.assertEqual(result["leaderboard"][0]["display_name"], "鹏帅")
         self.assertEqual(result["my_display_name"], "鹏帅")
+        self.assertEqual(result["member_names"], {"User_TEST1": "鹏帅"})
 
     def test_historical_reporter_remains_in_community_count(self):
         today = datetime.date.today()
