@@ -3381,6 +3381,9 @@
             ],
             '1.4.78': [
                 '修复 y 轴刻度间距不均匀（改用 afterTickToLabelConversion 过滤 ticks）。'
+            ],
+            '1.4.79': [
+                'y 轴 1M 以下刻度缩减，只保留 1K 和 100K，避免底部太密。'
             ]
         });
 
@@ -4974,14 +4977,17 @@
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
                             afterTickToLabelConversion(scale) {
-                                // 强制只保留 10 的幂次刻度（1,10,100,1K,10K,100K,1M,10M,100M,1亿），
-                                // 让网格线和间距按幂次等距排列，而非 Chart.js 默认的 1×/2×/5× 分布
+                                // 只保留有意义的 10 的幂次刻度：≥1M 全显示，<1M 只保留 1K 和 100K
+                                // 避免底部 1/10/100/1K/10K/100K 六个刻度太密
                                 if (!scale.ticks || !scale.ticks.length) return;
+                                const SMALL_KEEP = new Set([1000, 100000]); // 1K, 100K
                                 const filtered = scale.ticks.filter(t => {
                                     const v = Number(t.value);
                                     if (v < 1) return false;
                                     const log = Math.log10(v);
-                                    return Math.abs(log - Math.round(log)) < 0.01;
+                                    if (Math.abs(log - Math.round(log)) > 0.01) return false;
+                                    // ≥1M 全保留；<1M 只保留 1K 和 100K
+                                    return v >= 1000000 || SMALL_KEEP.has(v);
                                 });
                                 scale.ticks = filtered;
                             },
