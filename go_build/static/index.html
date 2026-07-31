@@ -3378,6 +3378,9 @@
             ],
             '1.4.77': [
                 'y 轴刻度按幂次等距排列，网格线间距均匀。'
+            ],
+            '1.4.78': [
+                '修复 y 轴刻度间距不均匀（改用 afterTickToLabelConversion 过滤 ticks）。'
             ]
         });
 
@@ -4970,18 +4973,17 @@
                             min: 0.1,
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
-                            afterBuildTicks(scale, ticks) {
-                                // 强制只保留 10 的幂次刻度位置（1,10,100,1K,10K,100K,1M,10M,100M,1亿），
+                            afterTickToLabelConversion(scale) {
+                                // 强制只保留 10 的幂次刻度（1,10,100,1K,10K,100K,1M,10M,100M,1亿），
                                 // 让网格线和间距按幂次等距排列，而非 Chart.js 默认的 1×/2×/5× 分布
-                                const min = Number(scale.min) || 0.1;
-                                const max = Number(scale.max) || 1;
-                                const lo = Math.ceil(Math.log10(min));
-                                const hi = Math.floor(Math.log10(max));
-                                const kept = [];
-                                for (let p = lo; p <= hi; p += 1) {
-                                    kept.push({ value: Math.pow(10, p) });
-                                }
-                                return kept;
+                                if (!scale.ticks || !scale.ticks.length) return;
+                                const filtered = scale.ticks.filter(t => {
+                                    const v = Number(t.value);
+                                    if (v < 1) return false;
+                                    const log = Math.log10(v);
+                                    return Math.abs(log - Math.round(log)) < 0.01;
+                                });
+                                scale.ticks = filtered;
                             },
                             ticks: {
                                 color: getThemeVar('--text-muted'),
