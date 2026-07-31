@@ -3384,6 +3384,9 @@
             ],
             '1.4.79': [
                 'y 轴 1M 以下刻度缩减，只保留 1K 和 100K，避免底部太密。'
+            ],
+            '1.4.80': [
+                'y 轴刻度均匀分布，上下信息充分。'
             ]
         });
 
@@ -4977,19 +4980,24 @@
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
                             afterTickToLabelConversion(scale) {
-                                // 只保留有意义的 10 的幂次刻度：≥1M 全显示，<1M 只保留 1K 和 100K
-                                // 避免底部 1/10/100/1K/10K/100K 六个刻度太密
-                                if (!scale.ticks || !scale.ticks.length) return;
-                                const SMALL_KEEP = new Set([1000, 100000]); // 1K, 100K
-                                const filtered = scale.ticks.filter(t => {
-                                    const v = Number(t.value);
-                                    if (v < 1) return false;
-                                    const log = Math.log10(v);
-                                    if (Math.abs(log - Math.round(log)) > 0.01) return false;
-                                    // ≥1M 全保留；<1M 只保留 1K 和 100K
-                                    return v >= 1000000 || SMALL_KEEP.has(v);
-                                });
-                                scale.ticks = filtered;
+                                // 完全自定义刻度：根据数据范围在对数空间均匀取 6-7 个关键值，
+                                // 让上下分布均匀、信息充分，避免底部空一大块或顶部太稀
+                                if (!scale.ticks) return;
+                                const min = Math.max(0.1, Number(scale.min) || 0.1);
+                                const max = Number(scale.max) || 1000000;
+                                const lo = Math.log10(min);
+                                const hi = Math.log10(max);
+                                const span = hi - lo;
+                                if (span <= 0) return;
+                                // 取 6 个均匀刻度（对数空间等距）
+                                const count = 6;
+                                const customTicks = [];
+                                for (let i = 0; i <= count; i += 1) {
+                                    const logVal = lo + span * i / count;
+                                    const v = Math.pow(10, logVal);
+                                    customTicks.push({ value: v });
+                                }
+                                scale.ticks = customTicks;
                             },
                             ticks: {
                                 color: getThemeVar('--text-muted'),
@@ -4998,8 +5006,9 @@
                                 callback(value) {
                                     const v = Number(value);
                                     if (!v || v < 1) return '';
-                                    if (v >= 100000000) return (v / 100000000).toFixed(0) + '亿';
-                                    if (v >= 1000000) return (v / 1000000).toFixed(0) + 'M';
+                                    // 自定义刻度值非整数幂次，用 formatTokens 风格自适应格式化
+                                    if (v >= 100000000) return (v / 100000000).toFixed(1) + '亿';
+                                    if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
                                     if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
                                     return String(Math.round(v));
                                 }
