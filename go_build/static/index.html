@@ -3352,6 +3352,9 @@
             '1.4.69': [
                 '姓名统一放线段右侧；修复零用量天虚线未画出。',
                 '左图空白收紧，总榜改单栏纵向排列且列宽对齐。'
+            ],
+            '1.4.70': [
+                '修复排名趋势折线越界：限制裁切区域，虚线连接段限定在图表区内。'
             ]
         });
 
@@ -4659,6 +4662,10 @@
                 const {ctx, chartArea, data, scales} = chart;
                 if (!chartArea || !scales || !scales.x || !scales.y) return;
                 ctx.save();
+                // 限制虚线只在 chartArea 内绘制，避免越界到 padding/标签区
+                ctx.beginPath();
+                ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+                ctx.clip();
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     const values = dataset.data || [];
                     let lastValid = null; // {x, y, index}
@@ -4880,7 +4887,7 @@
                     pointBorderColor: getThemeVar('--chart-point-border'),
                     tension: 0.22,
                     spanGaps: false,
-                    clip: false,
+                    clip: {left: 0, top: 6, right: 0, bottom: 0},
                     fill: false
                 };
             });

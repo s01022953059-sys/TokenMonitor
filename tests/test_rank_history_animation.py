@@ -99,7 +99,9 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertNotIn("stepSize: 1", script)
         self.assertNotIn("第 ' + value + ' 名", script)
         self.assertNotIn("return rank >= 1 && rank <= 10 ? rank : null", script)
-        self.assertIn("clip: false", script)
+        # clip 限制折线越界（顶部留 6px 余量，其余裁切），末端标签在 padding 区不受影响
+        self.assertIn("clip: {left: 0, top: 6, right: 0, bottom: 0}", script)
+        self.assertNotIn("clip: false", script)
         # padding 收回（姓名统一靠右，不再两列错位）
         self.assertIn("top: 18, right: narrow ? 96 : 120, bottom: 10", script)
         self.assertNotIn("right: narrow ? 128 : 200", script)
