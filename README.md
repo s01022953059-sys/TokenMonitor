@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.68**。
+当前发布版本：**v1.4.69**。
 
 ## 功能
 
@@ -250,7 +250,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.68/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.69/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -272,7 +272,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.68/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.69/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -317,15 +317,15 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 
 ```bash
 # 1. bump 版本号 (两处)
-#    Info.plist: <string>1.4.68</string>
-#    go_build/main.go: var appVersion = "1.4.68"
+#    Info.plist: <string>1.4.69</string>
+#    go_build/main.go: var appVersion = "1.4.69"
 
 # 2. git 提交 + 打 tag
 git add -A
-git commit -m "release: v1.4.68"
-git tag v1.4.68
+git commit -m "release: v1.4.69"
+git tag v1.4.69
 git push origin main
-git push origin v1.4.68
+git push origin v1.4.69
 
 # 3. 一键发布
 bash release_all.sh
@@ -394,10 +394,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.68](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.68)
+最新版本：[v1.4.69](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.69)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.68/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.68/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.69/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.69/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -415,6 +415,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.69
+- 排名趋势姓名统一放线段右侧；修复零用量天虚线连接未画出（改用坐标自算，不依赖 Chart.js null 点位）。
+- 左图右侧空白收紧；区间总榜改单栏纵向排列，列宽固定对齐，信息更完整。
 
 ### v1.4.68
 - 排名趋势末端人名标签按名次奇偶分两列错位，消除对数刻度下底部拥挤导致的重叠。
