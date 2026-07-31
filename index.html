@@ -3328,6 +3328,10 @@
             '1.4.66': [
                 '排名趋势折线改为对数 Token 刻度，1 亿与 1M 的量级差距一目了然。',
                 '区间总榜与社区今日 Top 10 新增对数柱条，零用量天断开不画柱条。'
+            ],
+            '1.4.67': [
+                '修复对数柱条比例反转：改用绝对对数刻度，1 亿/10M/100K 差距正确拉开。',
+                '零用量天改用灰色虚线连接折线，消除线段缺失感；数据点更清晰。'
             ]
         });
 
@@ -4274,9 +4278,11 @@
                     '</div>';
             }).join('');
 
-            // 今日排行榜对数柱条归一化基准：以全榜最大今日 token 的 log10 为满刻度
-            const maxLeaderTokens = leaderboard.reduce((m, u) => Math.max(m, Number(u.tokens) || 0), 0);
-            const maxLeaderLog = maxLeaderTokens > 0 ? Math.log10(maxLeaderTokens + 1) : 1;
+            // 今日排行榜柱条用绝对对数刻度（动态上下界），不再以 max 为满刻度，避免榜首撑满刻度
+            const leaderLogs = leaderboard.map(u => Math.log10(Math.max(1, Number(u.tokens) || 0)));
+            const loLeaderLog = Math.floor(Math.min(...leaderLogs));
+            const hiLeaderLog = Math.ceil(Math.max(...leaderLogs));
+            const leaderLogSpan = hiLeaderLog - loLeaderLog > 0 ? hiLeaderLog - loLeaderLog : 1;
             const leaderboardRows = leaderboard.map((u, i) => {
                 const publicName = u.display_name || u.id || '?';
                 const identityTitle = u.display_name ? ' title="ID: ' + escapeHtml(u.id || '') + '"' : '';
@@ -4284,7 +4290,7 @@
                     '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-muted);">No.' + (i + 1) + '</div>' +
                     '<div' + identityTitle + ' style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(publicName) + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.tool || '未识别') + '</div>' +
-                    '<div title="今日 Token 对数刻度（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + (Math.log10(Number(u.tokens) + 1) / maxLeaderLog * 100).toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
+                    '<div title="今日 Token 对数刻度（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + Math.max(0, (Math.log10(Math.max(1, Number(u.tokens))) - loLeaderLog) / leaderLogSpan * 100).toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
                     '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;text-align:right;">' + formatTokens(u.tokens || 0) + '</div>' +
                     '</div>';
             }).join('');
@@ -4596,9 +4602,12 @@
             const splitAt = Math.ceil(rangeRanking.length / 2);
             const groups = [rangeRanking.slice(0, splitAt), rangeRanking.slice(splitAt)].filter(group => group.length > 0);
             container.classList.toggle('is-single', groups.length === 1);
-            // 对数柱条归一化基准：以全榜最大累计 token 的 log10 为满刻度，体现量级差距而非线性差距
-            const maxTotalTokens = rangeRanking.reduce((m, e) => Math.max(m, Number(e.totalTokens) || 0), 0);
-            const maxLog = maxTotalTokens > 0 ? Math.log10(maxTotalTokens + 1) : 1;
+            // 柱条用绝对对数刻度：动态上下界（全榜最小/最大正数的 log10 取整），不再以 max 为满刻度
+            // 这样 1亿/10M/100K 的比例被正确拉开（越往下差异越大），避免榜首撑满刻度导致其余被压扁
+            const positiveTotals = rangeRanking.map(e => Math.log10(Math.max(1, Number(e.totalTokens) || 0)));
+            const loLog = Math.floor(Math.min(...positiveTotals));
+            const hiLog = Math.ceil(Math.max(...positiveTotals));
+            const logSpan = hiLog - loLog > 0 ? hiLog - loLog : 1;
             container.innerHTML = groups.map((group, groupIndex) => {
                 const start = groupIndex === 0 ? 1 : splitAt + 1;
                 const rows = group.map((entry, rowIndex) => {
@@ -4606,8 +4615,8 @@
                     const color = RANK_LINE_COLORS[(rank - 1) % RANK_LINE_COLORS.length];
                     const name = escapeHtml(entry.name);
                     const total = Number(entry.totalTokens) || 0;
-                    // 对数刻度柱条：log10(total+1)/log10(max+1)，零用量不画柱条（符合 D-2026-07-31-01）
-                    const barWidth = total > 0 ? (Math.log10(total + 1) / maxLog * 100) : 0;
+                    // 绝对对数刻度柱条：(log10(total)-loLog)/(hiLog-loLog)，零用量不画柱条（符合 D-2026-07-31-01）
+                    const barWidth = total > 0 ? Math.max(0, (Math.log10(Math.max(1, total)) - loLog) / logSpan * 100) : 0;
                     const barFill = barWidth > 0
                         ? '<span class="rank-range-bar-fill" style="width:' + barWidth.toFixed(2) + '%;background:' + color + '"></span>'
                         : '';
@@ -4623,6 +4632,46 @@
                 return '<ol class="rank-range-list" start="' + start + '">' + rows + '</ol>';
             }).join('');
         }
+
+        // 零用量天折线断开（对数下 0 无定义），用灰色虚线把断开处两端的真实数据点连起来，
+        // 既消除“线段缺一块”的观感，又保留“当天零用量”的诚实语义（虚线 ≠ 真实数据，不画数据点）。
+        const rankHistoryGapBridge = {
+            id: 'rankHistoryGapBridge',
+            afterDatasetsDraw(chart) {
+                const {ctx, chartArea, data} = chart;
+                if (!chartArea) return;
+                ctx.save();
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    const meta = chart.getDatasetMeta(datasetIndex);
+                    if (!meta || !meta.data) return;
+                    const points = meta.data;
+                    let lastValid = null;
+                    for (let i = 0; i < points.length; i += 1) {
+                        const value = dataset.data[i];
+                        const point = points[i];
+                        if (value === null || value === undefined) continue;
+                        if (lastValid !== null && i - lastValid.index > 1) {
+                            const from = lastValid.point;
+                            const to = point;
+                            if (from && to) {
+                                ctx.setLineDash([4, 4]);
+                                ctx.lineWidth = 1.2;
+                                ctx.strokeStyle = dataset.borderColor || getThemeVar('--text-muted');
+                                ctx.globalAlpha = 0.32;
+                                ctx.beginPath();
+                                ctx.moveTo(from.x, from.y);
+                                ctx.lineTo(to.x, to.y);
+                                ctx.stroke();
+                                ctx.setLineDash([]);
+                                ctx.globalAlpha = 1;
+                            }
+                        }
+                        lastValid = {point, index: i};
+                    }
+                });
+                ctx.restore();
+            }
+        };
 
         const rankHistoryEndLabels = {
             id: 'rankHistoryEndLabels',
@@ -4810,8 +4859,8 @@
                     borderColor: color,
                     backgroundColor: color + '22',
                     borderWidth: index < 3 ? 2.5 : 2,
-                    pointRadius: dates.length <= 31 ? 3 : 1.5,
-                    pointHoverRadius: 5,
+                    pointRadius: dates.length <= 31 ? 3.5 : 2,
+                    pointHoverRadius: 6,
                     pointBorderWidth: 1.5,
                     pointBorderColor: getThemeVar('--chart-point-border'),
                     tension: 0.22,
@@ -4828,7 +4877,7 @@
             _rankHistory.chart = new Chart(canvas.getContext('2d'), {
                 type: 'line',
                 data: { labels: dates, datasets },
-                plugins: [rankHistoryEndLabels],
+                plugins: [rankHistoryGapBridge, rankHistoryEndLabels],
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,

@@ -108,11 +108,16 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn(".rank-range-summary", mac_html)
         self.assertIn(".rank-range-columns", mac_html)
         self.assertIn(".rank-range-item", mac_html)
-        # 区间总榜新增对数柱条（量级差距可视化）
+        # 区间总榜新增对数柱条（量级差距可视化），用绝对对数刻度（动态上下界）
         self.assertIn(".rank-range-bar", mac_html)
         self.assertIn(".rank-range-bar-fill", mac_html)
-        self.assertIn("Math.log10(total + 1)", script)
-        self.assertIn("Math.log10(maxTotalTokens + 1)", script)
+        self.assertIn("loLog", script)
+        self.assertIn("hiLog", script)
+        self.assertIn("logSpan", script)
+        self.assertIn("Math.log10(Math.max(1, total)) - loLog", script)
+        # 零用量天虚线连接插件（保留断开语义，不画数据点）
+        self.assertIn("rankHistoryGapBridge", script)
+        self.assertIn("setLineDash([4, 4])", script)
         self.assertNotIn("startRankHistoryPlayback", script)
         # 旧的播放按钮柱条 rank-history-bar 已废弃（注意与新的 rank-range-bar 不同）
         self.assertNotIn("rank-history-bar", script)
