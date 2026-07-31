@@ -3369,6 +3369,9 @@
             ],
             '1.4.74': [
                 '柱条改线性+对数补丁：大值纯线性让 2.4亿 vs 70M 差距拉大到 71%。'
+            ],
+            '1.4.75': [
+                '排名趋势 x 轴日期从 "07-21" 改为 "7月21日"，更清晰易读。'
             ]
         });
 
@@ -4946,7 +4949,13 @@
                                 padding: 8,
                                 callback(value) {
                                     const label = this.getLabelForValue(value);
-                                    return label ? label.slice(5) : '';
+                                    if (!label) return '';
+                                    // "2026-07-21" → "7月21日"，比 "07-21" 更清晰
+                                    const parts = label.split('-');
+                                    if (parts.length === 3) {
+                                        return parseInt(parts[1], 10) + '月' + parseInt(parts[2], 10) + '日';
+                                    }
+                                    return label;
                                 }
                             }
                         },
