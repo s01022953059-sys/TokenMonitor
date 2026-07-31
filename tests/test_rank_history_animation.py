@@ -100,8 +100,23 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertNotIn("第 ' + value + ' 名", script)
         self.assertNotIn("return rank >= 1 && rank <= 10 ? rank : null", script)
         self.assertIn("clip: false", script)
-        self.assertIn("top: 18, right: narrow ? 108 : 168, bottom: 10", script)
-        self.assertIn("chart.width - labelX - 16", script)
+        # padding 加大给两列错位标签留空间
+        self.assertIn("top: 18, right: narrow ? 128 : 200, bottom: 10", script)
+        self.assertNotIn("right: narrow ? 108 : 168", script)
+        # 两列错位算法：名次奇偶分两列，纵向重叠标签横向错开
+        self.assertIn("item.column = index % 2", script)
+        self.assertIn("item.column === 1 ? -columnOffset : 0", script)
+        self.assertIn("chart.width - labelX - columnOffset - 16", script)
+        # 右栏可拖动分隔条 + CSS 变量宽度
+        self.assertIn('id="rankHistoryResizer"', mac_html)
+        self.assertIn("rank-history-resizer", mac_html)
+        self.assertIn("--rank-range-width", script)
+        self.assertIn("initRankHistoryResizer", script)
+        self.assertIn("token-monitor-rank-range-width", script)
+        self.assertIn("MIN_WIDTH = 220", script)
+        self.assertIn("MAX_WIDTH = 420", script)
+        # name 列放宽减少省略截断
+        self.assertIn("minmax(120px, 1fr) 64px", mac_html)
         self.assertIn('class="rank-history-icon"', mac_html)
         self.assertNotIn("📊", mac_html)
         self.assertIn("prefers-reduced-motion: reduce", mac_html)

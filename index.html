@@ -959,9 +959,20 @@
         }
         .rank-history-main {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 250px;
-            gap: 18px;
+            grid-template-columns: minmax(0, 1fr) 4px var(--rank-range-width, 280px);
+            gap: 0;
             border-top: 1px solid var(--border-card);
+        }
+        .rank-history-resizer {
+            width: 4px;
+            margin: 6px 4px 6px 0;
+            cursor: col-resize;
+            background: var(--border-subtle);
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+        .rank-history-resizer:hover, .rank-history-resizer.is-dragging {
+            background: var(--neon-green, #3b82f6);
         }
         .rank-range-summary {
             max-height: min(48vh, 420px);
@@ -1007,7 +1018,7 @@
         }
         .rank-range-item {
             display: grid;
-            grid-template-columns: 22px 8px minmax(0, 1fr) 64px auto 44px;
+            grid-template-columns: 22px 8px minmax(120px, 1fr) 64px auto 44px;
             gap: 7px;
             align-items: center;
             min-height: 32px;
@@ -2136,6 +2147,7 @@
                         <canvas id="rankHistoryChart" role="img" aria-label="按日期展示的社区 TOP10 排名折线图"></canvas>
                         <div id="rankHistoryEmpty" class="rank-history-empty">加载排名历史数据中...</div>
                     </div>
+                    <div id="rankHistoryResizer" class="rank-history-resizer" role="separator" aria-label="拖动调整排行榜宽度" aria-orientation="vertical"></div>
                     <section id="rankRangeSummary" class="rank-range-summary" aria-labelledby="rankRangeSummaryTitle" hidden>
                         <div class="rank-range-summary-header">
                             <h4 id="rankRangeSummaryTitle" class="rank-range-summary-title">区间总榜</h4>
@@ -3332,6 +3344,10 @@
             '1.4.67': [
                 '修复对数柱条比例反转：改用绝对对数刻度，1 亿/10M/100K 差距正确拉开。',
                 '零用量天改用灰色虚线连接折线，消除线段缺失感；数据点更清晰。'
+            ],
+            '1.4.68': [
+                '末端人名标签分两列错位，消除底部拥挤重叠。',
+                '区间总榜右栏可拖动调整宽度并自动记忆，昵称列放宽减少截断。'
             ]
         });
 
@@ -4483,6 +4499,9 @@
                 const offset = top - sorted[0].labelY;
                 sorted.forEach(item => { item.labelY += offset; });
             }
+            // 对数刻度下 10 条线全挤在底部，即使最小间距也可能重叠：按名次奇偶分两列错开。
+            // column 0 = 靠右（主列），column 1 = 偏左（错位列），纵向相邻标签横向错开避免视觉重叠。
+            sorted.forEach((item, index) => { item.column = index % 2; });
             return sorted;
         }
 
@@ -4699,8 +4718,11 @@
                     minGap
                 );
                 const labelX = chart.chartArea.right + (narrow ? 11 : 13);
-                const maxWidth = Math.max(36, chart.width - labelX - 16);
+                const columnOffset = narrow ? 64 : 78; // 错位列横向偏移，让奇偶名次标签错开
+                const maxWidth = Math.max(36, chart.width - labelX - columnOffset - 16);
                 labels.forEach(item => {
+                    // column 1（偶数名次）偏左一截，与 column 0（奇数名次）纵向重叠时横向错开
+                    const colX = labelX + (item.column === 1 ? -columnOffset : 0);
                     const label = fitRankHistoryLabel(ctx, item.dataset.label, maxWidth);
                     const textWidth = Math.min(maxWidth, ctx.measureText(label).width);
                     ctx.strokeStyle = item.dataset.borderColor;
@@ -4708,13 +4730,13 @@
                     ctx.beginPath();
                     ctx.moveTo(item.point.x + 4, item.point.y);
                     ctx.lineTo(chart.chartArea.right + 4, item.point.y);
-                    ctx.lineTo(chart.chartArea.right + 8, item.labelY);
+                    ctx.lineTo(colX - 4, item.labelY);
                     ctx.stroke();
                     ctx.globalAlpha = 1;
-                    rankHistoryLabelBackground(ctx, labelX, item.labelY, textWidth, minGap - 6);
+                    rankHistoryLabelBackground(ctx, colX, item.labelY, textWidth, minGap - 6);
                     ctx.fillStyle = item.dataset.borderColor;
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(label, labelX, item.labelY);
+                    ctx.fillText(label, colX, item.labelY);
                 });
                 ctx.restore();
             }
@@ -4883,7 +4905,7 @@
                     maintainAspectRatio: false,
                     animation: reducedMotion ? false : { duration: 900, easing: 'easeOutQuart' },
                     interaction: { mode: 'nearest', intersect: false, axis: 'xy' },
-                    layout: { padding: { top: 18, right: narrow ? 108 : 168, bottom: 10, left: 0 } },
+                    layout: { padding: { top: 18, right: narrow ? 128 : 200, bottom: 10, left: 0 } },
                     scales: {
                         x: {
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
@@ -4965,6 +4987,45 @@
                 document.getElementById('rankHistoryModal').classList.remove('active');
             }
         });
+
+        // 排名趋势右栏可拖动调整宽度：mousedown 拖动改 CSS 变量，存 localStorage 持久化。
+        (function initRankHistoryResizer() {
+            const resizer = document.getElementById('rankHistoryResizer');
+            const main = document.querySelector('.rank-history-main');
+            if (!resizer || !main) return;
+            const STORAGE_KEY = 'token-monitor-rank-range-width';
+            const MIN_WIDTH = 220;
+            const MAX_WIDTH = 420;
+            const saved = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+            if (saved >= MIN_WIDTH && saved <= MAX_WIDTH) {
+                main.style.setProperty('--rank-range-width', saved + 'px');
+            }
+            let dragging = false;
+            resizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                dragging = true;
+                resizer.classList.add('is-dragging');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                const rect = main.getBoundingClientRect();
+                const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, rect.right - e.clientX));
+                main.style.setProperty('--rank-range-width', width + 'px');
+            });
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                resizer.classList.remove('is-dragging');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                const width = parseInt(main.style.getPropertyValue('--rank-range-width') || '280', 10);
+                if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+                    localStorage.setItem(STORAGE_KEY, String(width));
+                }
+            });
+        })();
 
         // ===== 热力图下钻 =====
         let _heatmapDetailState = { date: '', page: 1, pageSize: 50, tool: '', model: '', startTime: '', endTime: '' };
