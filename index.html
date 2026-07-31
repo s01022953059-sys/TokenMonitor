@@ -3372,6 +3372,9 @@
             ],
             '1.4.75': [
                 '排名趋势 x 轴日期从 "07-21" 改为 "7月21日"，更清晰易读。'
+            ],
+            '1.4.76': [
+                'y 轴只显示 10 的幂次刻度，不再成对出现。'
             ]
         });
 
@@ -4971,6 +4974,10 @@
                                 callback(value) {
                                     const v = Number(value);
                                     if (!v || v < 1) return '';
+                                    // 只显示 10 的幂次刻度（1,10,100,1K,10K,100K,1M,10M,100M,1亿），
+                                    // 跳过对数轴默认的 2×/5× 子刻度，避免刻度成对出现
+                                    const log = Math.log10(v);
+                                    if (Math.abs(log - Math.round(log)) > 0.01) return '';
                                     if (v >= 100000000) return (v / 100000000).toFixed(0) + '亿';
                                     if (v >= 1000000) return (v / 1000000).toFixed(0) + 'M';
                                     if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
