@@ -50,26 +50,27 @@ class RankLogScaleContractTest(unittest.TestCase):
         self.assertEqual(self.html, self.windows_html)
 
     def test_y_axis_is_logarithmic(self):
-        """主图 y 轴必须是对数刻度，不能残留 linear 名次配置。"""
+        """主图 y 轴必须是对数刻度（min:1 让 0 值画在底部），不能残留 linear 名次配置。"""
         self.assertIn("type: 'logarithmic'", self.script)
-        self.assertIn("min: 100", self.script)
+        self.assertIn("min: 1", self.script)
         # 旧的名次刻度配置必须已移除
         self.assertNotIn("reverse: true", self.script)
         self.assertNotIn("stepSize: 1", self.script)
-        self.assertNotIn("min: 1,", self.script)
         self.assertNotIn("max: 10,", self.script)
 
     def test_dataset_data_uses_token_values_not_ranks(self):
-        """折线 data 必须用真实 token 数（零值转 null 断开），不能是名次数组。"""
-        self.assertIn("tokenValues.map(v => (Number(v) > 0 ? Number(v) : null))", self.script)
+        """折线 data 必须用真实 token 数（零值保留为 0，不断开），不能是名次数组。"""
+        self.assertIn("tokenValues.map(v => Number(v) || 0)", self.script)
         self.assertIn("rankValues: completedRanks[index]", self.script)
         # data 直接等于 completedRanks 的旧写法必须消失
         self.assertNotIn("data: completedRanks[index]", self.script)
+        # 旧的 0→null 断开写法必须消失
+        self.assertNotIn("Number(v) > 0 ? Number(v) : null", self.script)
 
-    def test_zero_token_days_disconnect_line(self):
-        """零用量天必须断开折线（spanGaps: false），符合 D-2026-07-31-01 不展示无意义数据。"""
-        self.assertIn("spanGaps: false", self.script)
-        self.assertNotIn("spanGaps: true", self.script)
+    def test_zero_token_days_keep_continuous(self):
+        """零用量保留为 0，折线连续不断开（鹏帅要求：没数据默认用 0，不要虚线）。"""
+        self.assertIn("spanGaps: true", self.script)
+        self.assertNotIn("spanGaps: false", self.script)
 
     def test_tooltip_keeps_rank_info(self):
         """y 轴丢失名次后，tooltip 必须补偿显示“第 N 名”。"""
@@ -115,9 +116,10 @@ class RankLogScaleContractTest(unittest.TestCase):
         # 旧的从 data 读名次的写法必须消失
         self.assertNotIn("Number(dataset.data[latestDataIndex]) || 0", self.script)
 
-    def test_end_labels_skip_zero_token_days(self):
-        """末端标签必须跳过零用量天（tokens <= 0 不画标签）。"""
-        self.assertIn("tokens <= 0", self.script)
+    def test_end_labels_skip_negative_token_days(self):
+        """末端标签跳过负值（tokens < 0），零值用户仍画标签。"""
+        self.assertIn("tokens < 0", self.script)
+        self.assertNotIn("tokens <= 0", self.script)
 
 
 class RankLogScaleMathTest(unittest.TestCase):

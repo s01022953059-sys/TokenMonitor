@@ -455,7 +455,8 @@ class CommunityTests(unittest.TestCase):
             }, None
 
         with mock.patch.object(community, "_gitcode_api", return_value=files), \
-             mock.patch.object(community, "_read_remote_json", side_effect=read_snapshot) as read_call:
+             mock.patch.object(community, "_read_remote_json", side_effect=read_snapshot) as read_call, \
+             mock.patch.object(community, "get_community_stats", return_value={"leaderboard": []}):
             result = community.get_community_history(
                 period="week",
                 today=datetime.date(2026, 7, 30),
@@ -471,13 +472,49 @@ class CommunityTests(unittest.TestCase):
         snapshot = {"date": "2026-07-28", "participants": [{"id": "User_28", "tokens": 28}]}
 
         with mock.patch.object(community, "_gitcode_api", return_value=files) as list_call, \
-             mock.patch.object(community, "_read_remote_json", return_value=(snapshot, None)) as read_call:
+             mock.patch.object(community, "_read_remote_json", return_value=(snapshot, None)) as read_call, \
+             mock.patch.object(community, "get_community_stats", return_value={"leaderboard": []}):
             first = community.get_community_history(30)
             second = community.get_community_history(30)
 
         self.assertEqual(first["dates"], second["dates"])
         self.assertEqual(list_call.call_count, 1)
         self.assertEqual(read_call.call_count, 1)
+
+    def test_history_appends_today_realtime_when_no_archive_today(self):
+        """今天尚无归档时，用实时排行榜补一个今天的 snapshot（鹏帅要求）。"""
+        files = [{"name": "2026-07-29.json", "download_url": "https://example.test/29"}]
+        archive_snapshot = {"date": "2026-07-29", "participants": [{"id": "User_A", "tokens": 100}]}
+        realtime_leaderboard = [
+            {"id": "User_A", "display_name": "甲", "tokens": 50},
+            {"id": "User_B", "display_name": "乙", "tokens": 30},
+        ]
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", return_value=(archive_snapshot, None)), \
+             mock.patch.object(community, "get_community_stats", return_value={"leaderboard": realtime_leaderboard}):
+            result = community.get_community_history(period="week", today=datetime.date(2026, 7, 30))
+
+        # 归档只有 07-29，今天 07-30 无归档，应用实时排行榜补一个 07-30 的点
+        self.assertIn("2026-07-30", result["dates"])
+        self.assertEqual(result["dates"][-1], "2026-07-30")
+        # User_B 今天有用量，应出现在 series 里（如果累计排进前10）
+        series_ids = [s["id"] for s in result["series"]]
+        self.assertIn("User_B", series_ids)
+
+    def test_history_does_not_duplicate_today_when_archive_exists(self):
+        """今天已有归档时，不重复追加实时 snapshot。"""
+        files = [{"name": "2026-07-30.json", "download_url": "https://example.test/30"}]
+        archive_snapshot = {"date": "2026-07-30", "participants": [{"id": "User_A", "tokens": 100}]}
+        realtime_leaderboard = [{"id": "User_A", "display_name": "甲", "tokens": 50}]
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", return_value=(archive_snapshot, None)), \
+             mock.patch.object(community, "get_community_stats", return_value={"leaderboard": realtime_leaderboard}):
+            result = community.get_community_history(period="week", today=datetime.date(2026, 7, 30))
+
+        # 今天已有归档 07-30，dates 里 07-30 只出现一次
+        self.assertEqual(result["dates"].count("2026-07-30"), 1)
 
 
 if __name__ == "__main__":

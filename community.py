@@ -758,5 +758,40 @@ def get_community_history(days=30, period="", today=None):
         "range_start": range_start.isoformat() if range_start else "",
         "range_end": range_end.isoformat() if range_end else "",
     })
+
+    # 归档每天 23:55 才生成，今天可能尚无归档；用实时排行榜补一个今天的 snapshot，
+    # 让排名趋势包含当天实时数据（鹏帅要求：今天没汇总就取当日实时数据）。
+    # 优先用测试/调用方传入的 today；否则按北京时间取当日。
+    if range_end is not None:
+        today_str = range_end.isoformat()
+    else:
+        beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
+        today_str = datetime.datetime.now(beijing_tz).date().isoformat()
+    if today_str not in set(result.get("dates") or []):
+        try:
+            stats = get_community_stats(force_refresh=False)
+            today_leaderboard = stats.get("leaderboard") or []
+            if today_leaderboard:
+                today_snapshot = {
+                    "date": today_str,
+                    "participants": [
+                        {"id": m.get("id", "?"), "display_name": m.get("display_name", ""), "tokens": int(m.get("tokens") or 0)}
+                        for m in today_leaderboard
+                    ],
+                }
+                snapshots.append(today_snapshot)
+                snapshots.sort(key=lambda s: s.get("date", ""))
+                refreshed = _build_rank_history_series(snapshots)
+                refreshed.update({
+                    "snapshots": snapshots,
+                    "data_status": "ok" if snapshots else "empty",
+                    "range": period,
+                    "range_start": range_start.isoformat() if range_start else "",
+                    "range_end": range_end.isoformat() if range_end else "",
+                })
+                result = refreshed
+        except Exception:
+            pass
+
     _history_cache[cache_key] = {"data": result, "ts": time.time()}
     return result

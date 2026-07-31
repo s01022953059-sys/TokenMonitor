@@ -1101,6 +1101,51 @@ func getCommunityHistory(days int, periods ...string) map[string]interface{} {
 		result["range_start"] = ""
 		result["range_end"] = ""
 	}
+
+	// 归档每天 23:55 才生成，今天可能尚无归档；用实时排行榜补一个今天的 snapshot。
+	beijingTZ := time.FixedZone("Asia/Shanghai", 8*60*60)
+	todayStr := time.Now().In(beijingTZ).Format("2006-01-02")
+	existingDates := map[string]bool{}
+	if dates, ok := result["dates"].([]interface{}); ok {
+		for _, d := range dates {
+			if s, ok := d.(string); ok {
+				existingDates[s] = true
+			}
+		}
+	}
+	if !existingDates[todayStr] {
+		stats := getCommunityStats(false)
+		if lb, ok := stats["leaderboard"].([]map[string]interface{}); ok && len(lb) > 0 {
+			participants := []communityHistoryEntry{}
+			for _, m := range lb {
+				id, _ := m["id"].(string)
+				if id == "" {
+					id = "?"
+				}
+				name, _ := m["display_name"].(string)
+				tokens, _ := m["tokens"].(int64)
+				participants = append(participants, communityHistoryEntry{ID: id, DisplayName: name, Tokens: tokens})
+			}
+			todaySnapshot := communityHistorySnapshot{Date: todayStr, Participants: participants}
+			snapshots = append(snapshots, todaySnapshot)
+			sort.SliceStable(snapshots, func(i, j int) bool {
+				return snapshots[i].Date < snapshots[j].Date
+			})
+			refreshed := buildCommunityRankSeries(snapshots)
+			refreshed["snapshots"] = snapshots
+			refreshed["data_status"] = "ok"
+			refreshed["range"] = period
+			if hasPeriod {
+				refreshed["range_start"] = rangeStart.Format("2006-01-02")
+				refreshed["range_end"] = rangeEnd.Format("2006-01-02")
+			} else {
+				refreshed["range_start"] = ""
+				refreshed["range_end"] = ""
+			}
+			result = refreshed
+		}
+	}
+
 	historyCacheMu.Lock()
 	historyCache[cacheKey] = communityHistoryCacheEntry{data: result, ts: time.Now()}
 	historyCacheMu.Unlock()

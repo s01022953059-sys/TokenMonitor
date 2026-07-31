@@ -3355,6 +3355,10 @@
             ],
             '1.4.70': [
                 '修复排名趋势折线越界：限制裁切区域，虚线连接段限定在图表区内。'
+            ],
+            '1.4.71': [
+                '零用量天保留为 0，折线连续不断开，不再用虚线。',
+                '今天尚无归档时用实时排行榜补当天数据点。'
             ]
         });
 
@@ -4534,9 +4538,10 @@
 
         function rankHistoryLatestDataIndex(datasets, dateCount) {
             for (let index = Math.max(0, Number(dateCount) || 0) - 1; index >= 0; index -= 1) {
+                // 0 也是有效数据点（鹏帅要求：没数据默认用 0），只要有 tokenValues 记录就算有数据
                 const hasData = datasets.some(dataset => {
-                    const tokens = Number(dataset && dataset.tokenValues ? dataset.tokenValues[index] : 0) || 0;
-                    return tokens > 0;
+                    const tokens = Number(dataset && dataset.tokenValues ? dataset.tokenValues[index] : 0);
+                    return tokens >= 0 && dataset && dataset.tokenValues && index < dataset.tokenValues.length;
                 });
                 if (hasData) return index;
             }
@@ -4709,7 +4714,7 @@
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     const rank = Number(dataset.rankValues && dataset.rankValues[latestDataIndex]) || 0;
                     const tokens = Number(dataset.tokenValues && dataset.tokenValues[latestDataIndex]) || 0;
-                    if (rank < 1 || rank > 10 || tokens <= 0) return;
+                    if (rank < 1 || rank > 10 || tokens < 0) return;
                     const point = chart.getDatasetMeta(datasetIndex).data[latestDataIndex];
                     if (!point) return;
                     items.push({point, dataset, y: point.y});
@@ -4871,8 +4876,8 @@
                 const color = RANK_LINE_COLORS[index % RANK_LINE_COLORS.length];
                 const name = rankHistoryDisplayName(item);
                 const tokenValues = Array.isArray(item.tokens) ? item.tokens : [];
-                // y 轴改为对数 token 刻度：data 用真实 token 数，零值天用 null 断开折线（对数下 0 无定义）
-                const tokenData = tokenValues.map(v => (Number(v) > 0 ? Number(v) : null));
+                // 零用量保留为 0（不转 null），折线连续不断开；对数轴 min:1 让 0 值点画在底部
+                const tokenData = tokenValues.map(v => Number(v) || 0);
                 return {
                     label: name,
                     data: tokenData,
@@ -4886,7 +4891,7 @@
                     pointBorderWidth: 1.5,
                     pointBorderColor: getThemeVar('--chart-point-border'),
                     tension: 0.22,
-                    spanGaps: false,
+                    spanGaps: true,
                     clip: {left: 0, top: 6, right: 0, bottom: 0},
                     fill: false
                 };
@@ -4925,7 +4930,7 @@
                         },
                         y: {
                             type: 'logarithmic',
-                            min: 100,
+                            min: 1,
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
                             ticks: {

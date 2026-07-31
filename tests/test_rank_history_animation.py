@@ -91,10 +91,12 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn("series.slice(0, 10)", script)
         # y 轴改为对数 token 刻度：折线数据用真实 token 数，零值天断开（对数下 0 无定义）
         self.assertIn("type: 'logarithmic'", script)
-        self.assertIn("spanGaps: false", script)
-        self.assertNotIn("spanGaps: true", script)
+        # 零值保留为 0，折线连续不断开（鹏帅要求：没数据默认用 0，不要虚线）
+        self.assertIn("spanGaps: true", script)
+        self.assertNotIn("spanGaps: false", script)
         self.assertIn("rankValues: completedRanks[index]", script)
-        self.assertIn("tokenValues.map(v => (Number(v) > 0 ? Number(v) : null))", script)
+        self.assertIn("tokenValues.map(v => Number(v) || 0)", script)
+        self.assertNotIn("Number(v) > 0 ? Number(v) : null", script)
         self.assertNotIn("reverse: true", script)
         self.assertNotIn("stepSize: 1", script)
         self.assertNotIn("第 ' + value + ' 名", script)
