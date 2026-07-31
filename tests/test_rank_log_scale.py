@@ -21,18 +21,23 @@ def _load_rank_script():
     )[0]
 
 
-def _log_bar_width(total_tokens, lo_log, hi_log):
-    """复刻前端绝对对数刻度柱条宽度：(log10(total)-loLog)/(hiLog-loLog)*100。
+SEGMENT_THRESHOLD = 1_000_000  # 与前端一致：1M 为分段阈值
 
-    lo_log/hi_log 是全榜最小/最大正数 token 的 log10 取 floor/ceil 得到的动态上下界。
-    不再以 max 为满刻度（旧公式会把榜首撑满、其余压扁，导致量级差被反转）。
+
+def _segment_bar_width(total_tokens, max_total_tokens):
+    """复刻前端分段刻度柱条宽度。
+
+    ≥1M（大值区）：线性归一化，占 50%-100%——让 2.4亿 vs 70M 差距明显。
+    <1M（小值区）：对数归一化，占 0%-50%——让小用户仍可见。
+    零用量返回 0（不画柱条）。
     """
     if total_tokens <= 0:
         return 0.0
-    span = hi_log - lo_log
-    if span <= 0:
-        return 0.0
-    return (math.log10(max(1, total_tokens)) - lo_log) / span * 100
+    seg_log = math.log10(SEGMENT_THRESHOLD)  # 6
+    if total_tokens >= SEGMENT_THRESHOLD:
+        big_span = max(1, max_total_tokens - SEGMENT_THRESHOLD)
+        return 50 + (total_tokens - SEGMENT_THRESHOLD) / big_span * 50
+    return math.log10(max(1, total_tokens)) / seg_log * 50
 
 
 class RankLogScaleContractTest(unittest.TestCase):
@@ -50,9 +55,9 @@ class RankLogScaleContractTest(unittest.TestCase):
         self.assertEqual(self.html, self.windows_html)
 
     def test_y_axis_is_logarithmic(self):
-        """主图 y 轴必须是对数刻度（min:1 让 0 值画在底部），不能残留 linear 名次配置。"""
+        """主图 y 轴必须是对数刻度（min:0.1 让 0 值线离开底部不被遮挡），不能残留 linear 名次配置。"""
         self.assertIn("type: 'logarithmic'", self.script)
-        self.assertIn("min: 1", self.script)
+        self.assertIn("min: 0.1", self.script)
         # 旧的名次刻度配置必须已移除
         self.assertNotIn("reverse: true", self.script)
         self.assertNotIn("stepSize: 1", self.script)
@@ -87,18 +92,19 @@ class RankLogScaleContractTest(unittest.TestCase):
         self.assertIn("'M'", self.script)
         self.assertIn("'K'", self.script)
 
-    def test_range_leaderboard_has_log_bar(self):
-        """区间总榜必须有对数柱条 DOM 与 CSS，且用绝对对数刻度（动态上下界）。"""
+    def test_range_leaderboard_has_segment_bar(self):
+        """区间总榜必须有柱条 DOM 与 CSS，且用分段刻度（大值线性+小值对数）。"""
         self.assertIn("rank-range-bar", self.html)
         self.assertIn("rank-range-bar-fill", self.html)
-        # 新公式：绝对对数刻度，loLog/hiLog/logSpan 动态上下界
-        self.assertIn("loLog", self.script)
-        self.assertIn("hiLog", self.script)
-        self.assertIn("logSpan", self.script)
-        self.assertIn("Math.log10(Math.max(1, total)) - loLog", self.script)
-        # 旧的 max 满刻度公式必须消失（会反转比例）
-        self.assertNotIn("Math.log10(maxTotalTokens + 1)", self.script)
-        self.assertNotIn("Math.log10(total + 1) / maxLog", self.script)
+        # 分段刻度：SEGMENT_THRESHOLD 阈值 + 大值线性 + 小值对数
+        self.assertIn("SEGMENT_THRESHOLD = 1000000", self.script)
+        self.assertIn("total >= SEGMENT_THRESHOLD", self.script)
+        self.assertIn("50 + (total - SEGMENT_THRESHOLD)", self.script)
+        self.assertIn("Math.log10(Math.max(1, total)) / segLog * 50", self.script)
+        # 旧的纯对数动态上下界公式必须消失
+        self.assertNotIn("loLog", self.script)
+        self.assertNotIn("hiLog", self.script)
+        self.assertNotIn("logSpan", self.script)
 
     def test_gap_bridge_plugin_exists(self):
         """必须有 rankHistoryGapBridge 虚线连接插件，用 setLineDash 画断开段虚线。"""
@@ -124,69 +130,57 @@ class RankLogScaleContractTest(unittest.TestCase):
 
 
 class RankLogScaleMathTest(unittest.TestCase):
-    """绝对对数刻度柱条宽度计算的数学正确性——验证量级差距被正确拉开。
+    """分段刻度柱条宽度计算的数学正确性——大值区线性、小值区对数。
 
-    旧公式（以 max 为满刻度）会反转比例：1亿/10M/100K = 100%/87.5%/62.5%，
-    1亿-10M 差 12.5% 反而比 10M-100K 差 25% 小。新公式（动态上下界）修复此问题。
+    旧纯对数公式在大值区压缩（2.4亿 vs 70M 差距小）；分段刻度让大值区用线性，
+    差距明显（2.4亿=100%、70M≈64%），小值区用对数仍可见。
     """
 
-    def test_proportions_not_inverted_anymore(self):
-        """1亿/10M/100K 三档柱长必须差距递增（越往下差异越大），不再被压扁。"""
-        # 全榜：1亿(榜首)、10M、100K(榜尾) → lo=floor(log10(1e5))=5, hi=ceil(log10(1e8))=8
-        lo, hi = 5, 8
-        w_yi = _log_bar_width(100_000_000, lo, hi)
-        w_10m = _log_bar_width(10_000_000, lo, hi)
-        w_100k = _log_bar_width(100_000, lo, hi)
-        # 1亿=100%(满刻度), 10M=(7-5)/3=66.7%, 100K=(5-5)/3=0%
+    def test_big_value_gap_is_obvious(self):
+        """2.4亿 vs 70M 都在大值区(≥1M)用线性，差距必须明显（>30%）。"""
+        mx = 240_000_000  # 2.4亿为榜首
+        w_big = _segment_bar_width(240_000_000, mx)
+        w_70m = _segment_bar_width(70_000_000, mx)
+        # 2.4亿=100%, 70M=50+(70M-1M)/(2.4亿-1M)*50≈64%
+        self.assertAlmostEqual(w_big, 100.0, places=1)
+        self.assertGreater(w_70m, 60)
+        self.assertLess(w_70m, 70)
+        # 差距 >30%，比纯对数（6-7%）明显得多
+        self.assertGreater(w_big - w_70m, 30)
+
+    def test_small_value_still_visible(self):
+        """小用户(<1M)用对数，仍可见（>0%），不被压成 0。"""
+        mx = 240_000_000
+        w_100k = _segment_bar_width(100_000, mx)
+        w_10 = _segment_bar_width(10, mx)
+        # 100K: log10(1e5)/6*50≈41.7%, 10: log10(10)/6*50≈8.3%
+        self.assertGreater(w_100k, 40)
+        self.assertGreater(w_10, 5)
+        self.assertLess(w_10, w_100k)
+
+    def test_magnitude_gap_large_between_yi_and_m(self):
+        """1亿 vs 1M 的差距必须远大于 1M vs 0.5M（跨大值/小值区分界）。"""
+        mx = 100_000_000
+        w_yi = _segment_bar_width(100_000_000, mx)
+        w_1m = _segment_bar_width(1_000_000, mx)
+        w_half = _segment_bar_width(500_000, mx)
+        # 1亿=100%, 1M=50%（分界点）, 0.5M≈47.7%
         self.assertAlmostEqual(w_yi, 100.0, places=1)
-        self.assertAlmostEqual(w_10m, 66.7, places=1)
-        self.assertAlmostEqual(w_100k, 0.0, places=1)
-        # 关键修复：1亿-10M 差 33%，10M-100K 差 67%——越往下差异越大（对数正确行为）
-        self.assertGreater(w_yi - w_10m, 30)
-        self.assertGreater(w_10m - w_100k, 60)
-        # 三者一眼可区分，不再挤在顶部
-        self.assertGreater(w_yi - w_100k, 90)
-
-    def test_old_formula_inverted_proportions(self):
-        """反向验证旧公式确实反转了比例（说明为什么需要修复）。"""
-        lo, hi = 5, 8  # 新公式上下界
-        new_yi_10m = _log_bar_width(100_000_000, lo, hi) - _log_bar_width(10_000_000, lo, hi)
-        new_10m_100k = _log_bar_width(10_000_000, lo, hi) - _log_bar_width(100_000, lo, hi)
-        # 新公式：10M-100K 差距更大（越往下越大）
-        self.assertGreater(new_10m_100k, new_yi_10m)
-
-    def test_magnitude_gap_small_between_1m_and_half_m(self):
-        """1M vs 0.5M 的柱条宽度差必须很小（约 0.3 个 log 单位）。"""
-        # 榜首1亿、榜尾100K：lo=5, hi=8
-        lo, hi = 5, 8
-        w_1m = _log_bar_width(1_000_000, lo, hi)
-        w_half = _log_bar_width(500_000, lo, hi)
-        # log10(1e6)=6 → 33.3%, log10(5e5)≈5.7 → 23.3%，差约 10%
-        self.assertLess(w_1m - w_half, 11)
-        # 关键：1亿-1M 的差距必须远大于 1M-0.5M 的差距
-        self.assertGreater(
-            _log_bar_width(100_000_000, lo, hi) - w_1m,
-            w_1m - w_half,
-        )
+        self.assertAlmostEqual(w_1m, 50.0, places=1)
+        self.assertGreater(w_yi - w_1m, w_1m - w_half)
 
     def test_zero_tokens_no_bar(self):
         """零用量不画柱条（宽度 0）。"""
-        self.assertEqual(_log_bar_width(0, 5, 8), 0.0)
-
-    def test_all_zero_no_division_error(self):
-        """全榜最大值也是 0 时上下界相同，不画柱条（避免除零）。"""
-        self.assertEqual(_log_bar_width(100, 0, 0), 0.0)
+        self.assertEqual(_segment_bar_width(0, 1_000_000), 0.0)
 
     def test_single_dominant_user_clearly_tallest(self):
-        """一个上亿用户 + 一群个位数用户，前者柱条接近满刻度，后者几乎看不见。"""
-        # 3亿(榜首, log10≈8.477, hi=ceil=9)、10(榜尾, log10=1, lo=floor=1)
-        lo, hi = 1, 9
-        w_dominant = _log_bar_width(300_000_000, lo, hi)
-        w_tiny = _log_bar_width(10, lo, hi)
-        # (8.477-1)/8*100 ≈ 93.5%（3亿不是 10^9 整下界，未达满刻度是正确的）
-        self.assertAlmostEqual(w_dominant, 93.5, places=1)
-        # log10(10)=1 → (1-1)/8 = 0%
-        self.assertLess(w_tiny, 1)
+        """一个上亿用户 + 一群个位数用户，前者满刻度，后者小但可见。"""
+        mx = 300_000_000  # 3亿
+        w_dominant = _segment_bar_width(300_000_000, mx)
+        w_tiny = _segment_bar_width(10, mx)
+        self.assertAlmostEqual(w_dominant, 100.0, places=1)
+        # log10(10)/6*50 ≈ 8.3%
+        self.assertGreater(w_tiny, 5)
         self.assertGreater(w_dominant - w_tiny, 90)
 
 
@@ -202,18 +196,19 @@ class CommunityLeaderboardLogBarTest(unittest.TestCase):
     def test_frontends_byte_identical(self):
         self.assertEqual(self.html, self.windows_html)
 
-    def test_leaderboard_has_log_bar(self):
-        """今日排行榜每行必须有对数柱条（内联 style 形式），且用绝对对数刻度。"""
-        # 新公式：绝对对数刻度，loLeaderLog/hiLeaderLog/leaderLogSpan 动态上下界
-        self.assertIn("loLeaderLog", self.html)
-        self.assertIn("hiLeaderLog", self.html)
-        self.assertIn("leaderLogSpan", self.html)
-        self.assertIn("Math.log10(Math.max(1, Number(u.tokens))) - loLeaderLog", self.html)
-        # 旧的 max 满刻度公式必须消失（会反转比例）
-        self.assertNotIn("maxLeaderLog", self.html)
-        self.assertNotIn("Math.log10(Number(u.tokens) + 1) / maxLeaderLog", self.html)
+    def test_leaderboard_has_segment_bar(self):
+        """今日排行榜每行必须有柱条，且用分段刻度（大值线性+小值对数）。"""
+        # 分段刻度：SEGMENT_THRESHOLD + 大值线性 + 小值对数
+        self.assertIn("SEGMENT_THRESHOLD = 1000000", self.html)
+        self.assertIn("t>=SEGMENT_THRESHOLD", self.html)
+        self.assertIn("50+(t-SEGMENT_THRESHOLD)", self.html)
+        self.assertIn("Math.log10(Math.max(1,t))/segLog*50", self.html)
+        # 旧的纯对数动态上下界公式必须消失
+        self.assertNotIn("loLeaderLog", self.html)
+        self.assertNotIn("hiLeaderLog", self.html)
+        self.assertNotIn("leaderLogSpan", self.html)
         # 柱条容器与填充
-        self.assertIn("今日 Token 对数刻度（量级差距）", self.html)
+        self.assertIn("今日 Token 分段刻度（量级差距）", self.html)
 
     def test_leaderboard_grid_has_bar_column(self):
         """排行榜 grid 必须从 4 列扩为 5 列（新增柱条列）。"""

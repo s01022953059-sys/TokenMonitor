@@ -3362,6 +3362,10 @@
             ],
             '1.4.72': [
                 '修复对数轴下零用量天折线仍断开：0 值替换为 1，折线真正连续。'
+            ],
+            '1.4.73': [
+                '柱条改分段刻度：大值区线性让 2.4亿 vs 70M 差距明显，小值区对数仍可见。',
+                'y 轴下限降到 0.1，零用量线不再被底部遮挡。'
             ]
         });
 
@@ -4308,11 +4312,10 @@
                     '</div>';
             }).join('');
 
-            // 今日排行榜柱条用绝对对数刻度（动态上下界），不再以 max 为满刻度，避免榜首撑满刻度
-            const leaderLogs = leaderboard.map(u => Math.log10(Math.max(1, Number(u.tokens) || 0)));
-            const loLeaderLog = Math.floor(Math.min(...leaderLogs));
-            const hiLeaderLog = Math.ceil(Math.max(...leaderLogs));
-            const leaderLogSpan = hiLeaderLog - loLeaderLog > 0 ? hiLeaderLog - loLeaderLog : 1;
+            // 今日排行榜柱条用分段刻度：≥1M 线性(50%-100%)，<1M 对数(0%-50%)
+            const SEGMENT_THRESHOLD = 1000000;
+            const segLog = Math.log10(SEGMENT_THRESHOLD);
+            const maxLeaderTokens = leaderboard.reduce((m, u) => Math.max(m, Number(u.tokens) || 0), 0);
             const leaderboardRows = leaderboard.map((u, i) => {
                 const publicName = u.display_name || u.id || '?';
                 const identityTitle = u.display_name ? ' title="ID: ' + escapeHtml(u.id || '') + '"' : '';
@@ -4320,7 +4323,7 @@
                     '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-muted);">No.' + (i + 1) + '</div>' +
                     '<div' + identityTitle + ' style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(publicName) + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.tool || '未识别') + '</div>' +
-                    '<div title="今日 Token 对数刻度（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + Math.max(0, (Math.log10(Math.max(1, Number(u.tokens))) - loLeaderLog) / leaderLogSpan * 100).toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
+                    '<div title="今日 Token 分段刻度（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + (function(){ const t=Number(u.tokens); if(t>=SEGMENT_THRESHOLD){return 50+(t-SEGMENT_THRESHOLD)/Math.max(1,maxLeaderTokens-SEGMENT_THRESHOLD)*50} return Math.log10(Math.max(1,t))/segLog*50})().toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
                     '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;text-align:right;">' + formatTokens(u.tokens || 0) + '</div>' +
                     '</div>';
             }).join('');
@@ -4633,19 +4636,26 @@
             meta.textContent = rangeRanking.length + ' 人 · ' + archiveDayCount + ' 个归档日 · 按累计 Token';
             // 单栏纵向排列（不再分两栏），信息更完整、列宽对齐
             container.classList.add('is-single');
-            // 柱条用绝对对数刻度：动态上下界（全榜最小/最大正数的 log10 取整），不再以 max 为满刻度
-            // 这样 1亿/10M/100K 的比例被正确拉开（越往下差异越大），避免榜首撑满刻度导致其余被压扁
-            const positiveTotals = rangeRanking.map(e => Math.log10(Math.max(1, Number(e.totalTokens) || 0)));
-            const loLog = Math.floor(Math.min(...positiveTotals));
-            const hiLog = Math.ceil(Math.max(...positiveTotals));
-            const logSpan = hiLog - loLog > 0 ? hiLog - loLog : 1;
+            // 柱条用分段刻度：大值区(≥1M)线性归一化让 2.4亿 vs 70M 差距明显，
+            // 小值区(<1M)对数归一化让小用户仍可见。阈值 1M = log10=6。
+            const SEGMENT_THRESHOLD = 1000000;
+            const maxTotal = rangeRanking.reduce((m, e) => Math.max(m, Number(e.totalTokens) || 0), 0);
+            const segLog = Math.log10(SEGMENT_THRESHOLD); // 6
             const rows = rangeRanking.map((entry, rowIndex) => {
                 const rank = rowIndex + 1;
                 const color = RANK_LINE_COLORS[(rank - 1) % RANK_LINE_COLORS.length];
                 const name = escapeHtml(entry.name);
                 const total = Number(entry.totalTokens) || 0;
-                // 绝对对数刻度柱条：(log10(total)-loLog)/(hiLog-loLog)，零用量不画柱条（符合 D-2026-07-31-01）
-                const barWidth = total > 0 ? Math.max(0, (Math.log10(Math.max(1, total)) - loLog) / logSpan * 100) : 0;
+                // 分段刻度柱条：≥1M 线性(50%-100%)，<1M 对数(0%-50%)，零用量不画柱条
+                let barWidth = 0;
+                if (total > 0) {
+                    if (total >= SEGMENT_THRESHOLD) {
+                        barWidth = 50 + (total - SEGMENT_THRESHOLD) / Math.max(1, maxTotal - SEGMENT_THRESHOLD) * 50;
+                    } else {
+                        barWidth = Math.log10(Math.max(1, total)) / segLog * 50;
+                    }
+                    barWidth = Math.max(0, Math.min(100, barWidth));
+                }
                 const barFill = barWidth > 0
                     ? '<span class="rank-range-bar-fill" style="width:' + barWidth.toFixed(2) + '%;background:' + color + '"></span>'
                     : '';
@@ -4937,7 +4947,7 @@
                         },
                         y: {
                             type: 'logarithmic',
-                            min: 1,
+                            min: 0.1,
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
                             ticks: {
@@ -4950,7 +4960,7 @@
                                     if (v >= 100000000) return (v / 100000000).toFixed(0) + '亿';
                                     if (v >= 1000000) return (v / 1000000).toFixed(0) + 'M';
                                     if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
-                                    return String(v);
+                                    return String(Math.round(v));
                                 }
                             }
                         }
