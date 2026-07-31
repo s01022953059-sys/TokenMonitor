@@ -3387,6 +3387,9 @@
             ],
             '1.4.80': [
                 'y 轴刻度均匀分布，上下信息充分。'
+            ],
+            '1.4.81': [
+                '修复自定义刻度 tick 对象渲染异常。'
             ]
         });
 
@@ -4980,22 +4983,29 @@
                             grid: { color: getThemeVar('--chart-grid'), drawTicks: false },
                             border: { display: false },
                             afterTickToLabelConversion(scale) {
-                                // 完全自定义刻度：根据数据范围在对数空间均匀取 6-7 个关键值，
+                                // 完全自定义刻度：根据数据范围在对数空间均匀取 6 个关键值，
                                 // 让上下分布均匀、信息充分，避免底部空一大块或顶部太稀
                                 if (!scale.ticks) return;
-                                const min = Math.max(0.1, Number(scale.min) || 0.1);
-                                const max = Number(scale.max) || 1000000;
+                                const min = Math.max(1, Number(scale.min) || 1);
+                                const max = Math.max(min * 10, Number(scale.max) || 1000000);
                                 const lo = Math.log10(min);
                                 const hi = Math.log10(max);
                                 const span = hi - lo;
                                 if (span <= 0) return;
-                                // 取 6 个均匀刻度（对数空间等距）
                                 const count = 6;
                                 const customTicks = [];
+                                const formatValue = (v) => {
+                                    if (v >= 100000000) return (v / 100000000).toFixed(1) + '亿';
+                                    if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                                    if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
+                                    return String(Math.round(v));
+                                };
                                 for (let i = 0; i <= count; i += 1) {
                                     const logVal = lo + span * i / count;
                                     const v = Math.pow(10, logVal);
-                                    customTicks.push({ value: v });
+                                    if (v < 1) continue;
+                                    // 直接给 tick 对象加 label 字段，避免 Chart.js v4 自定义 tick 对象渲染异常
+                                    customTicks.push({ value: v, label: formatValue(v) });
                                 }
                                 scale.ticks = customTicks;
                             },
