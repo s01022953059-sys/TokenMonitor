@@ -3359,6 +3359,9 @@
             '1.4.71': [
                 '零用量天保留为 0，折线连续不断开，不再用虚线。',
                 '今天尚无归档时用实时排行榜补当天数据点。'
+            ],
+            '1.4.72': [
+                '修复对数轴下零用量天折线仍断开：0 值替换为 1，折线真正连续。'
             ]
         });
 
@@ -4876,8 +4879,12 @@
                 const color = RANK_LINE_COLORS[index % RANK_LINE_COLORS.length];
                 const name = rankHistoryDisplayName(item);
                 const tokenValues = Array.isArray(item.tokens) ? item.tokens : [];
-                // 零用量保留为 0（不转 null），折线连续不断开；对数轴 min:1 让 0 值点画在底部
-                const tokenData = tokenValues.map(v => Number(v) || 0);
+                // 零值用 1 替代（对数轴 log10(0)=-Infinity 无法定位，会导致点缺失折线断开）；
+                // 用 1 后 log10(1)=0，点画在 y 轴 min:1 底部，折线连续不断开，视觉仍表示"接近零"
+                const tokenData = tokenValues.map(v => {
+                    const n = Number(v) || 0;
+                    return n > 0 ? n : 1;
+                });
                 return {
                     label: name,
                     data: tokenData,

@@ -95,7 +95,7 @@ class RankHistoryAnimationTest(unittest.TestCase):
         self.assertIn("spanGaps: true", script)
         self.assertNotIn("spanGaps: false", script)
         self.assertIn("rankValues: completedRanks[index]", script)
-        self.assertIn("tokenValues.map(v => Number(v) || 0)", script)
+        self.assertIn("n > 0 ? n : 1", script)
         self.assertNotIn("Number(v) > 0 ? Number(v) : null", script)
         self.assertNotIn("reverse: true", script)
         self.assertNotIn("stepSize: 1", script)

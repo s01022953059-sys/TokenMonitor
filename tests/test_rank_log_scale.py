@@ -59,8 +59,9 @@ class RankLogScaleContractTest(unittest.TestCase):
         self.assertNotIn("max: 10,", self.script)
 
     def test_dataset_data_uses_token_values_not_ranks(self):
-        """折线 data 必须用真实 token 数（零值保留为 0，不断开），不能是名次数组。"""
-        self.assertIn("tokenValues.map(v => Number(v) || 0)", self.script)
+        """折线 data 必须用真实 token 数（零值用 1 替代避免对数轴断开），不能是名次数组。"""
+        self.assertIn("tokenValues.map(v => {", self.script)
+        self.assertIn("n > 0 ? n : 1", self.script)
         self.assertIn("rankValues: completedRanks[index]", self.script)
         # data 直接等于 completedRanks 的旧写法必须消失
         self.assertNotIn("data: completedRanks[index]", self.script)
