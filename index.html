@@ -3366,6 +3366,9 @@
             '1.4.73': [
                 '柱条改分段刻度：大值区线性让 2.4亿 vs 70M 差距明显，小值区对数仍可见。',
                 'y 轴下限降到 0.1，零用量线不再被底部遮挡。'
+            ],
+            '1.4.74': [
+                '柱条改线性+对数补丁：大值纯线性让 2.4亿 vs 70M 差距拉大到 71%。'
             ]
         });
 
@@ -4312,8 +4315,9 @@
                     '</div>';
             }).join('');
 
-            // 今日排行榜柱条用分段刻度：≥1M 线性(50%-100%)，<1M 对数(0%-50%)
+            // 今日排行榜柱条用线性+对数补丁：≥1M 纯线性(15-100%)，<1M 对数(0-15%)
             const SEGMENT_THRESHOLD = 1000000;
+            const SMALL_MAX = 15;
             const segLog = Math.log10(SEGMENT_THRESHOLD);
             const maxLeaderTokens = leaderboard.reduce((m, u) => Math.max(m, Number(u.tokens) || 0), 0);
             const leaderboardRows = leaderboard.map((u, i) => {
@@ -4323,7 +4327,7 @@
                     '<div style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-muted);">No.' + (i + 1) + '</div>' +
                     '<div' + identityTitle + ' style="font-family:JetBrains Mono,monospace;font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(publicName) + (u.is_me ? ' <span style="color:var(--neon-green);">（你）</span>' : '') + '</div>' +
                     '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(u.tool || '未识别') + '</div>' +
-                    '<div title="今日 Token 分段刻度（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + (function(){ const t=Number(u.tokens); if(t>=SEGMENT_THRESHOLD){return 50+(t-SEGMENT_THRESHOLD)/Math.max(1,maxLeaderTokens-SEGMENT_THRESHOLD)*50} return Math.log10(Math.max(1,t))/segLog*50})().toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
+                    '<div title="今日 Token 线性+对数补丁（量级差距）" style="height:6px;background:var(--chart-grid);border-radius:3px;overflow:hidden;">' + (Number(u.tokens) > 0 ? '<div style="height:100%;width:' + (function(){ const t=Number(u.tokens); if(t>=SEGMENT_THRESHOLD){return SMALL_MAX+(t-SEGMENT_THRESHOLD)/Math.max(1,maxLeaderTokens-SEGMENT_THRESHOLD)*(100-SMALL_MAX)} return Math.log10(Math.max(1,t))/segLog*SMALL_MAX})().toFixed(2) + '%;background:' + (RANK_LINE_COLORS[i % RANK_LINE_COLORS.length]) + ';border-radius:3px;"></div>' : '') + '</div>' +
                     '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;text-align:right;">' + formatTokens(u.tokens || 0) + '</div>' +
                     '</div>';
             }).join('');
@@ -4636,9 +4640,10 @@
             meta.textContent = rangeRanking.length + ' 人 · ' + archiveDayCount + ' 个归档日 · 按累计 Token';
             // 单栏纵向排列（不再分两栏），信息更完整、列宽对齐
             container.classList.add('is-single');
-            // 柱条用分段刻度：大值区(≥1M)线性归一化让 2.4亿 vs 70M 差距明显，
-            // 小值区(<1M)对数归一化让小用户仍可见。阈值 1M = log10=6。
+            // 柱条用线性+对数补丁：≥1M 纯线性(15%-100%)让大值差距明显(2.4亿vs70M差71%)，
+            // <1M 对数补丁(0%-15%)让小用户有区分度仍可见。阈值 1M。
             const SEGMENT_THRESHOLD = 1000000;
+            const SMALL_MAX = 15; // 小值区对数补丁占 0-15%
             const maxTotal = rangeRanking.reduce((m, e) => Math.max(m, Number(e.totalTokens) || 0), 0);
             const segLog = Math.log10(SEGMENT_THRESHOLD); // 6
             const rows = rangeRanking.map((entry, rowIndex) => {
@@ -4646,13 +4651,13 @@
                 const color = RANK_LINE_COLORS[(rank - 1) % RANK_LINE_COLORS.length];
                 const name = escapeHtml(entry.name);
                 const total = Number(entry.totalTokens) || 0;
-                // 分段刻度柱条：≥1M 线性(50%-100%)，<1M 对数(0%-50%)，零用量不画柱条
+                // 线性+对数补丁：≥1M 纯线性(15-100%)，<1M 对数(0-15%)，零用量不画柱条
                 let barWidth = 0;
                 if (total > 0) {
                     if (total >= SEGMENT_THRESHOLD) {
-                        barWidth = 50 + (total - SEGMENT_THRESHOLD) / Math.max(1, maxTotal - SEGMENT_THRESHOLD) * 50;
+                        barWidth = SMALL_MAX + (total - SEGMENT_THRESHOLD) / Math.max(1, maxTotal - SEGMENT_THRESHOLD) * (100 - SMALL_MAX);
                     } else {
-                        barWidth = Math.log10(Math.max(1, total)) / segLog * 50;
+                        barWidth = Math.log10(Math.max(1, total)) / segLog * SMALL_MAX;
                     }
                     barWidth = Math.max(0, Math.min(100, barWidth));
                 }

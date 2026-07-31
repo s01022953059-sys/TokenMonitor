@@ -21,14 +21,15 @@ def _load_rank_script():
     )[0]
 
 
-SEGMENT_THRESHOLD = 1_000_000  # 与前端一致：1M 为分段阈值
+SEGMENT_THRESHOLD = 1_000_000  # 与前端一致：1M 为阈值
+SMALL_MAX = 15  # 与前端一致：小值区对数补丁占 0-15%
 
 
 def _segment_bar_width(total_tokens, max_total_tokens):
-    """复刻前端分段刻度柱条宽度。
+    """复刻前端线性+对数补丁柱条宽度。
 
-    ≥1M（大值区）：线性归一化，占 50%-100%——让 2.4亿 vs 70M 差距明显。
-    <1M（小值区）：对数归一化，占 0%-50%——让小用户仍可见。
+    ≥1M（大值区）：纯线性归一化，占 15%-100%——让 2.4亿 vs 70M 差距达 71%。
+    <1M（小值区）：对数补丁，占 0%-15%——让小用户有区分度仍可见。
     零用量返回 0（不画柱条）。
     """
     if total_tokens <= 0:
@@ -36,8 +37,8 @@ def _segment_bar_width(total_tokens, max_total_tokens):
     seg_log = math.log10(SEGMENT_THRESHOLD)  # 6
     if total_tokens >= SEGMENT_THRESHOLD:
         big_span = max(1, max_total_tokens - SEGMENT_THRESHOLD)
-        return 50 + (total_tokens - SEGMENT_THRESHOLD) / big_span * 50
-    return math.log10(max(1, total_tokens)) / seg_log * 50
+        return SMALL_MAX + (total_tokens - SEGMENT_THRESHOLD) / big_span * (100 - SMALL_MAX)
+    return math.log10(max(1, total_tokens)) / seg_log * SMALL_MAX
 
 
 class RankLogScaleContractTest(unittest.TestCase):
@@ -96,11 +97,12 @@ class RankLogScaleContractTest(unittest.TestCase):
         """区间总榜必须有柱条 DOM 与 CSS，且用分段刻度（大值线性+小值对数）。"""
         self.assertIn("rank-range-bar", self.html)
         self.assertIn("rank-range-bar-fill", self.html)
-        # 分段刻度：SEGMENT_THRESHOLD 阈值 + 大值线性 + 小值对数
+        # 线性+对数补丁：SEGMENT_THRESHOLD 阈值 + 大值纯线性(15-100%) + 小值对数(0-15%)
         self.assertIn("SEGMENT_THRESHOLD = 1000000", self.script)
+        self.assertIn("SMALL_MAX = 15", self.script)
         self.assertIn("total >= SEGMENT_THRESHOLD", self.script)
-        self.assertIn("50 + (total - SEGMENT_THRESHOLD)", self.script)
-        self.assertIn("Math.log10(Math.max(1, total)) / segLog * 50", self.script)
+        self.assertIn("SMALL_MAX + (total - SEGMENT_THRESHOLD)", self.script)
+        self.assertIn("Math.log10(Math.max(1, total)) / segLog * SMALL_MAX", self.script)
         # 旧的纯对数动态上下界公式必须消失
         self.assertNotIn("loLog", self.script)
         self.assertNotIn("hiLog", self.script)
@@ -137,25 +139,26 @@ class RankLogScaleMathTest(unittest.TestCase):
     """
 
     def test_big_value_gap_is_obvious(self):
-        """2.4亿 vs 70M 都在大值区(≥1M)用线性，差距必须明显（>30%）。"""
+        """2.4亿 vs 70M 都在大值区(≥1M)用纯线性，差距必须明显（>60%）。"""
         mx = 240_000_000  # 2.4亿为榜首
         w_big = _segment_bar_width(240_000_000, mx)
         w_70m = _segment_bar_width(70_000_000, mx)
-        # 2.4亿=100%, 70M=50+(70M-1M)/(2.4亿-1M)*50≈64%
+        # 2.4亿=100%, 70M=15+(70M-1M)/(2.4亿-1M)*85≈39.6%
         self.assertAlmostEqual(w_big, 100.0, places=1)
-        self.assertGreater(w_70m, 60)
-        self.assertLess(w_70m, 70)
-        # 差距 >30%，比纯对数（6-7%）明显得多
-        self.assertGreater(w_big - w_70m, 30)
+        self.assertGreater(w_70m, 35)
+        self.assertLess(w_70m, 45)
+        # 差距 >60%，比纯对数（6-7%）和旧分段（36%）都明显得多
+        self.assertGreater(w_big - w_70m, 60)
 
     def test_small_value_still_visible(self):
-        """小用户(<1M)用对数，仍可见（>0%），不被压成 0。"""
+        """小用户(<1M)用对数补丁(0-15%)，仍可见且有区分度。"""
         mx = 240_000_000
         w_100k = _segment_bar_width(100_000, mx)
         w_10 = _segment_bar_width(10, mx)
-        # 100K: log10(1e5)/6*50≈41.7%, 10: log10(10)/6*50≈8.3%
-        self.assertGreater(w_100k, 40)
-        self.assertGreater(w_10, 5)
+        # 100K: log10(1e5)/6*15≈12.5%, 10: log10(10)/6*15≈2.5%
+        self.assertGreater(w_100k, 10)
+        self.assertLess(w_100k, 15)
+        self.assertGreater(w_10, 1)
         self.assertLess(w_10, w_100k)
 
     def test_magnitude_gap_large_between_yi_and_m(self):
@@ -164,9 +167,9 @@ class RankLogScaleMathTest(unittest.TestCase):
         w_yi = _segment_bar_width(100_000_000, mx)
         w_1m = _segment_bar_width(1_000_000, mx)
         w_half = _segment_bar_width(500_000, mx)
-        # 1亿=100%, 1M=50%（分界点）, 0.5M≈47.7%
+        # 1亿=100%, 1M=15%（分界点）, 0.5M≈14.3%
         self.assertAlmostEqual(w_yi, 100.0, places=1)
-        self.assertAlmostEqual(w_1m, 50.0, places=1)
+        self.assertAlmostEqual(w_1m, 15.0, places=1)
         self.assertGreater(w_yi - w_1m, w_1m - w_half)
 
     def test_zero_tokens_no_bar(self):
@@ -179,9 +182,9 @@ class RankLogScaleMathTest(unittest.TestCase):
         w_dominant = _segment_bar_width(300_000_000, mx)
         w_tiny = _segment_bar_width(10, mx)
         self.assertAlmostEqual(w_dominant, 100.0, places=1)
-        # log10(10)/6*50 ≈ 8.3%
-        self.assertGreater(w_tiny, 5)
-        self.assertGreater(w_dominant - w_tiny, 90)
+        # log10(10)/6*15 ≈ 2.5%
+        self.assertGreater(w_tiny, 1)
+        self.assertGreater(w_dominant - w_tiny, 95)
 
 
 class CommunityLeaderboardLogBarTest(unittest.TestCase):
@@ -197,18 +200,19 @@ class CommunityLeaderboardLogBarTest(unittest.TestCase):
         self.assertEqual(self.html, self.windows_html)
 
     def test_leaderboard_has_segment_bar(self):
-        """今日排行榜每行必须有柱条，且用分段刻度（大值线性+小值对数）。"""
-        # 分段刻度：SEGMENT_THRESHOLD + 大值线性 + 小值对数
+        """今日排行榜每行必须有柱条，且用线性+对数补丁（大值线性+小值对数）。"""
+        # 线性+对数补丁：SEGMENT_THRESHOLD + SMALL_MAX + 大值线性 + 小值对数
         self.assertIn("SEGMENT_THRESHOLD = 1000000", self.html)
+        self.assertIn("SMALL_MAX = 15", self.html)
         self.assertIn("t>=SEGMENT_THRESHOLD", self.html)
-        self.assertIn("50+(t-SEGMENT_THRESHOLD)", self.html)
-        self.assertIn("Math.log10(Math.max(1,t))/segLog*50", self.html)
+        self.assertIn("SMALL_MAX+(t-SEGMENT_THRESHOLD)", self.html)
+        self.assertIn("Math.log10(Math.max(1,t))/segLog*SMALL_MAX", self.html)
         # 旧的纯对数动态上下界公式必须消失
         self.assertNotIn("loLeaderLog", self.html)
         self.assertNotIn("hiLeaderLog", self.html)
         self.assertNotIn("leaderLogSpan", self.html)
         # 柱条容器与填充
-        self.assertIn("今日 Token 分段刻度（量级差距）", self.html)
+        self.assertIn("今日 Token 线性+对数补丁（量级差距）", self.html)
 
     def test_leaderboard_grid_has_bar_column(self):
         """排行榜 grid 必须从 4 列扩为 5 列（新增柱条列）。"""
