@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.65**。
+当前发布版本：**v1.4.66**。
 
 ## 功能
 
@@ -82,6 +82,7 @@
 - 新用户首次打开社区排行时，如果后台首次上报尚未完成，页面会立即登记并自动刷新个人排名
 - 展示今日社区总用量、去重后的总用户、今日活跃用户、个人今日用量、完整个人排名和 Top 10；同步过程完全后台化，页面不提供手动上报入口，仅保留“刷新”按钮
 - 排名趋势支持本周、本月、本季度和本年度四个自然周期（统一按北京时间计算），并按日期绘制 1–10 名连续折线；所选周期累计 TOP10 当天未使用时按 0 Token 记录并保留排名点，多个 0 按该日期之前的累计 Token、历史活跃天数稳定排序，折线不会中断。所选周期内出现过的全部人员都会参与累计统计，图表旁同步展示区间累计总榜、累计 Token 和有记录天数，窄屏自动移到图表下方，最终只展示累计用量最高的 TOP10
+- 排名趋势折线 y 轴采用对数 Token 刻度（K/M/亿分档），区间总榜与社区今日 Top 10 每行附对数柱条；1 亿与 1M 的量级差距被正确放大，1M 与 0.5M 的微弱差距不再被线性尺度误读，零用量天折线断开且不画柱条
 - 排名趋势中的折线标签和区间总榜按匿名 ID 使用最新公开昵称；用户改名后刷新社区榜即可同步更新，不改写历史归档中的 Token 与排名
 - 排名趋势在 macOS/Python 与 Windows/Go 均使用最多 8 路并发读取归档，并保留 5 分钟后端缓存；前端会预取并优先显示最近一次结果，重复打开无需等待。右侧姓名统一按最近一个有有效排名的归档日展示，并在状态栏标明日期；画布顶部和右侧保留安全边距，避免第 1 名折线及长昵称被边缘裁切
 - 社区排行采用固定标题栏与内部内容滚动区；Windows 上滚动条收在内容区域内并使用低对比细轨道，不再贴在整张弹窗外缘
@@ -249,7 +250,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.65/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.66/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -271,7 +272,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.65/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.66/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -316,15 +317,15 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 
 ```bash
 # 1. bump 版本号 (两处)
-#    Info.plist: <string>1.4.65</string>
-#    go_build/main.go: var appVersion = "1.4.65"
+#    Info.plist: <string>1.4.66</string>
+#    go_build/main.go: var appVersion = "1.4.66"
 
 # 2. git 提交 + 打 tag
 git add -A
-git commit -m "release: v1.4.65"
-git tag v1.4.65
+git commit -m "release: v1.4.66"
+git tag v1.4.66
 git push origin main
-git push origin v1.4.65
+git push origin v1.4.66
 
 # 3. 一键发布
 bash release_all.sh
@@ -393,10 +394,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.65](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.65)
+最新版本：[v1.4.66](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.66)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.65/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.65/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.66/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.66/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -414,6 +415,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.66
+- 排名趋势折线 y 轴改为对数 Token 刻度（K/M/亿分档），正确体现 1 亿与 1M 的量级差距；区间总榜与社区今日 Top 10 每行新增对数柱条，零用量天折线断开且不画柱条。
 
 ### v1.4.65
 - 排名趋势范围改为“本周 / 本月 / 本季度 / 本年度”，按北京时间的自然周、自然月、自然季度和自然年度读取归档，默认展示本周。
