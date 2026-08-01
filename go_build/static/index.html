@@ -458,35 +458,33 @@
         }
 
         .legend-detail-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 6px 16px 6px 36px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .legend-detail-line {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             align-items: center;
             gap: 12px;
-            min-height: 30px;
-            padding: 5px 16px 5px 36px;
-            color: var(--text-muted);
-            font-size: 11px;
+            min-height: 22px;
         }
 
         .legend-detail-row + .legend-detail-row {
             border-top: 1px solid var(--border-subtle);
         }
 
-        /* 二级菜单 summary 行: 调用次数 / 缓存命中率 / 平均上下文 等聚合指标
-           只在展开后显示, 视觉上与子项明细区分, 不抢子项主体 */
-        .legend-detail-summary {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 16px 6px 36px;
-            color: var(--text-muted);
-            font-size: 11px;
+        /* 二级菜单每个子项自己的指标行: 调用次数 / 缓存命中率 / 平均上下文长度
+           与子项主体区分, 不抢主体视觉 */
+        .legend-detail-metrics {
             font-family: 'JetBrains Mono', monospace;
-            border-bottom: 1px solid var(--border-subtle);
-            background: rgba(255, 255, 255, 0.02);
-        }
-        .legend-detail-summary + .legend-detail-row {
-            border-top: none;
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.3;
         }
 
         .legend-detail-name {
@@ -2699,7 +2697,7 @@
 
         function renderExpandableLegendItem(container, options) {
             const {
-                key, label, value, percent, color, title = '', children = [], metrics = ''
+                key, label, value, percent, color, title = '', children = []
             } = options;
             const group = document.createElement('div');
             group.className = 'legend-group';
@@ -2735,20 +2733,21 @@
             details.id = detailsId;
             details.className = 'legend-details';
             details.hidden = !expanded;
-            // 二级菜单 summary: 调用次数 / 缓存命中率 / 平均上下文 只在展开后显示
-            if (metrics) {
-                const summary = document.createElement('div');
-                summary.className = 'legend-detail-summary';
-                summary.innerHTML = `<span>${escapeHtml(metrics)}</span>`;
-                details.appendChild(summary);
-            }
-            children.forEach(([childName, childValue]) => {
+            // 每个子项独立显示自己的指标 (调用次数 / 缓存命中率 / 平均上下文长度),
+            // 而不是给整组算一个汇总行
+            children.forEach((child) => {
+                const childName = child[0];
+                const childValue = child[1] || 0;
+                const childMetrics = child[2] || '';
                 const childPercent = value > 0 ? ((childValue / value) * 100).toFixed(1) : '0.0';
                 const row = document.createElement('div');
                 row.className = 'legend-detail-row';
                 row.innerHTML = `
-                    <span class="legend-detail-name">${escapeHtml(childName)}</span>
-                    <span class="legend-detail-value">${formatTokens(childValue)} (${childPercent}%)</span>
+                    <div class="legend-detail-line">
+                        <span class="legend-detail-name">${escapeHtml(childName)}</span>
+                        <span class="legend-detail-value">${formatTokens(childValue)} (${childPercent}%)</span>
+                    </div>
+                    ${childMetrics ? `<div class="legend-detail-metrics">${escapeHtml(childMetrics)}</div>` : ''}
                 `;
                 details.appendChild(row);
             });
@@ -2839,7 +2838,19 @@
                     const toolVal = toolMajor[tool];
                     const percent = data.summary.total_tokens > 0 ? ((toolVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = toolColorArr[idx];
-                    const toolReq = ((data.by_tool || {})[tool] || {}).requests || 0;
+
+                    // 工具行展开后, 子项是模型: 每个子项显示自己的 "命中% · 上下文K"
+                    const tmi = ((data.by_tool_model_input || {})[tool]) || {};
+                    const tmc = ((data.by_tool_model_cached || {})[tool]) || {};
+                    const tmr = ((data.by_tool_model_requests || {})[tool]) || {};
+                    const childrenWithMetrics = sortedUsageEntries(toolModelUsage[tool]).map(([childName, childValue]) => {
+                        const cIn = tmi[childName] || 0;
+                        const cCh = tmc[childName] || 0;
+                        const cReq = tmr[childName] || 0;
+                        const hitRate = cIn > 0 ? ((cCh / cIn) * 100).toFixed(1) : '0.0';
+                        const avgCtx = cReq > 0 ? Math.round(cIn / cReq) : 0;
+                        return [childName, childValue, `命中 ${hitRate}% · 上下文 ${formatTokens(avgCtx)}`];
+                    });
 
                     renderExpandableLegendItem(toolLegendContainer, {
                         key: `tool-${tool}`,
@@ -2848,8 +2859,7 @@
                         percent,
                         color,
                         title: '展开查看该 Agent 使用的模型',
-                        metrics: `调用 ${toolReq.toLocaleString('zh-CN')} 次`,
-                        children: sortedUsageEntries(toolModelUsage[tool])
+                        children: childrenWithMetrics
                     });
                 });
 
@@ -2910,14 +2920,14 @@
                     const modelVal = modelMajor[model];
                     const percent = data.summary.total_tokens > 0 ? ((modelVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = modelColorArr[idx];
-
-                    // 模型维度二级指标: 缓存命中率 + 平均上下文长度(=平均每次请求 input token 数)
-                    const modelInput = (data.by_model_input || {})[model] || 0;
-                    const modelCached = (data.by_model_cached || {})[model] || 0;
                     const modelReq = modelMajorRequests[model] || 0;
-                    const hitRate = modelInput > 0 ? ((modelCached / modelInput) * 100).toFixed(1) : '0.0';
-                    const avgContext = modelReq > 0 ? Math.round(modelInput / modelReq) : 0;
-                    const modelMetrics = `命中 ${hitRate}% · 上下文 ${formatTokens(avgContext)}`;
+
+                    // 模型行展开后, 子项是工具: 每个子项显示自己的 "调用 N 次"
+                    const byToolModelReq = data.by_tool_model_requests || {};
+                    const childrenWithMetrics = sortedUsageEntries(modelAgentUsage[model]).map(([childName, childValue]) => {
+                        const childReq = (byToolModelReq[childName] || {})[model] || 0;
+                        return [childName, childValue, `调用 ${childReq.toLocaleString('zh-CN')} 次`];
+                    });
 
                     renderExpandableLegendItem(modelLegendContainer, {
                         key: `model-${model}`,
@@ -2926,8 +2936,7 @@
                         percent,
                         color,
                         title: modelReq + ' 次 · 展开查看使用该模型的 Agent',
-                        metrics: modelMetrics,
-                        children: sortedUsageEntries(modelAgentUsage[model])
+                        children: childrenWithMetrics
                     });
                 });
 
@@ -3435,6 +3444,9 @@
             ],
             '1.4.84': [
                 '首页图例二级菜单汇总行调整：调用次数 / 缓存命中率 / 平均上下文只在该行展开后才显示，第一级菜单恢复紧凑布局。'
+            ],
+            '1.4.85': [
+                '首页图例二级菜单指标改为每个子项独立显示：工具行展开后每个模型显示自己的"命中% · 上下文K"，模型行展开后每个工具显示自己的"调用N次"。'
             ]
         });
 

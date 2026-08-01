@@ -172,6 +172,9 @@ def _empty_usage_snapshot():
         "by_model_input": {},
         "by_model_cached": {},
         "by_tool_model": {},
+        "by_tool_model_input": {},
+        "by_tool_model_cached": {},
+        "by_tool_model_requests": {},
         "recent_events": [],
         "cache_state": "warming",
     }
@@ -245,6 +248,10 @@ def get_cached_usage():
         # 兼容旧缓存: 补全新增的每模型 input/cached 与每工具 requests 字段
         result.setdefault("by_model_input", {})
         result.setdefault("by_model_cached", {})
+        # v1.4.85 新增工具×模型交叉矩阵, 给二级菜单每个子项算指标
+        result.setdefault("by_tool_model_input", {})
+        result.setdefault("by_tool_model_cached", {})
+        result.setdefault("by_tool_model_requests", {})
         if isinstance(result.get("by_tool"), dict):
             for _tool_stats in result["by_tool"].values():
                 if isinstance(_tool_stats, dict):

@@ -98,6 +98,41 @@ class UsageAggregationTests(unittest.TestCase):
         self.assertEqual(result["by_model_cached"], {})
         self.assertEqual(result["by_model_requests"], {})
 
+    def test_by_tool_model_cross_matrix_aggregated(self):
+        """v1.4.85: 工具×模型 交叉矩阵, 给二级菜单每个子项算指标。"""
+        logs = [
+            _log("Codex", "gpt-5", 100, 80, 40, ts=1, sess="a"),
+            _log("Codex", "gpt-5", 200, 160, 120, ts=2, sess="b"),
+            _log("Codex", "glm-5.2", 50, 40, 20, ts=3, sess="c"),
+            _log("Claude", "gpt-5", 30, 24, 0, ts=4, sess="d"),
+        ]
+        result = self._usage_with_logs(logs)
+
+        # Codex + gpt-5: 2 条请求, input 80+160=240, cached 40+120=160
+        self.assertEqual(result["by_tool_model_requests"]["Codex"]["gpt-5"], 2)
+        self.assertEqual(result["by_tool_model_input"]["Codex"]["gpt-5"], 240)
+        self.assertEqual(result["by_tool_model_cached"]["Codex"]["gpt-5"], 160)
+        # Codex + glm-5.2: 1 条, input 40, cached 20
+        self.assertEqual(result["by_tool_model_requests"]["Codex"]["glm-5.2"], 1)
+        self.assertEqual(result["by_tool_model_input"]["Codex"]["glm-5.2"], 40)
+        self.assertEqual(result["by_tool_model_cached"]["Codex"]["glm-5.2"], 20)
+        # Claude + gpt-5: 1 条
+        self.assertEqual(result["by_tool_model_requests"]["Claude"]["gpt-5"], 1)
+
+    def test_by_tool_model_matrix_keys_cover_by_tool_x_by_model(self):
+        """交叉矩阵的 tool 集合 ⊆ by_tool, model 集合 ⊆ by_model。"""
+        logs = [
+            _log("ZCode", "glm-5.2", 10, 8, 4, ts=1, sess="a"),
+            _log("Hermes", "kimi-k2", 20, 16, 8, ts=2, sess="b"),
+        ]
+        result = self._usage_with_logs(logs)
+
+        tmi = result["by_tool_model_input"]
+        self.assertEqual(set(tmi.keys()), set(result["by_tool"].keys()))
+        for tool, model_map in tmi.items():
+            self.assertTrue(set(model_map.keys()).issubset(set(result["by_model"].keys())),
+                            f"tool={tool} 的 model 子集越界")
+
 
 if __name__ == "__main__":
     unittest.main()

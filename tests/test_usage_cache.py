@@ -30,6 +30,9 @@ def usage_snapshot(total=123):
         "by_model_input": {"test": total},
         "by_model_cached": {"test": 0},
         "by_tool_model": {"Codex": {"test": total}},
+        "by_tool_model_input": {"Codex": {"test": total}},
+        "by_tool_model_cached": {"Codex": {"test": 0}},
+        "by_tool_model_requests": {"Codex": {"test": 1}},
         "recent_events": [],
     }
 

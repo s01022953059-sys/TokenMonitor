@@ -982,6 +982,10 @@ def get_today_usage():
     # 每模型的 input/cached 累计, 供前端算"缓存命中率"与"平均上下文长度"
     by_model_input = {}
     by_model_cached = {}
+    # 工具×模型 交叉的 input/cached/requests, 供二级菜单给每个子项算指标
+    by_tool_model_input = {}
+    by_tool_model_cached = {}
+    by_tool_model_requests = {}
 
     for log in all_logs:
         t_tokens = log["total_tokens"]
@@ -1015,6 +1019,13 @@ def get_today_usage():
         # 工具与模型交叉统计，供首页二级展开双向复用。
         tool_models = by_tool_model.setdefault(tool, {})
         tool_models[model] = tool_models.get(model, 0) + t_tokens
+        # 同上, input/cached/requests 交叉累计, 给二级菜单每个子项算指标
+        tmi = by_tool_model_input.setdefault(tool, {})
+        tmi[model] = tmi.get(model, 0) + i_tokens
+        tmc = by_tool_model_cached.setdefault(tool, {})
+        tmc[model] = tmc.get(model, 0) + i_cached
+        tmr = by_tool_model_requests.setdefault(tool, {})
+        tmr[model] = tmr.get(model, 0) + 1
 
     # 获取 DeepSeek 官方实时余额
     ds_balance = get_deepseek_balance()
@@ -1040,6 +1051,9 @@ def get_today_usage():
         "by_model_input": by_model_input,
         "by_model_cached": by_model_cached,
         "by_tool_model": by_tool_model,
+        "by_tool_model_input": by_tool_model_input,
+        "by_tool_model_cached": by_tool_model_cached,
+        "by_tool_model_requests": by_tool_model_requests,
         # 最新 30 条事件日志
         "recent_events": all_logs[-30:]
     }
