@@ -493,9 +493,23 @@
             font-weight: 600;
         }
 
-        .tool-info > span:last-child {
+        .tool-info-text {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 0;
+        }
+        .tool-info .tool-label {
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 100%;
+        }
+        .tool-metrics {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-muted);
+            line-height: 1.2;
             white-space: nowrap;
         }
 
@@ -2682,7 +2696,7 @@
 
         function renderExpandableLegendItem(container, options) {
             const {
-                key, label, value, percent, color, title = '', children = []
+                key, label, value, percent, color, title = '', children = [], metrics = ''
             } = options;
             const group = document.createElement('div');
             group.className = 'legend-group';
@@ -2704,7 +2718,10 @@
             button.innerHTML = `
                 <span class="tool-info">
                     <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
-                    <span>${escapeHtml(label)}</span>
+                    <span class="tool-info-text">
+                        <span class="tool-label">${escapeHtml(label)}</span>
+                        ${metrics ? `<span class="tool-metrics">${escapeHtml(metrics)}</span>` : ''}
+                    </span>
                 </span>
                 <span class="legend-item-trailing">
                     <span class="tool-value" style="color: ${color};">
@@ -2815,6 +2832,7 @@
                     const toolVal = toolMajor[tool];
                     const percent = data.summary.total_tokens > 0 ? ((toolVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = toolColorArr[idx];
+                    const toolReq = ((data.by_tool || {})[tool] || {}).requests || 0;
 
                     renderExpandableLegendItem(toolLegendContainer, {
                         key: `tool-${tool}`,
@@ -2823,6 +2841,7 @@
                         percent,
                         color,
                         title: '展开查看该 Agent 使用的模型',
+                        metrics: `调用 ${toolReq.toLocaleString('zh-CN')} 次`,
                         children: sortedUsageEntries(toolModelUsage[tool])
                     });
                 });
@@ -2885,13 +2904,22 @@
                     const percent = data.summary.total_tokens > 0 ? ((modelVal / data.summary.total_tokens) * 100).toFixed(1) : '0.0';
                     const color = modelColorArr[idx];
 
+                    // 模型维度二级指标: 缓存命中率 + 平均上下文长度(=平均每次请求 input token 数)
+                    const modelInput = (data.by_model_input || {})[model] || 0;
+                    const modelCached = (data.by_model_cached || {})[model] || 0;
+                    const modelReq = modelMajorRequests[model] || 0;
+                    const hitRate = modelInput > 0 ? ((modelCached / modelInput) * 100).toFixed(1) : '0.0';
+                    const avgContext = modelReq > 0 ? Math.round(modelInput / modelReq) : 0;
+                    const modelMetrics = `命中 ${hitRate}% · 上下文 ${formatTokens(avgContext)}`;
+
                     renderExpandableLegendItem(modelLegendContainer, {
                         key: `model-${model}`,
                         label: model,
                         value: modelVal,
                         percent,
                         color,
-                        title: (modelMajorRequests[model] || 0) + ' 次 · 展开查看使用该模型的 Agent',
+                        title: modelReq + ' 次 · 展开查看使用该模型的 Agent',
+                        metrics: modelMetrics,
                         children: sortedUsageEntries(modelAgentUsage[model])
                     });
                 });
@@ -3390,6 +3418,10 @@
             ],
             '1.4.81': [
                 '修复自定义刻度 tick 对象渲染异常。'
+            ],
+            '1.4.82': [
+                '修复月初无归档时本月视图无数据：今日实时补全改用真实今天。',
+                '首页图例二级菜单新增指标：工具行标注调用次数，模型行标注缓存命中率与平均上下文长度。'
             ]
         });
 

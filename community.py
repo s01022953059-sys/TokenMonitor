@@ -762,12 +762,19 @@ def get_community_history(days=30, period="", today=None):
     # 归档每天 23:55 才生成，今天可能尚无归档；用实时排行榜补一个今天的 snapshot，
     # 让排名趋势包含当天实时数据（鹏帅要求：今天没汇总就取当日实时数据）。
     # 优先用测试/调用方传入的 today；否则按北京时间取当日。
-    if range_end is not None:
-        today_str = range_end.isoformat()
+    # 关键修复：不能用 range_end——自然周期结束日不等于今天，会让补全错过今天。
+    if today is not None:
+        # 调用方传了 today 参数（测试或周期计算用）
+        actual_today = today
     else:
         beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
-        today_str = datetime.datetime.now(beijing_tz).date().isoformat()
-    if today_str not in set(result.get("dates") or []):
+        actual_today = datetime.datetime.now(beijing_tz).date()
+    today_str = actual_today.isoformat()
+    if range_start is not None and range_end is not None:
+        today_in_period = range_start <= actual_today <= range_end
+    else:
+        today_in_period = True
+    if today_in_period and today_str not in set(result.get("dates") or []):
         try:
             stats = get_community_stats(force_refresh=False)
             today_leaderboard = stats.get("leaderboard") or []

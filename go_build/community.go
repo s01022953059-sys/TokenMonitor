@@ -1105,6 +1105,9 @@ func getCommunityHistory(days int, periods ...string) map[string]interface{} {
 	// 归档每天 23:55 才生成，今天可能尚无归档；用实时排行榜补一个今天的 snapshot。
 	beijingTZ := time.FixedZone("Asia/Shanghai", 8*60*60)
 	todayStr := time.Now().In(beijingTZ).Format("2006-01-02")
+	// 只有今天落在所选自然周期内才补全，避免越界
+	todayInPeriod := !hasPeriod ||
+		(todayStr >= rangeStart.Format("2006-01-02") && todayStr <= rangeEnd.Format("2006-01-02"))
 	existingDates := map[string]bool{}
 	if dates, ok := result["dates"].([]interface{}); ok {
 		for _, d := range dates {
@@ -1113,7 +1116,7 @@ func getCommunityHistory(days int, periods ...string) map[string]interface{} {
 			}
 		}
 	}
-	if !existingDates[todayStr] {
+	if todayInPeriod && !existingDates[todayStr] {
 		stats := getCommunityStats(false)
 		if lb, ok := stats["leaderboard"].([]map[string]interface{}); ok && len(lb) > 0 {
 			participants := []communityHistoryEntry{}

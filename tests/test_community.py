@@ -516,6 +516,24 @@ class CommunityTests(unittest.TestCase):
         # 今天已有归档 07-30，dates 里 07-30 只出现一次
         self.assertEqual(result["dates"].count("2026-07-30"), 1)
 
+    def test_history_does_not_append_today_when_outside_period(self):
+        """today 不落在所选自然周期内时，不补全实时数据（避免越界）。"""
+        # today=08-15，但 period=week 范围是 07-27~08-02，08-15 不在范围内
+        files = [{"name": "2026-07-30.json", "download_url": "https://example.test/30"}]
+        archive_snapshot = {"date": "2026-07-30", "participants": [{"id": "User_A", "tokens": 100}]}
+        realtime_leaderboard = [{"id": "User_B", "display_name": "乙", "tokens": 999}]
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", return_value=(archive_snapshot, None)), \
+             mock.patch.object(community, "get_community_stats", return_value={"leaderboard": realtime_leaderboard}):
+            result = community.get_community_history(period="week", today=datetime.date(2026, 8, 15))
+
+        # today=08-15 不在本周范围，dates 里不应出现 08-15
+        self.assertNotIn("2026-08-15", result["dates"])
+        # 8-15 的 User_B（实时榜第一名）不应出现在 series 里（因为没补全）
+        series_ids = [s["id"] for s in result["series"]]
+        self.assertNotIn("User_B", series_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

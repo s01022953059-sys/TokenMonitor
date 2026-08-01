@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.81**。
+当前发布版本：**v1.4.82**。
 
 ## 功能
 
@@ -39,6 +39,7 @@
 - 按排名固定色盘（top1 红 → top2 橙 → top3 黄 → ...）
 - 工具与模型图例统一按今日 Token 用量降序排列；同量时按名称稳定排序，圆环颜色与列表顺序一致
 - 工具与模型图例默认折叠：点击 Agent 可查看其使用的模型及内部占比，点击模型可查看使用它的 Agent 及内部占比；展开状态在首页自动刷新时保持不变
+- 图例二级指标：每个工具行标注「调用次数」，每个模型行标注「缓存命中率」与「平均上下文长度」（= 该模型平均每次请求的输入 Token 数），便于一眼看出各工具/模型的调用强度与缓存效果
 - 工具占比保留所有有实际用量的工具，即使低于 1% 也不会合并到 Other，避免 Claude 等低用量应用被隐藏；模型占比仍按 1% 规则合并
 - 首页使用紧凑双栏数据面板：标题分割线、工具/模型竖向分隔和等高图例行让少量数据也保持完整布局
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
@@ -250,7 +251,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.81/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.82/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -272,7 +273,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.81/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.82/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -317,15 +318,15 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 
 ```bash
 # 1. bump 版本号 (两处)
-#    Info.plist: <string>1.4.81</string>
-#    go_build/main.go: var appVersion = "1.4.81"
+#    Info.plist: <string>1.4.82</string>
+#    go_build/main.go: var appVersion = "1.4.82"
 
 # 2. git 提交 + 打 tag
 git add -A
-git commit -m "release: v1.4.81"
-git tag v1.4.81
+git commit -m "release: v1.4.82"
+git tag v1.4.82
 git push origin main
-git push origin v1.4.81
+git push origin v1.4.82
 
 # 3. 一键发布
 bash release_all.sh
@@ -394,10 +395,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.81](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.81)
+最新版本：[v1.4.82](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.82)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.81/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.81/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.82/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.82/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -415,6 +416,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.82
+- 修复月初无归档时本月视图无数据：今日实时补全改用真实今天而非周期结束日，并加 today_in_period 检查避免越界补全。
 
 ### v1.4.81
 - 修复自定义刻度 tick 对象只设 value 字段导致显示异常：补全 label 字段，让 Chart.js 正确渲染。

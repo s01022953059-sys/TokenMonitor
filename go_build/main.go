@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.4.81"
+var appVersion = "1.4.82"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -106,6 +106,7 @@ type ToolStats struct {
 	TotalTokens  int64 `json:"total_tokens"`
 	InputTokens  int64 `json:"input_tokens"`
 	OutputTokens int64 `json:"output_tokens"`
+	Requests     int   `json:"requests"`
 }
 
 type BalanceInfo struct {
@@ -115,12 +116,14 @@ type BalanceInfo struct {
 }
 
 type UsageResponse struct {
-	Summary         map[string]interface{} `json:"summary"`
-	ByTool          map[string]*ToolStats  `json:"by_tool"`
-	ByModel         map[string]int64       `json:"by_model"`
-	ByModelRequests map[string]int         `json:"by_model_requests"`
+	Summary         map[string]interface{}     `json:"summary"`
+	ByTool          map[string]*ToolStats      `json:"by_tool"`
+	ByModel         map[string]int64           `json:"by_model"`
+	ByModelRequests map[string]int             `json:"by_model_requests"`
+	ByModelInput    map[string]int64           `json:"by_model_input"`
+	ByModelCached   map[string]int64           `json:"by_model_cached"`
 	ByToolModel     map[string]map[string]int64 `json:"by_tool_model"`
-	RecentEvents    []LogEntry             `json:"recent_events"`
+	RecentEvents    []LogEntry                 `json:"recent_events"`
 }
 
 type HistoryResponse struct {
@@ -1234,10 +1237,12 @@ func dedupEvents(events []LogEntry) []LogEntry {
 
 // ───── API: /api/usage (对齐 scanner.py get_today_usage) ─────
 
-func buildUsageBreakdowns(logs []LogEntry) (map[string]*ToolStats, map[string]int64, map[string]int, map[string]map[string]int64) {
+func buildUsageBreakdowns(logs []LogEntry) (map[string]*ToolStats, map[string]int64, map[string]int, map[string]int64, map[string]int64, map[string]map[string]int64) {
 	byTool := map[string]*ToolStats{}
 	byModel := map[string]int64{}
 	byModelRequests := map[string]int{}
+	byModelInput := map[string]int64{}
+	byModelCached := map[string]int64{}
 	byToolModel := map[string]map[string]int64{}
 
 	for _, log := range logs {
@@ -1247,16 +1252,19 @@ func buildUsageBreakdowns(logs []LogEntry) (map[string]*ToolStats, map[string]in
 		byTool[log.Tool].TotalTokens += log.TotalTokens
 		byTool[log.Tool].InputTokens += log.InputTokens
 		byTool[log.Tool].OutputTokens += log.OutputTokens
+		byTool[log.Tool].Requests++
 
 		byModel[log.Model] += log.TotalTokens
 		byModelRequests[log.Model]++
+		byModelInput[log.Model] += log.InputTokens
+		byModelCached[log.Model] += log.InputCached
 		if _, ok := byToolModel[log.Tool]; !ok {
 			byToolModel[log.Tool] = map[string]int64{}
 		}
 		byToolModel[log.Tool][log.Model] += log.TotalTokens
 	}
 
-	return byTool, byModel, byModelRequests, byToolModel
+	return byTool, byModel, byModelRequests, byModelInput, byModelCached, byToolModel
 }
 
 func getTodayUsage() UsageResponse {
@@ -1290,7 +1298,7 @@ func getTodayUsage() UsageResponse {
 		inputCached += log.InputCached
 		inputUncached += log.InputUncached
 	}
-	byTool, byModel, byModelRequests, byToolModel := buildUsageBreakdowns(allLogs)
+	byTool, byModel, byModelRequests, byModelInput, byModelCached, byToolModel := buildUsageBreakdowns(allLogs)
 
 	dsBalance := getCachedBalance()
 
@@ -1316,6 +1324,8 @@ func getTodayUsage() UsageResponse {
 		ByTool:          byTool,
 		ByModel:         byModel,
 		ByModelRequests: byModelRequests,
+		ByModelInput:    byModelInput,
+		ByModelCached:   byModelCached,
 		ByToolModel:     byToolModel,
 		RecentEvents:    recentEvents,
 	}
