@@ -24,9 +24,11 @@ def usage_snapshot(total=123):
             "events_after_dedup": 1,
             "events_before_dedup": 1,
         },
-        "by_tool": {"Codex": {"total_tokens": total}},
+        "by_tool": {"Codex": {"total_tokens": total, "requests": 1}},
         "by_model": {"test": total},
         "by_model_requests": {"test": 1},
+        "by_model_input": {"test": total},
+        "by_model_cached": {"test": 0},
         "by_tool_model": {"Codex": {"test": total}},
         "recent_events": [],
     }
@@ -95,6 +97,27 @@ class UsageCacheTests(unittest.TestCase):
         self.assertEqual(result["by_tool_model"], {})
         self.assertEqual(result["cache_state"], "stale")
         refresh.assert_called_once()
+
+    def test_legacy_cache_without_new_metric_fields_gets_defensive_defaults(self):
+        """v1.4.82 新增 by_model_input/by_model_cached 与每工具 requests。
+        旧缓存缺这些字段时, get_cached_usage 必须补默认值, 不能 KeyError。"""
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "usage.json")
+            legacy = usage_snapshot(321)
+            # 模拟 v1.4.81 旧快照: 没有 by_model_input/by_model_cached, by_tool 没有 requests
+            legacy.pop("by_model_input", None)
+            legacy.pop("by_model_cached", None)
+            legacy["by_tool"]["Codex"] = {"total_tokens": 321}
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({"saved_at": time.time(), "data": legacy}, stream)
+            with mock.patch.object(server, "USAGE_CACHE_PATH", path), mock.patch.object(
+                server, "_start_usage_refresh", return_value=True
+            ):
+                result = server.get_cached_usage()
+
+        self.assertEqual(result["by_model_input"], {})
+        self.assertEqual(result["by_model_cached"], {})
+        self.assertEqual(result["by_tool"]["Codex"].get("requests"), 0)
 
     def test_concurrent_refresh_requests_share_one_scan(self):
         entered = threading.Event()

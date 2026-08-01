@@ -169,6 +169,8 @@ def _empty_usage_snapshot():
         "by_tool": {},
         "by_model": {},
         "by_model_requests": {},
+        "by_model_input": {},
+        "by_model_cached": {},
         "by_tool_model": {},
         "recent_events": [],
         "cache_state": "warming",
@@ -240,6 +242,13 @@ def get_cached_usage():
         result = dict(cached["data"])
         schema_outdated = not isinstance(result.get("by_tool_model"), dict)
         result.setdefault("by_tool_model", {})
+        # 兼容旧缓存: 补全新增的每模型 input/cached 与每工具 requests 字段
+        result.setdefault("by_model_input", {})
+        result.setdefault("by_model_cached", {})
+        if isinstance(result.get("by_tool"), dict):
+            for _tool_stats in result["by_tool"].values():
+                if isinstance(_tool_stats, dict):
+                    _tool_stats.setdefault("requests", 0)
         if schema_outdated or time.time() - float(cached.get("saved_at", 0)) > USAGE_CACHE_TTL:
             result["cache_state"] = "stale"
             _start_usage_refresh()

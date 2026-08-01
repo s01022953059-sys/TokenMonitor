@@ -979,6 +979,9 @@ def get_today_usage():
     by_model = {}
     by_model_requests = {}
     by_tool_model = {}
+    # 每模型的 input/cached 累计, 供前端算"缓存命中率"与"平均上下文长度"
+    by_model_input = {}
+    by_model_cached = {}
 
     for log in all_logs:
         t_tokens = log["total_tokens"]
@@ -997,14 +1000,17 @@ def get_today_usage():
 
         # 累加按工具
         if tool not in by_tool:
-            by_tool[tool] = {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0}
+            by_tool[tool] = {"total_tokens": 0, "input_tokens": 0, "output_tokens": 0, "requests": 0}
         by_tool[tool]["total_tokens"] += t_tokens
         by_tool[tool]["input_tokens"] += i_tokens
         by_tool[tool]["output_tokens"] += o_tokens
+        by_tool[tool]["requests"] += 1
 
         # 累加按模型
         by_model[model] = by_model.get(model, 0) + t_tokens
         by_model_requests[model] = by_model_requests.get(model, 0) + 1
+        by_model_input[model] = by_model_input.get(model, 0) + i_tokens
+        by_model_cached[model] = by_model_cached.get(model, 0) + i_cached
 
         # 工具与模型交叉统计，供首页二级展开双向复用。
         tool_models = by_tool_model.setdefault(tool, {})
@@ -1031,6 +1037,8 @@ def get_today_usage():
         "by_tool": by_tool,
         "by_model": by_model,
         "by_model_requests": by_model_requests,
+        "by_model_input": by_model_input,
+        "by_model_cached": by_model_cached,
         "by_tool_model": by_tool_model,
         # 最新 30 条事件日志
         "recent_events": all_logs[-30:]
