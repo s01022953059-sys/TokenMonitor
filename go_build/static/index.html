@@ -472,6 +472,23 @@
             border-top: 1px solid var(--border-subtle);
         }
 
+        /* 二级菜单 summary 行: 调用次数 / 缓存命中率 / 平均上下文 等聚合指标
+           只在展开后显示, 视觉上与子项明细区分, 不抢子项主体 */
+        .legend-detail-summary {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px 6px 36px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            border-bottom: 1px solid var(--border-subtle);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        .legend-detail-summary + .legend-detail-row {
+            border-top: none;
+        }
+
         .legend-detail-name {
             overflow: hidden;
             color: var(--text-main);
@@ -493,23 +510,9 @@
             font-weight: 600;
         }
 
-        .tool-info-text {
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-            min-width: 0;
-        }
-        .tool-info .tool-label {
+        .tool-info > span:last-child {
             overflow: hidden;
             text-overflow: ellipsis;
-            white-space: nowrap;
-            max-width: 100%;
-        }
-        .tool-metrics {
-            font-size: 11px;
-            font-weight: 400;
-            color: var(--text-muted);
-            line-height: 1.2;
             white-space: nowrap;
         }
 
@@ -2718,10 +2721,7 @@
             button.innerHTML = `
                 <span class="tool-info">
                     <span class="tool-dot" style="color: ${color}; background-color: ${color};"></span>
-                    <span class="tool-info-text">
-                        <span class="tool-label">${escapeHtml(label)}</span>
-                        ${metrics ? `<span class="tool-metrics">${escapeHtml(metrics)}</span>` : ''}
-                    </span>
+                    <span>${escapeHtml(label)}</span>
                 </span>
                 <span class="legend-item-trailing">
                     <span class="tool-value" style="color: ${color};">
@@ -2735,6 +2735,13 @@
             details.id = detailsId;
             details.className = 'legend-details';
             details.hidden = !expanded;
+            // 二级菜单 summary: 调用次数 / 缓存命中率 / 平均上下文 只在展开后显示
+            if (metrics) {
+                const summary = document.createElement('div');
+                summary.className = 'legend-detail-summary';
+                summary.innerHTML = `<span>${escapeHtml(metrics)}</span>`;
+                details.appendChild(summary);
+            }
             children.forEach(([childName, childValue]) => {
                 const childPercent = value > 0 ? ((childValue / value) * 100).toFixed(1) : '0.0';
                 const row = document.createElement('div');
@@ -3425,6 +3432,9 @@
             ],
             '1.4.83': [
                 '补齐 macOS 端后端聚合字段，修复首页图例二级菜单指标显示为 NaN。'
+            ],
+            '1.4.84': [
+                '首页图例二级菜单汇总行调整：调用次数 / 缓存命中率 / 平均上下文只在该行展开后才显示，第一级菜单恢复紧凑布局。'
             ]
         });
 
