@@ -160,8 +160,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             }
         }
         let resourceDir = URL(fileURLWithPath: resourcePath)
-        let htmlFile = resourceDir.appendingPathComponent("index.html")
-        webView.loadFileURL(htmlFile, allowingReadAccessTo: resourceDir)
+        // 不再用 loadFileURL 走 file:// 协议: 那会让 WKWebView 完全不经过 Python HTTP
+        // 服务器, 我们发的 Cache-Control: no-store, no-cache, must-revalidate 头
+        // 根本到不了 WebKit, 结果每次更新应用后 WKWebView 都继续渲染磁盘上
+        // 已不存在的旧 HTML (或自己的 NetworkCache), 出现"指标全 0"现象。
+        // 改用 loadRequest 走 http://127.0.0.1:PORT/, 所有响应都带 no-cache 头,
+        // 服务器的 index.html / 静态资源 / API 都能在每次启动时拿到最新版本。
+        if let url = URL(string: apiBaseURL + "/") {
+            var request = URLRequest(url: url)
+            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            webView.load(request)
+        }
 
         // 延迟 1.5 秒再调 checkForUpdates, 给 webView 留时间把 index.html
         // 的 DOMContentLoaded 跑完 (那时 JS 端 __tokenMonitorOnUpdateAvailable

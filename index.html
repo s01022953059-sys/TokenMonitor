@@ -2775,7 +2775,10 @@
 
         async function updateData() {
             try {
-                const response = await fetch(API_BASE + '/api/usage');
+                // cache: 'no-store' 强制绕过 WebKit fetch 层的 HTTP 缓存, 确保
+                // 每次轮询都拿到服务器最新响应, 避免更新应用后 WKWebView 渲染
+                // 旧数据导致指标全 0。
+                const response = await fetch(API_BASE + '/api/usage', { cache: 'no-store' });
                 const data = await response.json();
 
                 if (data.error) {
@@ -3447,6 +3450,9 @@
             ],
             '1.4.85': [
                 '首页图例二级菜单指标改为每个子项独立显示：工具行展开后每个模型显示自己的"命中% · 上下文K"，模型行展开后每个工具显示自己的"调用N次"。'
+            ],
+            '1.4.86': [
+                '修复 macOS 更新后首页图例二级菜单指标全 0：WKWebView 改用 http 协议加载页面 + 前端 fetch 加 no-store, 确保更新后立即看到新指标。'
             ]
         });
 
