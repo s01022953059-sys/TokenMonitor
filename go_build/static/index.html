@@ -4404,8 +4404,8 @@
             return {value, error: ''};
         }
 
-        // ─── 组队功能 ───
-        let _communityGroupTab = 'global'; // 'global' | 'mygroup' | 'grouprank'
+        // ─── 组队功能（极简版）───
+        let _groupRankingExpanded = false;
 
         async function createGroup(name) {
             const resp = await fetch('/api/community/groups/create', {
@@ -4430,136 +4430,97 @@
             return resp.json();
         }
 
-        function renderGroupSection(data) {
-            const myGroupCodes = data.my_group_codes || [];
+        function renderGroupLine(data) {
+            const codes = data.my_group_codes || [];
             const myGroups = data.my_groups || [];
-            let html = '<div class="community-group-section">';
-            if (myGroups.length > 0) {
-                html += '<div class="community-group-view">' +
-                    '<span class="community-group-label">👥 我的组:</span>';
-                myGroups.forEach((g, i) => {
-                    html += '<span class="community-group-name">' + escapeHtml(g.name || g.code) + '</span>' +
-                        '<button class="community-group-btn danger" onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')">退出</button>';
-                });
-                html += '<button class="community-group-btn" onclick="showGroupJoin()">+加入</button>' +
-                    '<button class="community-group-btn" onclick="showGroupCreate()">+创建</button>' +
-                    '</div>';
-            } else {
-                html += '<div class="community-group-view">' +
-                    '<span class="community-group-label">👥 我的组: 未加入</span>' +
-                    '<button class="community-group-btn" onclick="showGroupJoin()">加入组队</button>' +
-                    '<button class="community-group-btn" onclick="showGroupCreate()">创建组队</button>' +
-                    '</div>';
-                html += '<div id="communityGroupEditor" class="community-group-editor">' +
-                    '<input id="communityGroupInput" class="community-group-input" maxlength="16" placeholder="输入组名或组码" autocomplete="off">' +
-                    '<button id="communityGroupConfirmBtn" class="community-group-btn">确认</button>' +
-                    '<button class="community-group-btn" onclick="hideGroupEditor()">取消</button>' +
-                    '<div style="font-size:9px;color:var(--text-muted);grid-column:1/-1;" id="communityGroupFeedback"></div>' +
-                    '</div>';
+            if (!myGroups.length) {
+                return '<span style="font-size:10px;color:var(--text-muted);">👥 </span>' +
+                    '<button class="community-group-btn" onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:1px 6px;">+创建</button>' +
+                    '<button class="community-group-btn" onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:1px 6px;margin-left:4px;">+加入</button>';
+            }
+            return '<span style="font-size:10px;color:var(--text-muted);">👥</span> ' +
+                myGroups.map((g, i) =>
+                    '<span style="font-size:10px;font-weight:600;color:var(--neon-green);margin-right:2px;">' + escapeHtml(g.name || g.code) + '</span>' +
+                    '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="font-size:9px;color:var(--text-muted);cursor:pointer;margin-right:6px;" title="退出">×</span>'
+                ).join('') +
+                '<button class="community-group-btn" onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:1px 6px;">+</button>';
+        }
+
+        function renderGroupRanking(groups) {
+            if (!groups || !groups.length) return '';
+            const expanded = _groupRankingExpanded;
+            let html = '<div style="margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:8px;">' +
+                '<div onclick="_groupRankingExpanded=!_groupRankingExpanded;loadCommunity({preferCache:true});" style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;gap:4px;">' +
+                '🏆 组队排行 ' + (expanded ? '▾' : '▸') + '</div>';
+            if (expanded) {
+                html += '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:6px;"><thead><tr style="border-bottom:1px solid var(--border-subtle);">' +
+                    '<th style="text-align:left;padding:4px 6px;color:var(--text-muted);">#</th>' +
+                    '<th style="text-align:left;padding:4px 6px;color:var(--text-muted);">组名</th>' +
+                    '<th style="text-align:right;padding:4px 6px;color:var(--text-muted);">Token</th>' +
+                    '<th style="text-align:right;padding:4px 6px;color:var(--text-muted);">人数</th>' +
+                    '</tr></thead><tbody>' +
+                    groups.map((g, i) => '<tr style="border-bottom:1px solid var(--border-subtle);">' +
+                        '<td style="padding:4px 6px;font-family:JetBrains Mono,monospace;">' + (i + 1) + '</td>' +
+                        '<td style="padding:4px 6px;font-weight:600;">' + escapeHtml(g.name || g.code) + '</td>' +
+                        '<td style="padding:4px 6px;text-align:right;font-family:JetBrains Mono,monospace;">' + formatTokens(g.total_tokens || 0) + '</td>' +
+                        '<td style="padding:4px 6px;text-align:right;">' + (g.member_count || 0) + '</td>' +
+                        '</tr>').join('') + '</tbody></table>';
             }
             html += '</div>';
             return html;
         }
 
-        function renderGroupTabs() {
-            const tabs = [
-                {key: 'global', label: '全局'},
-                {key: 'mygroup', label: '我的组'},
-                {key: 'grouprank', label: '组队排行'}
-            ];
-            return '<div class="community-group-tabs">' +
-                tabs.map(t => '<button class="community-group-tab' + (_communityGroupTab === t.key ? ' active' : '') +
-                    '" onclick="switchCommunityGroupTab(\'' + t.key + '\')">' + t.label + '</button>').join('') +
-                '</div>';
-        }
-
-        function renderGroupRanking(groups) {
-            if (!groups || !groups.length) return '<div style="text-align:center;padding:20px;color:var(--text-muted);">暂无组队数据</div>';
-            return '<table class="community-group-ranking"><thead><tr>' +
-                '<th>排名</th><th>组名</th><th>总 Token</th><th>人数</th><th>头名</th></tr></thead><tbody>' +
-                groups.map((g, i) => '<tr>' +
-                    '<td style="font-family:JetBrains Mono,monospace;">No.' + (i + 1) + '</td>' +
-                    '<td style="font-weight:700;">' + escapeHtml(g.name || g.code) + '</td>' +
-                    '<td style="font-family:JetBrains Mono,monospace;">' + formatTokens(g.total_tokens || 0) + '</td>' +
-                    '<td>' + (g.member_count || 0) + '人</td>' +
-                    '<td>' + escapeHtml(g.top_member || '-') + '</td>' +
-                    '</tr>').join('') + '</tbody></table>';
-        }
-
-        function renderMyGroupLeaderboard(data) {
-            const myGroupCode = data.my_group_code || '';
-            if (!myGroupCode) return '<div style="text-align:center;padding:20px;color:var(--text-muted);">请先加入或创建组队</div>';
-            const leaderboard = data.leaderboard || [];
-            const myGroupMembers = leaderboard.filter(u => {
-                // We don't have group_code in leaderboard, so we filter by checking if my_group matches
-                return true; // For now, show all - will refine when group_code is in leaderboard entries
-            });
-            if (!myGroupMembers.length) return '<div style="text-align:center;padding:20px;color:var(--text-muted);">组内暂无活跃成员</div>';
-            // Reuse leaderboard rendering
-            return renderLeaderboardGrid(myGroupMembers, data);
-        }
-
-        async function switchCommunityGroupTab(tab) {
-            _communityGroupTab = tab;
-            await loadCommunity({preferCache: true});
-        }
-
-        async function showGroupCreate() {
-            const editor = document.getElementById('communityGroupEditor');
-            const input = document.getElementById('communityGroupInput');
-            const feedback = document.getElementById('communityGroupFeedback');
-            const confirmBtn = document.getElementById('communityGroupConfirmBtn');
-            if (!editor || !input) return;
-            editor.classList.add('active');
-            input.placeholder = '输入组名 (1-16字符)';
-            input.value = '';
-            input.focus();
-            if (feedback) feedback.textContent = '';
-            confirmBtn.onclick = async () => {
-                const name = input.value.trim();
-                if (!name) { feedback.textContent = '组名不能为空'; return; }
-                feedback.textContent = '创建中...';
-                const result = await createGroup(name);
-                if (result.ok) {
-                    feedback.textContent = '✅ 组队创建成功！码: ' + result.code;
-                    setTimeout(() => loadCommunity({forceRefresh: true}), 500);
+        function showGroupDialog(mode) {
+            const html = '<div id="groupDialog" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;">' +
+                '<div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px;padding:20px;min-width:280px;max-width:360px;">' +
+                '<div style="font-size:14px;font-weight:700;margin-bottom:12px;">' + (mode === 'create' ? '创建组队' : '加入组队') + '</div>' +
+                '<input id="groupDialogInput" style="width:100%;padding:8px 12px;font-size:13px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);margin-bottom:8px;"' +
+                ' placeholder="' + (mode === 'create' ? '输入组名（1-16字符）' : '输入5位组码') + '" maxlength="' + (mode === 'create' ? '16' : '5') + '" autocomplete="off">' +
+                '<div id="groupDialogFeedback" style="font-size:11px;color:var(--text-muted);margin-bottom:12px;min-height:16px;"></div>' +
+                '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+                '<button onclick="closeGroupDialog()" style="padding:6px 16px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:transparent;color:var(--text-primary);cursor:pointer;">取消</button>' +
+                '<button id="groupDialogConfirm" style="padding:6px 16px;font-size:12px;border:none;border-radius:6px;background:var(--neon-green);color:#000;font-weight:600;cursor:pointer;">确认</button>' +
+                '</div></div></div>';
+            const overlay = document.createElement('div');
+            overlay.innerHTML = html;
+            document.body.appendChild(overlay.firstElementChild);
+            const input = document.getElementById('groupDialogInput');
+            const confirm = document.getElementById('groupDialogConfirm');
+            const feedback = document.getElementById('groupDialogFeedback');
+            setTimeout(() => input.focus(), 100);
+            confirm.onclick = async () => {
+                const value = input.value.trim();
+                if (mode === 'create') {
+                    if (!value) { feedback.textContent = '组名不能为空'; return; }
+                    feedback.textContent = '创建中...';
+                    const result = await createGroup(value);
+                    if (result.ok) {
+                        feedback.textContent = '✅ 创建成功！码: ' + result.code;
+                        setTimeout(() => { closeGroupDialog(); loadCommunity({forceRefresh: true}); }, 800);
+                    } else {
+                        feedback.textContent = '❌ ' + (result.message || '创建失败');
+                    }
                 } else {
-                    feedback.textContent = '❌ ' + (result.message || '创建失败');
+                    if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
+                    feedback.textContent = '查询中...';
+                    const info = await fetchGroupInfo(value);
+                    if (!info.ok) { feedback.textContent = '❌ 组队不存在'; return; }
+                    feedback.textContent = '加入 ' + info.name + ' ...';
+                    const result = await joinGroup(value);
+                    if (result.ok) {
+                        feedback.textContent = '✅ 已加入！';
+                        setTimeout(() => { closeGroupDialog(); loadCommunity({forceRefresh: true}); }, 500);
+                    } else {
+                        feedback.textContent = '❌ ' + (result.message || '加入失败');
+                    }
                 }
             };
+            input.onkeydown = (e) => { if (e.key === 'Enter') confirm.click(); };
         }
 
-        async function showGroupJoin() {
-            const editor = document.getElementById('communityGroupEditor');
-            const input = document.getElementById('communityGroupInput');
-            const feedback = document.getElementById('communityGroupFeedback');
-            const confirmBtn = document.getElementById('communityGroupConfirmBtn');
-            if (!editor || !input) return;
-            editor.classList.add('active');
-            input.placeholder = '输入5位组码';
-            input.value = '';
-            input.focus();
-            if (feedback) feedback.textContent = '';
-            confirmBtn.onclick = async () => {
-                const code = input.value.trim();
-                if (!/^[0-9]{5}$/.test(code)) { feedback.textContent = '组码为5位数字'; return; }
-                feedback.textContent = '查询中...';
-                const info = await fetchGroupInfo(code);
-                if (!info.ok) { feedback.textContent = '❌ 组队不存在'; return; }
-                feedback.textContent = '加入 ' + info.name + ' ...';
-                const result = await joinGroup(code);
-                if (result.ok) {
-                    feedback.textContent = '✅ 已加入 ' + (info.name || code);
-                    setTimeout(() => loadCommunity({forceRefresh: true}), 500);
-                } else {
-                    feedback.textContent = '❌ ' + (result.message || '加入失败');
-                }
-            };
-        }
-
-        function hideGroupEditor() {
-            const editor = document.getElementById('communityGroupEditor');
-            if (editor) editor.classList.remove('active');
+        function closeGroupDialog() {
+            const d = document.getElementById('groupDialog');
+            if (d) d.remove();
         }
 
         async function leaveGroup(code) {
@@ -4722,13 +4683,13 @@
                         '<button id="communityNameSaveBtn" class="community-icon-btn" title="保存昵称" aria-label="保存昵称">✓</button>' +
                         '<button id="communityNameCancelBtn" class="community-icon-btn" title="取消修改" aria-label="取消修改">×</button>' +
                         '<div class="community-name-meta"><span id="communityNameFeedback">昵称将公开显示</span><span id="communityNameCount">' + Array.from(myDisplayName).length + '/16</span></div>' +
-                    '</div></div>' +
+                    '</div>' +
+                    '<div style="margin-top:4px;">' + renderGroupLine(data) + '</div>' +
+                    '</div>' +
                     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">' +
                         '<span style="font-size:11px;color:' + statusColor + ';">' + escapeHtml(rankMessage) + '</span>' +
                     '</div>' +
                 '</div>' +
-                renderGroupSection(data) +
-                renderGroupTabs() +
                 activityStrip +
                 dataNotice +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">' +
@@ -4752,19 +4713,11 @@
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
                 '</div>' +
-                (_communityGroupTab === 'grouprank'
-                    ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">🏆 组队排行</div>' +
-                      '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;padding:12px;">' +
-                      renderGroupRanking(data.groups) + '</div>'
-                    : _communityGroupTab === 'mygroup'
-                    ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">我的组内排行</div>' +
-                      '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' +
-                      (data.my_groups && data.my_groups.length > 0 ? leaderboardRows : '<div style="text-align:center;padding:20px;color:var(--text-muted);">请先加入或创建组队</div>') + '</div>'
-                    : (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
-                        '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '')
-                ) +
-                (_communityGroupTab === 'global' && Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
+                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
+                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
+                (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
+                renderGroupRanking(data.groups) +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
                     '社区仅展示匿名 ID、Token 数量和工具汇总，不包含对话、模型名称或个人信息。刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。' +
                 '</div>';
