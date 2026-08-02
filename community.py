@@ -58,6 +58,12 @@ HISTORY_CACHE_TTL = 300  # 5 分钟
 LEADERBOARD_LIMIT = 10
 
 
+def _community_today():
+    """返回北京时间今天的日期字符串，保证跨时区客户端看到一致的'今天'。"""
+    beijing_tz = datetime.timezone(datetime.timedelta(hours=8))
+    return datetime.datetime.now(beijing_tz).strftime("%Y-%m-%d")
+
+
 def _ensure_dir():
     os.makedirs(COMMUNITY_DIR, exist_ok=True)
 
@@ -157,13 +163,19 @@ def set_optin(enabled):
 
 
 def _gitcode_api(method, path, data=None, token=None, require_auth=True):
-    """调用 GitCode API"""
+    """调用 GitCode API
+    
+    v1.4.88: GET 请求添加 Cache-Control 头避免 CDN 缓存。
+    """
     if require_auth and not token:
         return {"error": "credential_missing", "body": "本机未配置 GitCode 凭据"}
     url = GITCODE_API + "/contents/" + path
     if method == "GET" and "?" not in path:
         url += "?ref=" + COMMUNITY_BRANCH
     headers = {}
+    if method == "GET":
+        headers["Cache-Control"] = "no-cache"
+        headers["Pragma"] = "no-cache"
     if token:
         headers["Authorization"] = "Bearer " + token
     if data:
@@ -182,8 +194,11 @@ def _gitcode_api(method, path, data=None, token=None, require_auth=True):
 
 
 def _read_remote_json(url, token=None):
-    """读取公开报告；有凭据时附带认证，失败时返回 (None, message)。"""
-    headers = {}
+    """读取公开报告；有凭据时附带认证，失败时返回 (None, message)。
+    
+    v1.4.88: 添加 Cache-Control 头避免 GitCode CDN 返回缓存旧数据。
+    """
+    headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(url, headers=headers)
@@ -204,7 +219,11 @@ def _report_result(ok, status, message, reported_at=None):
 
 
 def _report_fingerprint(report):
-    """生成只描述当日统计内容的稳定指纹，用于识别旧身份迁移副本。"""
+    """生成只描述当日统计内容的稳定指纹，用于识别旧身份迁移副本。
+    
+    注意：此函数仅用于 _dedupe_legacy_identity_reports 的 replaces_id 显式关联验证，
+    不用于跨用户指纹匹配（避免不同用户因统计相同而被误删）。
+    """
     by_tool = report.get("by_tool") if isinstance(report.get("by_tool"), dict) else {}
     tools = tuple(sorted((str(tool), int(tokens or 0)) for tool, tokens in by_tool.items()))
     report_day = str(report.get("report_date") or report.get("updated_at", "")[:10])
@@ -212,26 +231,25 @@ def _report_fingerprint(report):
 
 
 def _dedupe_legacy_identity_reports(reports):
-    """有凭据的新身份与无凭据旧身份内容完全相同时，只保留新身份。"""
+    """移除已被显式替换的旧身份报告（通过 replaces_id 关联）。
+    
+    v1.4.88 修复：移除基于指纹的跨用户匹配逻辑。
+    旧逻辑用 (report_date, today_tokens, by_tool) 做指纹匹配新旧身份，
+    但不同用户可能产生完全相同的统计，导致无辜用户的报告被误删。
+    现在只通过 replaces_id 显式关联来去重，指纹仅用于验证 replaces_id
+    指向的旧报告内容是否与新报告一致（防止恶意替换）。
+    """
     replaced_ids = {
         str(report.get("replaces_id") or "").strip()
         for report in reports
         if str(report.get("auth_hash") or "").strip()
         and str(report.get("replaces_id") or "").strip()
     }
-    authenticated = {
-        _report_fingerprint(report)
-        for report in reports
-        if str(report.get("auth_hash") or "").strip()
-    }
+    # 只移除被显式替换的旧身份，不再按指纹匹配不同用户
     return [
         report
         for report in reports
         if str(report.get("id") or "") not in replaced_ids
-        and (
-            str(report.get("auth_hash") or "").strip()
-            or _report_fingerprint(report) not in authenticated
-        )
     ]
 
 
@@ -334,7 +352,7 @@ def report_community_stats(today_usage):
     # 构建上报数据 (只含数字, 不含隐私信息)
     summary = today_usage.get("summary", {})
     by_tool = today_usage.get("by_tool", {})
-    report_date = str(summary.get("date") or datetime.date.today().isoformat())
+    report_date = str(summary.get("date") or _community_today())
     report = {
         "id": credential["id"],
         "device_secret": credential["device_secret"],
@@ -461,10 +479,21 @@ def get_community_stats(force_refresh=False):
 
     # 聚合
     my_id = get_user_id()
-    today = datetime.date.today().isoformat()
+    today = _community_today()
 
     def report_date(report):
-        return str(report.get("report_date") or report.get("updated_at", "")[:10])
+        """提取报告日期，防御性处理空值。
+        
+        v1.4.88: report_date 和 updated_at 都为空时回退到北京时间今天，
+        避免报告因空日期永久不可见。
+        """
+        date_str = str(report.get("report_date") or "")
+        if date_str:
+            return date_str
+        updated = str(report.get("updated_at") or "")
+        if updated:
+            return updated[:10]
+        return _community_today()
 
     reports_today = [r for r in reports if report_date(r) == today]
     # 自动上报允许新安装用户提交 0 Token 的初始化报告；这类身份属于历史参与者，

@@ -299,6 +299,41 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(result["my_display_name"], "鹏帅")
         self.assertEqual(result["member_names"], {"User_TEST1": "鹏帅"})
 
+    def test_different_users_with_same_fingerprint_are_not_deduplicated(self):
+        """v1.4.88 回归测试：不同用户的统计相同时不应被误删。
+
+        旧版 _dedupe_legacy_identity_reports 用 (report_date, today_tokens, by_tool)
+        做指纹匹配新旧身份，但这会导致两个不同用户恰好统计相同时，未认证一方被误删。
+        修复后只通过 replaces_id 显式关联去重，指纹碰撞不再导致数据丢失。
+        """
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            # 小昆: 无 auth_hash 的旧身份, 统计与 User_X 恰好相同
+            {"id": "User_XIAOKUN", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}},
+            # User_X: 有 auth_hash 的新身份, 统计恰好与小昆相同 (但并非同一个人)
+            {"id": "User_XXXXXX", "auth_hash": "a" * 64, "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}},
+            # 第三个用户，确保基本功能正常
+            {"id": "User_OTHER1", "auth_hash": "b" * 64, "report_date": today, "today_tokens": 100, "by_tool": {"Codex": 100}},
+        ]
+        files = [{"name": f"{report['id']}.json", "download_url": f"https://example.test/{i}"} for i, report in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # 关键断言: 三个用户都应该被计入, 小昆不能因为指纹碰撞被误删
+        self.assertEqual(result["total_users"], 3,
+                         "不同用户即使统计相同也不应被去重")
+        self.assertEqual(result["today_active_users"], 3)
+        self.assertEqual(result["all_reporters"], 3)
+        self.assertEqual(result["total_tokens_today"], 5000 + 5000 + 100)
+        leaderboard_ids = [item["id"] for item in result["leaderboard"]]
+        self.assertIn("User_XIAOKUN", leaderboard_ids,
+                      "小昆的统计不应因指纹碰撞而丢失")
+        self.assertIn("User_XXXXXX", leaderboard_ids)
+        self.assertIn("User_OTHER1", leaderboard_ids)
+
     def test_historical_reporter_remains_in_community_count(self):
         today = datetime.date.today()
         yesterday = (today - datetime.timedelta(days=1)).isoformat()
