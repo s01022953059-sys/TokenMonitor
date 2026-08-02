@@ -29,11 +29,20 @@ cmp -s build/TokenMonitor-Setup.exe build/TokenMonitor.exe
 test "$(stat -f%z build/TokenMonitor-Setup.exe 2>/dev/null || stat -c%s build/TokenMonitor-Setup.exe)" -gt 10000000
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    TMP_DIR=$(mktemp -d /tmp/token-monitor-verify.XXXXXX)
-    trap 'rm -rf "$TMP_DIR"' EXIT
-    echo "[verify] 构建 macOS App"
-    bash build_macos.sh "$TMP_DIR/mac-build"
-    test -x "$TMP_DIR/mac-build/Token Monitor.app/Contents/MacOS/TokenMonitor"
-fi
+	    TMP_DIR=$(mktemp -d /tmp/token-monitor-verify.XXXXXX)
+	    trap 'rm -rf "$TMP_DIR"' EXIT
+	    echo "[verify] 构建 macOS App (universal binary)"
+	    bash build_macos.sh "$TMP_DIR/mac-build"
+	    MAC_BINARY="$TMP_DIR/mac-build/Token Monitor.app/Contents/MacOS/TokenMonitor"
+	    test -x "$MAC_BINARY"
+	    # 验证 universal binary 包含 arm64 + x86_64 两个架构
+	    LIPO_INFO=$(lipo -info "$MAC_BINARY" 2>&1)
+	    echo "[verify] $LIPO_INFO"
+	    if ! echo "$LIPO_INFO" | grep -q "arm64" || ! echo "$LIPO_INFO" | grep -q "x86_64"; then
+	        echo "[verify] ✘ macOS binary 不是 universal binary (缺少架构)" >&2
+	        exit 1
+	    fi
+	    echo "[verify] [✔] universal binary 架构验证通过 (arm64 + x86_64)"
+	fi
 
 echo "[verify] PASS: 全部质量门禁通过 (v$APP_VERSION)"

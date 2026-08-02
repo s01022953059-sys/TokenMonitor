@@ -52,23 +52,56 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# 1. 编译 Swift 入口为可执行
-echo "[build_macos] [*] 编译 app_wrapper.swift ..."
-# swiftc 即使有 error 也 exit 0 (编译器 driver 不传播编译结果),
-# 必须用 `|| exit 1` 主动检测 (v1.3.85 发了 NSStatusBar.system.items 错误代码,
-# swiftc 报 error 但没拦住, 发了个编不过的 .app 出去)
-swiftc \
-    -O \
-    -o "$APP_BUNDLE/Contents/MacOS/TokenMonitor" \
-    "$SOURCE_ROOT/app_wrapper.swift" || {
-        echo "[build_macos] ✘ Swift 编译失败, build 中止 (避免发布编不过的 .app)" >&2
-        exit 1
-    }
-# 检查可执行文件是否真的生成了
-if [[ ! -f "$APP_BUNDLE/Contents/MacOS/TokenMonitor" ]]; then
-    echo "[build_macos] ✘ Swift 编译产物不存在, build 中止" >&2
-    exit 1
-fi
+	# 1. 编译 Swift 入口为 universal binary (arm64 + x86_64)
+	# swiftc 即使有 error 也 exit 0 (编译器 driver 不传播编译结果),
+	# 必须用 `|| exit 1` 主动检测 (v1.3.85 发了 NSStatusBar.system.items 错误代码,
+	# swiftc 报 error 但没拦住, 发了个编不过的 .app 出去)
+	echo "[build_macos] [*] 编译 app_wrapper.swift (arm64) ..."
+	swiftc \
+	    -O \
+	    -target arm64-apple-macos11.0 \
+	    -o "$APP_BUNDLE/Contents/MacOS/TokenMonitor_arm64" \
+	    "$SOURCE_ROOT/app_wrapper.swift" || {
+	        echo "[build_macos] ✘ Swift arm64 编译失败, build 中止 (避免发布编不过的 .app)" >&2
+	        exit 1
+	    }
+	
+	echo "[build_macos] [*] 编译 app_wrapper.swift (x86_64) ..."
+	swiftc \
+	    -O \
+	    -target x86_64-apple-macos11.0 \
+	    -o "$APP_BUNDLE/Contents/MacOS/TokenMonitor_x86_64" \
+	    "$SOURCE_ROOT/app_wrapper.swift" || {
+	        echo "[build_macos] ✘ Swift x86_64 编译失败, build 中止" >&2
+	        exit 1
+	    }
+	
+	# 合并为 universal binary (同时支持 Apple Silicon 和 Intel Mac)
+	echo "[build_macos] [*] lipo -create universal binary (arm64 + x86_64) ..."
+	lipo -create \
+	    "$APP_BUNDLE/Contents/MacOS/TokenMonitor_arm64" \
+	    "$APP_BUNDLE/Contents/MacOS/TokenMonitor_x86_64" \
+	    -output "$APP_BUNDLE/Contents/MacOS/TokenMonitor" || {
+	        echo "[build_macos] ✘ lipo 合并失败, build 中止" >&2
+	        exit 1
+	    }
+	
+	# 清理单架构中间产物
+	rm -f "$APP_BUNDLE/Contents/MacOS/TokenMonitor_arm64" "$APP_BUNDLE/Contents/MacOS/TokenMonitor_x86_64"
+	
+	# 验证 universal binary 确实包含两个架构
+	LIPO_INFO=$(lipo -info "$APP_BUNDLE/Contents/MacOS/TokenMonitor" 2>&1)
+	echo "[build_macos] [✔] $LIPO_INFO"
+	if ! echo "$LIPO_INFO" | grep -q "arm64" || ! echo "$LIPO_INFO" | grep -q "x86_64"; then
+	    echo "[build_macos] ✘ universal binary 缺少架构 (期望 arm64 + x86_64)" >&2
+	    exit 1
+	fi
+	
+	# 检查可执行文件是否真的生成了
+	if [[ ! -f "$APP_BUNDLE/Contents/MacOS/TokenMonitor" ]]; then
+	    echo "[build_macos] ✘ Swift 编译产物不存在, build 中止" >&2
+	    exit 1
+	fi
 
 # 2. 拷贝 Info.plist
 cp "$SOURCE_ROOT/Info.plist" "$APP_BUNDLE/Contents/Info.plist"

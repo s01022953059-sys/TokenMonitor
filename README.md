@@ -291,7 +291,7 @@ curl -L -o TokenMonitor-Setup.exe \
 
 ### 前置条件
 
-- macOS 11+ (Apple Silicon 或 Intel)
+- macOS 11+ (Apple Silicon **和** Intel，构建产出 universal binary)
 - Xcode Command Line Tools (`xcode-select --install`)
 - Python 3.8+ (macOS 版后端)
 - Go 1.21+ (Windows 交叉编译)
@@ -318,13 +318,13 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 
 ```bash
 # 1. bump 版本号 (两处)
-#    Info.plist: <string>1.4.86</string>
-#    go_build/main.go: var appVersion = "1.4.86"
-
-# 2. git 提交 + 打 tag
-git add -A
-git commit -m "release: v1.4.86"
-git tag v1.4.86
+	#    Info.plist: <string>1.4.87</string>
+	#    go_build/main.go: var appVersion = "1.4.87"
+	
+	# 2. git 提交 + 打 tag
+	git add -A
+	git commit -m "release: v1.4.87"
+	git tag v1.4.87
 git push origin main
 git push origin v1.4.86
 
