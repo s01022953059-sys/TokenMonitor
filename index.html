@@ -3559,6 +3559,9 @@
             ],
             '1.5.0': [
                 '新增组队排名：创建组队（5位随机码）、加入组队、组内排行、组队总排行。'
+            ],
+            '1.5.1': [
+                '组队功能升级：支持一人加入多个组，在所有组中同时显示排名。'
             ]
         });
 
@@ -4428,16 +4431,18 @@
         }
 
         function renderGroupSection(data) {
-            const myGroupCode = data.my_group_code || '';
-            const myGroup = data.my_group || null;
-            const isCreator = myGroup && myGroup.code === myGroupCode;
+            const myGroupCodes = data.my_group_codes || [];
+            const myGroups = data.my_groups || [];
             let html = '<div class="community-group-section">';
-            if (myGroup) {
+            if (myGroups.length > 0) {
                 html += '<div class="community-group-view">' +
-                    '<span class="community-group-label">👥 我的组:</span>' +
-                    '<span class="community-group-name">' + escapeHtml(myGroup.name || myGroup.code) + '</span>' +
-                    (isCreator ? '<span class="community-group-code">码 ' + escapeHtml(myGroupCode) + '</span>' : '') +
-                    '<button class="community-group-btn danger" onclick="leaveMyGroup()">退出</button>' +
+                    '<span class="community-group-label">👥 我的组:</span>';
+                myGroups.forEach((g, i) => {
+                    html += '<span class="community-group-name">' + escapeHtml(g.name || g.code) + '</span>' +
+                        '<button class="community-group-btn danger" onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')">退出</button>';
+                });
+                html += '<button class="community-group-btn" onclick="showGroupJoin()">+加入</button>' +
+                    '<button class="community-group-btn" onclick="showGroupCreate()">+创建</button>' +
                     '</div>';
             } else {
                 html += '<div class="community-group-view">' +
@@ -4557,8 +4562,13 @@
             if (editor) editor.classList.remove('active');
         }
 
-        async function leaveMyGroup() {
-            const result = await joinGroup('');
+        async function leaveGroup(code) {
+            const resp = await fetch('/api/community/groups/leave', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: String(code || '').trim()})
+            });
+            const result = await resp.json();
             if (result.ok) {
                 await loadCommunity({forceRefresh: true});
             }
@@ -4749,7 +4759,7 @@
                     : _communityGroupTab === 'mygroup'
                     ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">我的组内排行</div>' +
                       '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' +
-                      (data.my_group ? leaderboardRows : '<div style="text-align:center;padding:20px;color:var(--text-muted);">请先加入或创建组队</div>') + '</div>'
+                      (data.my_groups && data.my_groups.length > 0 ? leaderboardRows : '<div style="text-align:center;padding:20px;color:var(--text-muted);">请先加入或创建组队</div>') + '</div>'
                     : (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
                         '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '')
                 ) +

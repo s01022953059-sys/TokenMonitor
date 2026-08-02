@@ -348,21 +348,45 @@ def _groups_relay_url():
     return COMMUNITY_RELAY_URL.rstrip("/") + "/v1/groups"
 
 
-def get_group_code():
-    """读取本地保存的组码。未加入组时返回空字符串。"""
+def get_group_codes():
+    """读取本地保存的组码列表。未加入任何组时返回空列表。"""
     _ensure_dir()
     try:
         with open(GROUP_CODE_FILE, "r") as f:
-            return f.read().strip()
+            raw = f.read().strip()
+            return [c for c in raw.split(",") if c.strip()] if raw else []
     except OSError:
-        return ""
+        return []
 
 
-def _save_group_code(code):
-    """保存组码到本地。空字符串表示退出组。"""
+def _save_group_codes(codes):
+    """保存组码列表到本地。"""
     _ensure_dir()
     with open(GROUP_CODE_FILE, "w") as f:
-        f.write(code)
+        f.write(",".join(str(c).strip() for c in codes if str(c).strip()))
+
+
+def add_group_code(code):
+    """添加一个组码（不重复）。"""
+    codes = get_group_codes()
+    code = str(code or "").strip()
+    if code and code not in codes:
+        codes.append(code)
+        _save_group_codes(codes)
+        _aggregate_cache["data"] = None
+        _aggregate_cache["ts"] = 0
+    return {"ok": True, "codes": codes}
+
+
+def remove_group_code(code):
+    """移除一个组码。"""
+    codes = get_group_codes()
+    code = str(code or "").strip()
+    codes = [c for c in codes if c != code]
+    _save_group_codes(codes)
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
+    return {"ok": True, "codes": codes}
 
 
 def create_group(name):
@@ -392,7 +416,7 @@ def create_group(name):
         return {"ok": False, "status": "relay_unavailable", "message": f"组队中继暂时不可用：{exc}"}
 
     if result.get("ok"):
-        _save_group_code(result["code"])
+        add_group_code(result["code"])
         _aggregate_cache["data"] = None
         _aggregate_cache["ts"] = 0
     return result
@@ -416,12 +440,8 @@ def get_group_info(code):
 
 
 def join_group(code):
-    """加入组队（保存组码到本地）。code 为空表示退出组。"""
-    code = str(code or "").strip()
-    _save_group_code(code)
-    _aggregate_cache["data"] = None
-    _aggregate_cache["ts"] = 0
-    return {"ok": True, "code": code}
+    """加入组队（添加组码到本地列表）。code 为空无效。"""
+    return add_group_code(code)
 
 
 def report_community_stats(today_usage):
@@ -446,7 +466,7 @@ def report_community_stats(today_usage):
         "today_tokens": summary.get("total_tokens", 0),
         "by_tool": {k: v.get("total_tokens", 0) for k, v in by_tool.items()},
         "version": _read_app_version(),
-        "group_code": get_group_code(),
+        "group_codes": get_group_codes(),
     }
     result = _relay_request(report)
     if result.get("status") == "identity_upgrade_required":
@@ -609,22 +629,28 @@ def get_community_stats(force_refresh=False):
     tool_distribution = {k: round(v / total_tool_tokens * 100, 1) for k, v in tool_totals.items()}
     tool_distribution = dict(sorted(tool_distribution.items(), key=lambda x: -x[1]))
 
-    # 组队统计: 按 group_code 聚合，计算每组的总 token、人数、头名
+    # 组队统计: 用户可能属于多个组，每个组都计入
     group_stats = {}
     for r in active_reports:
-        code = str(r.get("group_code") or "").strip()
-        if not code:
-            continue
-        if code not in group_stats:
-            group_stats[code] = {"code": code, "total_tokens": 0, "member_count": 0, "top_member": ""}
-        group_stats[code]["total_tokens"] += int(r.get("today_tokens") or 0)
-        group_stats[code]["member_count"] += 1
-        display = str(r.get("display_name") or "")
-        if display and not group_stats[code]["top_member"]:
-            group_stats[code]["top_member"] = display
+        codes = r.get("group_codes") or []
+        if isinstance(codes, str):
+            codes = [codes]  # 兼容旧格式（单个字符串）
+        if not isinstance(codes, list):
+            codes = []
+        for code in codes:
+            code = str(code).strip()
+            if not code:
+                continue
+            if code not in group_stats:
+                group_stats[code] = {"code": code, "total_tokens": 0, "member_count": 0, "top_member": ""}
+            group_stats[code]["total_tokens"] += int(r.get("today_tokens") or 0)
+            group_stats[code]["member_count"] += 1
+            display = str(r.get("display_name") or "")
+            if display and not group_stats[code]["top_member"]:
+                group_stats[code]["top_member"] = display
     groups = sorted(group_stats.values(), key=lambda g: -g["total_tokens"])
-    my_group_code = get_group_code()
-    my_group = next((g for g in groups if g["code"] == my_group_code), None)
+    my_group_codes = get_group_codes()
+    my_groups = [g for g in groups if g["code"] in my_group_codes]
 
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)
@@ -676,8 +702,8 @@ def get_community_stats(force_refresh=False):
         "my_last_synced_at": my_report.get("updated_at") if my_report else None,
         "my_display_name": my_report.get("display_name", "") if my_report else "",
         "my_name_changed_at": my_report.get("name_changed_at") if my_report else None,
-        "my_group_code": my_group_code,
-        "my_group": my_group,
+        "my_group_codes": my_group_codes,
+        "my_groups": my_groups,
         "groups": groups,
         "rank_status": rank_status,
         "rank_message": rank_message,

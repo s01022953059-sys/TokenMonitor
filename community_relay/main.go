@@ -41,7 +41,7 @@ type reportRequest struct {
 	ByTool       map[string]int64 `json:"by_tool"`
 	Version      string           `json:"version"`
 	ReplacesID   string           `json:"replaces_id,omitempty"`
-	GroupCode    string           `json:"group_code,omitempty"`
+	GroupCodes   []string         `json:"group_codes,omitempty"`
 }
 
 type reportDocument struct {
@@ -56,7 +56,7 @@ type reportDocument struct {
 	ReplacesID    string           `json:"replaces_id,omitempty"`
 	DisplayName   string           `json:"display_name,omitempty"`
 	NameChangedAt string           `json:"name_changed_at,omitempty"`
-	GroupCode     string           `json:"group_code,omitempty"`
+	GroupCodes    []string         `json:"group_codes,omitempty"`
 }
 
 type reportStore interface {
@@ -162,11 +162,11 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 		replacesID = request.ReplacesID
 	}
-	// Preserve existing group code if the request doesn't provide one
+	// Preserve existing group codes if the request doesn't provide any
 	// (old clients that don't know about groups).
-	groupCode := request.GroupCode
-	if groupCode == "" && existing != nil {
-		groupCode = existing.GroupCode
+	groupCodes := request.GroupCodes
+	if len(groupCodes) == 0 && existing != nil {
+		groupCodes = existing.GroupCodes
 	}
 
 	now := h.now().UTC()
@@ -176,7 +176,7 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		ByTool: normalizeTools(request.ByTool), ToolCount: len(request.ByTool),
 		Version: strings.TrimSpace(request.Version), ReplacesID: replacesID,
 		DisplayName: displayName, NameChangedAt: nameChangedAt,
-		GroupCode: groupCode,
+		GroupCodes: groupCodes,
 	}
 	if err := h.store.Write(r.Context(), doc, sha); err != nil {
 		writeError(w, http.StatusBadGateway, "upload_failed", "匿名统计写入失败")
@@ -189,11 +189,11 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 
 // archiveEntry 是每日快照里的一条参与者记录。
 type archiveEntry struct {
-	ID          string `json:"id"`
-	DisplayName string `json:"display_name"`
-	Tokens      int64  `json:"tokens"`
-	Tool        string `json:"tool"`
-	GroupCode   string `json:"group_code,omitempty"`
+	ID          string   `json:"id"`
+	DisplayName string   `json:"display_name"`
+	Tokens      int64    `json:"tokens"`
+	Tool        string   `json:"tool"`
+	GroupCodes  []string `json:"group_codes,omitempty"`
 }
 
 // archiveGroup 是每日快照里的一组统计。
@@ -280,13 +280,13 @@ func (h *relayHandler) runArchive() error {
 	participants := make([]archiveEntry, 0, len(active))
 	for i := 0; i < len(active); i++ {
 		r := active[i]
-		participants = append(participants, archiveEntry{
-			ID:          r.ID,
-			DisplayName: r.DisplayName,
-			Tokens:      r.TodayTokens,
-			Tool:        formatArchiveTools(r.ByTool),
-			GroupCode:   r.GroupCode,
-		})
+participants = append(participants, archiveEntry{
+				ID:          r.ID,
+				DisplayName: r.DisplayName,
+				Tokens:      r.TodayTokens,
+				Tool:        formatArchiveTools(r.ByTool),
+				GroupCodes:  r.GroupCodes,
+			})
 	}
 	limit := 10
 	if len(participants) < limit {
@@ -294,23 +294,22 @@ func (h *relayHandler) runArchive() error {
 	}
 	entries := append([]archiveEntry(nil), participants[:limit]...)
 
-	// 组队聚合: 按 group_code 分组统计
+	// 组队聚合: 用户可能属于多个组，每个组都计入
 	groupStats := map[string]*archiveGroup{}
-	groupNames := map[string]string{} // code -> name (from groups table)
 	for _, r := range active {
-		code := r.GroupCode
-		if code == "" {
-			continue
-		}
-		if _, ok := groupStats[code]; !ok {
-			name, _, _ := h.profiles.getGroup(ctx, code)
-			groupStats[code] = &archiveGroup{Code: code, Name: name}
-			groupNames[code] = name
-		}
-		groupStats[code].TotalTokens += r.TodayTokens
-		groupStats[code].MemberCount++
-		if r.DisplayName != "" && (groupStats[code].TopMember == "" || r.TodayTokens > 0) {
-			groupStats[code].TopMember = r.DisplayName
+		for _, code := range r.GroupCodes {
+			if code == "" {
+				continue
+			}
+			if _, ok := groupStats[code]; !ok {
+				name, _, _ := h.profiles.getGroup(ctx, code)
+				groupStats[code] = &archiveGroup{Code: code, Name: name}
+			}
+			groupStats[code].TotalTokens += r.TodayTokens
+			groupStats[code].MemberCount++
+			if r.DisplayName != "" && (groupStats[code].TopMember == "" || r.TodayTokens > 0) {
+				groupStats[code].TopMember = r.DisplayName
+			}
 		}
 	}
 	groups := make([]archiveGroup, 0, len(groupStats))

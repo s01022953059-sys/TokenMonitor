@@ -33,10 +33,10 @@ from urllib.parse import parse_qs, urlparse
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, join_group, get_group_code
+    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, add_group_code, remove_group_code, get_group_codes
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, join_group, get_group_code
+    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, add_group_code, remove_group_code, get_group_codes
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -945,7 +945,15 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/community/groups/join":
             try:
                 payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-                result = join_group(payload.get("code", ""))
+                result = add_group_code(payload.get("code", ""))
+                self._write_json(200, result)
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
+            return
+        if self.path == "/api/community/groups/leave":
+            try:
+                payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                result = remove_group_code(payload.get("code", ""))
                 self._write_json(200, result)
             except Exception as exc:
                 self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
