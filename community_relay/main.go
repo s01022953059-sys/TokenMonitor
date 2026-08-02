@@ -380,12 +380,14 @@ func validateReport(request reportRequest, now time.Time) ([]byte, error) {
 	if err != nil || len(secret) != 32 {
 		return nil, errors.New("设备凭据格式不正确")
 	}
-	reportDay, err := time.Parse("2006-01-02", request.ReportDate)
-	if err != nil {
-		return nil, errors.New("报告日期格式不正确")
-	}
-	serverDay, _ := time.Parse("2006-01-02", now.Format("2006-01-02"))
-	delta := reportDay.Sub(serverDay)
+reportDay, err := time.Parse("2006-01-02", request.ReportDate)
+		if err != nil {
+			return nil, errors.New("报告日期格式不正确")
+		}
+		// v1.4.88: 用 Asia/Shanghai 日期做校验基准，与 runArchive 归档过滤保持一致。
+		// 客户端已统一用北京时间上报 report_date，这里确保校验窗口也使用同一时区。
+		serverDay, _ := time.Parse("2006-01-02", communityArchiveDate(now))
+		delta := reportDay.Sub(serverDay)
 	if delta < -24*time.Hour || delta > 24*time.Hour {
 		return nil, errors.New("报告日期超出允许范围")
 	}
