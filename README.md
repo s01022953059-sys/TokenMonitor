@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.86**。
+当前发布版本：**v1.4.88**。
 
 ## 功能
 
@@ -251,7 +251,7 @@ Microsoft Defender SmartScreen 阻止了无法识别的应用启动
 ```bash
 # 下载 DMG
 curl -L -o "Token Monitor.dmg" \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.86/Token%20Monitor.dmg"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/Token%20Monitor.dmg"
 
 # 双击挂载, 拖 Token Monitor.app 到 Applications
 open "Token Monitor.dmg"
@@ -273,7 +273,7 @@ bash install.sh --user   # 装到 ~/Applications (无需密码, 静默升级)
 ```bash
 # 下载安装程序
 curl -L -o TokenMonitor-Setup.exe \
-  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.86/TokenMonitor-Setup.exe"
+  "https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/TokenMonitor-Setup.exe"
 ```
 
 双击 `TokenMonitor-Setup.exe`：
@@ -326,7 +326,7 @@ bash build_windows.sh  # 交叉编译主程序并嵌入正式安装程序
 	git commit -m "release: v1.4.87"
 	git tag v1.4.87
 git push origin main
-git push origin v1.4.86
+git push origin v1.4.88
 
 # 3. 一键发布
 bash release_all.sh
@@ -395,10 +395,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.86](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.86)
+最新版本：[v1.4.88](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.88)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.86/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.86/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -416,6 +416,14 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.4.88
+- 修复社区成员统计丢失/剧烈波动：`_dedupe_legacy_identity_reports` 指纹碰撞误删不同用户的报告；GitCode API 请求添加 `Cache-Control: no-cache` 避免 CDN 返回旧数据；`get_community_stats` 改用北京时间统一"今天"定义；`report_date` 空值时防御性回退避免报告永久不可见。
+- VPS 中继补齐 CDN 缓存头：`ListReports`、`Get`、`WriteArchive` 所有 GET 请求统一携带 `Cache-Control: no-cache` + `Pragma: no-cache`，防止中继归档时读到 CDN 缓存的旧版报告。
+- `validateReport` 改用北京时间校验 `report_date`，与 `runArchive` 归档过滤保持一致，避免跨时区报告通过校验却被归档排除。
+
+### v1.4.87
+- macOS universal binary 支持 Intel + Apple Silicon，构建产出同时兼容 x86_64 和 arm64。
 
 ### v1.4.86
 - 修复 macOS 更新后首页图例二级菜单指标全 0：WKWebView 改用 http 协议加载页面（之前走 file:// 完全不经过 HTTP 服务器，Cache-Control 头无效），前端 fetch 加 `cache: 'no-store'` 防止响应被 WebKit 缓存。

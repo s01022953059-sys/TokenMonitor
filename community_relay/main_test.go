@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -434,4 +435,80 @@ func TestArchiveRespectsTop10LimitEvenWithZeroTokenEntries(t *testing.T) {
 	if snapshot.Leaderboard[0].Tokens == 0 {
 		t.Fatalf("top1 should be the highest-token user, not zero")
 	}
+}
+
+// TestGitCodeStoreCacheControlHeaders 验证所有 GitCode API GET 请求都携带
+// Cache-Control: no-cache 和 Pragma: no-cache 头，避免 CDN 返回缓存的旧数据。
+// v1.4.88 修复: 客户端 community.py 已加，这里补齐 VPS 中继的 Go 实现。
+func TestGitCodeStoreCacheControlHeaders(t *testing.T) {
+	// 记录所有 GET 请求的 header
+	var capturedHeaders []http.Header
+	var serverURL string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			capturedHeaders = append(capturedHeaders, r.Header.Clone())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/contents/community/reports" {
+			// 目录列表：返回一个 JSON 数组
+			json.NewEncoder(w).Encode([]map[string]string{
+				{"name": "User_TESTCDN.json", "download_url": serverURL + "/raw/User_TESTCDN.json"},
+			})
+		} else if strings.HasPrefix(r.URL.Path, "/raw/") {
+			// 单个报告文件下载
+			json.NewEncoder(w).Encode(reportDocument{ID: "User_TESTCDN", ReportDate: "2026-08-02", TodayTokens: 100})
+		} else if strings.Contains(r.URL.Path, "/archive/") {
+			// 归档文件
+			json.NewEncoder(w).Encode(map[string]string{"sha": "test-sha-123"})
+		} else {
+			// 单个报告 Get: 返回 base64 编码的内容
+			content, _ := json.Marshal(reportDocument{ID: "User_TESTCDN", ReportDate: "2026-08-02", TodayTokens: 100})
+			encoded := base64.StdEncoding.EncodeToString(content)
+			json.NewEncoder(w).Encode(map[string]string{"sha": "test-sha", "content": encoded})
+		}
+	}))
+	defer ts.Close()
+	serverURL = ts.URL
+
+	store := &gitCodeStore{
+		apiBase: ts.URL,
+		branch:  "community-data",
+		token:   "test-token",
+		client:  &http.Client{Timeout: 5 * time.Second},
+	}
+
+	ctx := context.Background()
+
+	// 1. Get: 读取单个报告
+	_, _, _ = store.Get(ctx, "User_TESTCDN")
+
+	// 2. ListReports: 目录列表 + 单个文件下载
+	_, _ = store.ListReports(ctx)
+
+	// 3. WriteArchive: GET 已有归档
+	_ = store.WriteArchive(ctx, "2026-08-02", []byte(`{}`))
+
+	// 验证所有 GET 请求都携带了正确的缓存头
+	if len(capturedHeaders) == 0 {
+		t.Fatal("no GET requests were captured")
+	}
+
+	for i, headers := range capturedHeaders {
+		cacheControl := headers.Get("Cache-Control")
+		pragma := headers.Get("Pragma")
+		if cacheControl != "no-cache" {
+			t.Errorf("request %d: Cache-Control = %q, want %q", i, cacheControl, "no-cache")
+		}
+		if pragma != "no-cache" {
+			t.Errorf("request %d: Pragma = %q, want %q", i, pragma, "no-cache")
+		}
+	}
+
+	// 至少应捕获到 4 个 GET 请求: Get + ListReports(目录) + ListReports(文件) + WriteArchive
+	if len(capturedHeaders) < 4 {
+		t.Errorf("expected at least 4 GET requests, got %d", len(capturedHeaders))
+	}
+
+	t.Logf("all %d GET requests have correct cache-control headers", len(capturedHeaders))
 }
