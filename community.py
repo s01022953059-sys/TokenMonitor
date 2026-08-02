@@ -29,6 +29,7 @@ COMMUNITY_DIR = os.path.expanduser("~/.token_monitor")
 USER_ID_FILE = os.path.join(COMMUNITY_DIR, "community_id.txt")
 OPTIN_FILE = os.path.join(COMMUNITY_DIR, "community_optin.txt")
 CREDENTIAL_FILE = os.path.join(COMMUNITY_DIR, "community_credential.json")
+GROUP_CODE_FILE = os.path.join(COMMUNITY_DIR, "group_code.txt")
 GITCODE_API = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
 REPORTS_PATH = "community/reports"
 COMMUNITY_BRANCH = os.environ.get("TOKEN_MONITOR_COMMUNITY_BRANCH", "community-data")
@@ -338,6 +339,91 @@ def update_community_profile(display_name):
     return result
 
 
+# ─── 组队功能 ───
+
+def _groups_relay_url():
+    """组队 API 端点 URL。"""
+    if COMMUNITY_RELAY_URL.endswith("/v1/report"):
+        return COMMUNITY_RELAY_URL[:-len("/v1/report")] + "/v1/groups"
+    return COMMUNITY_RELAY_URL.rstrip("/") + "/v1/groups"
+
+
+def get_group_code():
+    """读取本地保存的组码。未加入组时返回空字符串。"""
+    _ensure_dir()
+    try:
+        with open(GROUP_CODE_FILE, "r") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _save_group_code(code):
+    """保存组码到本地。空字符串表示退出组。"""
+    _ensure_dir()
+    with open(GROUP_CODE_FILE, "w") as f:
+        f.write(code)
+
+
+def create_group(name):
+    """创建组队，返回 {ok, code, name} 或错误信息。"""
+    credential = _get_community_credential()
+    payload = {"name": str(name or "").strip()}
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        _groups_relay_url(), data=body, method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown"),
+            "X-Device-ID": credential["id"],
+            "X-Device-Secret": credential["device_secret"],
+        },
+    )
+    try:
+        with _open_external_request(request, timeout=20) as response:
+            result = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            result = json.loads(exc.read())
+        except (ValueError, TypeError):
+            return {"ok": False, "status": "relay_http_error", "message": f"组队服务 HTTP {exc.code}"}
+    except Exception as exc:
+        return {"ok": False, "status": "relay_unavailable", "message": f"组队中继暂时不可用：{exc}"}
+
+    if result.get("ok"):
+        _save_group_code(result["code"])
+        _aggregate_cache["data"] = None
+        _aggregate_cache["ts"] = 0
+    return result
+
+
+def get_group_info(code):
+    """查询组码对应的组名。返回 {ok, code, name, created_by} 或错误。"""
+    url = _groups_relay_url() + "/" + str(code or "").strip()
+    request = urllib.request.Request(url, method="GET",
+        headers={"Accept": "application/json", "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown")})
+    try:
+        with _open_external_request(request, timeout=10) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        try:
+            return json.loads(exc.read())
+        except (ValueError, TypeError):
+            return {"ok": False, "status": "http_error", "message": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"ok": False, "status": "network_error", "message": str(exc)}
+
+
+def join_group(code):
+    """加入组队（保存组码到本地）。code 为空表示退出组。"""
+    code = str(code or "").strip()
+    _save_group_code(code)
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
+    return {"ok": True, "code": code}
+
+
 def report_community_stats(today_usage):
     """通过 VPS 中继上报当前用户的匿名统计。
 
@@ -360,6 +446,7 @@ def report_community_stats(today_usage):
         "today_tokens": summary.get("total_tokens", 0),
         "by_tool": {k: v.get("total_tokens", 0) for k, v in by_tool.items()},
         "version": _read_app_version(),
+        "group_code": get_group_code(),
     }
     result = _relay_request(report)
     if result.get("status") == "identity_upgrade_required":
@@ -522,6 +609,23 @@ def get_community_stats(force_refresh=False):
     tool_distribution = {k: round(v / total_tool_tokens * 100, 1) for k, v in tool_totals.items()}
     tool_distribution = dict(sorted(tool_distribution.items(), key=lambda x: -x[1]))
 
+    # 组队统计: 按 group_code 聚合，计算每组的总 token、人数、头名
+    group_stats = {}
+    for r in active_reports:
+        code = str(r.get("group_code") or "").strip()
+        if not code:
+            continue
+        if code not in group_stats:
+            group_stats[code] = {"code": code, "total_tokens": 0, "member_count": 0, "top_member": ""}
+        group_stats[code]["total_tokens"] += int(r.get("today_tokens") or 0)
+        group_stats[code]["member_count"] += 1
+        display = str(r.get("display_name") or "")
+        if display and not group_stats[code]["top_member"]:
+            group_stats[code]["top_member"] = display
+    groups = sorted(group_stats.values(), key=lambda g: -g["total_tokens"])
+    my_group_code = get_group_code()
+    my_group = next((g for g in groups if g["code"] == my_group_code), None)
+
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)
     my_tokens = my_report.get("today_tokens", 0) if my_synced_today else 0
@@ -572,6 +676,9 @@ def get_community_stats(force_refresh=False):
         "my_last_synced_at": my_report.get("updated_at") if my_report else None,
         "my_display_name": my_report.get("display_name", "") if my_report else "",
         "my_name_changed_at": my_report.get("name_changed_at") if my_report else None,
+        "my_group_code": my_group_code,
+        "my_group": my_group,
+        "groups": groups,
         "rank_status": rank_status,
         "rank_message": rank_message,
         "rank_total": len(sorted_reports),

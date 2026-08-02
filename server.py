@@ -33,10 +33,10 @@ from urllib.parse import parse_qs, urlparse
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history
+    from community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, join_group, get_group_code
 except ImportError:
     from .scanner import get_today_usage, get_historical_usage, get_session_list, get_heatmap_data, get_session_detail, get_heatmap_detail
-    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history
+    from .community import get_user_id, is_opted_in, set_optin, report_community_stats, get_community_stats, update_community_profile, get_community_history, create_group, get_group_info, join_group, get_group_code
 
 # 版本号唯一来源: 当前进程所在 Resources 目录的 Info.plist。
 # 之所以不走命令行注入, 是因为 start.sh / Swift 启动器只是把端口/更新源
@@ -934,6 +934,22 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as exc:
                 self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
             return
+        if self.path == "/api/community/groups/create":
+            try:
+                payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                result = create_group(payload.get("name", ""))
+                self._write_json(200 if result.get("ok") else 400, result)
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
+            return
+        if self.path == "/api/community/groups/join":
+            try:
+                payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+                result = join_group(payload.get("code", ""))
+                self._write_json(200, result)
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
+            return
         if self.path != "/api/community/profile":
             self._write_json(404, {"ok": False, "status": "not_found", "message": "接口不存在"})
             return
@@ -1062,6 +1078,18 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # ─── 社区 Dashboard API ───
+        if self.path.startswith("/api/community/groups/"):
+            try:
+                code = self.path[len("/api/community/groups/"):]
+                result = get_group_info(code)
+                if result.get("ok"):
+                    self._write_json(200, result)
+                else:
+                    self._write_json(404, result)
+            except Exception as exc:
+                self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
+            return
+
         if self.path == "/api/community" or self.path.startswith("/api/community?"):
             try:
                 from urllib.parse import urlparse, parse_qs

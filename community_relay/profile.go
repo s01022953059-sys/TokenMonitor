@@ -87,9 +87,15 @@ func openProfileDatabase(path string) (*profileDatabase, error) {
 			changed_at TEXT NOT NULL,
 			PRIMARY KEY (user_id, changed_at)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_profile_changes_user_time ON profile_changes(user_id, changed_at)`,
-		`INSERT OR IGNORE INTO profile_changes(user_id, changed_at)
-			SELECT user_id, changed_at FROM profiles`,
+`CREATE INDEX IF NOT EXISTS idx_profile_changes_user_time ON profile_changes(user_id, changed_at)`,
+			`INSERT OR IGNORE INTO profile_changes(user_id, changed_at)
+				SELECT user_id, changed_at FROM profiles`,
+			`CREATE TABLE IF NOT EXISTS groups (
+				code TEXT PRIMARY KEY,
+				name TEXT NOT NULL,
+				created_by TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			)`,
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			db.Close()
@@ -299,8 +305,82 @@ func (p *profileDatabase) updateName(ctx context.Context, userID, displayName, c
 	if _, err := connection.ExecContext(ctx, "COMMIT"); err != nil {
 		return profileResult{}, true, err
 	}
-	committed = true
-	return profileResult{DisplayName: displayName, Canonical: canonicalName}, true, nil
+committed = true
+		return profileResult{DisplayName: displayName, Canonical: canonicalName}, true, nil
+	}
+
+// groupRequest is the JSON body for creating a group.
+type groupRequest struct {
+	Name string `json:"name"`
+}
+
+// groupResult is the response for a successful group creation.
+type groupResult struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// createGroup creates a new group with a unique 5-digit random code.
+// Returns the group code and name, or an error if the name is invalid.
+func (p *profileDatabase) createGroup(ctx context.Context, creatorID string, name string, now time.Time) (*groupResult, error) {
+	name = strings.TrimSpace(name)
+	if len([]rune(name)) < 1 || len([]rune(name)) > 16 {
+		return nil, &profileError{status: 400, code: "invalid_name", message: "组名需要 1–16 个字符"}
+	}
+
+	// Generate a unique 5-digit code, retrying on collision.
+	var code string
+	for attempts := 0; attempts < 20; attempts++ {
+		code = fmt.Sprintf("%05d", now.UnixNano()%100000)
+		// Mix in some randomness from the attempt count
+		if attempts > 0 {
+			code = fmt.Sprintf("%05d", (now.UnixNano()+int64(attempts*9973))%100000)
+		}
+		var exists bool
+		err := p.db.QueryRowContext(ctx, "SELECT 1 FROM groups WHERE code = ?", code).Scan(&exists)
+		if err == sql.ErrNoRows {
+			break // code is unique
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Collision, try again with a different seed
+		now = now.Add(time.Second)
+	}
+	if code == "" {
+		return nil, &profileError{status: 503, code: "code_generation_failed", message: "组码生成失败，请重试"}
+	}
+
+	_, err := p.db.ExecContext(ctx,
+		"INSERT INTO groups(code, name, created_by, created_at) VALUES(?, ?, ?, ?)",
+		code, name, creatorID, now.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		// If another request created the same code concurrently, retry once
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			code = fmt.Sprintf("%05d", (now.UnixNano()+12345)%100000)
+			_, err = p.db.ExecContext(ctx,
+				"INSERT INTO groups(code, name, created_by, created_at) VALUES(?, ?, ?, ?)",
+				code, name, creatorID, now.UTC().Format(time.RFC3339),
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &groupResult{Code: code, Name: name}, nil
+}
+
+// getGroup looks up a group by its code. Returns (name, created_by, ok).
+func (p *profileDatabase) getGroup(ctx context.Context, code string) (name string, createdBy string, ok bool) {
+	err := p.db.QueryRowContext(ctx,
+		"SELECT name, created_by FROM groups WHERE code = ?", code,
+	).Scan(&name, &createdBy)
+	if err != nil {
+		return "", "", false
+	}
+	return name, createdBy, true
 }
 
 func profileDatabasePath() string {

@@ -41,6 +41,7 @@ type reportRequest struct {
 	ByTool       map[string]int64 `json:"by_tool"`
 	Version      string           `json:"version"`
 	ReplacesID   string           `json:"replaces_id,omitempty"`
+	GroupCode    string           `json:"group_code,omitempty"`
 }
 
 type reportDocument struct {
@@ -55,6 +56,7 @@ type reportDocument struct {
 	ReplacesID    string           `json:"replaces_id,omitempty"`
 	DisplayName   string           `json:"display_name,omitempty"`
 	NameChangedAt string           `json:"name_changed_at,omitempty"`
+	GroupCode     string           `json:"group_code,omitempty"`
 }
 
 type reportStore interface {
@@ -93,9 +95,13 @@ func (h *relayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleReport(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/profile":
 		h.handleProfile(w, r)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/archive":
-		h.handleArchive(w, r)
-	default:
+case r.Method == http.MethodPost && r.URL.Path == "/v1/archive":
+			h.handleArchive(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/groups":
+			h.handleCreateGroup(w, r)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/groups/"):
+			h.handleGetGroup(w, r)
+		default:
 		writeError(w, http.StatusNotFound, "not_found", "接口不存在")
 	}
 }
@@ -156,6 +162,12 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 		replacesID = request.ReplacesID
 	}
+	// Preserve existing group code if the request doesn't provide one
+	// (old clients that don't know about groups).
+	groupCode := request.GroupCode
+	if groupCode == "" && existing != nil {
+		groupCode = existing.GroupCode
+	}
 
 	now := h.now().UTC()
 	doc := reportDocument{
@@ -164,6 +176,7 @@ func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 		ByTool: normalizeTools(request.ByTool), ToolCount: len(request.ByTool),
 		Version: strings.TrimSpace(request.Version), ReplacesID: replacesID,
 		DisplayName: displayName, NameChangedAt: nameChangedAt,
+		GroupCode: groupCode,
 	}
 	if err := h.store.Write(r.Context(), doc, sha); err != nil {
 		writeError(w, http.StatusBadGateway, "upload_failed", "匿名统计写入失败")
@@ -180,6 +193,16 @@ type archiveEntry struct {
 	DisplayName string `json:"display_name"`
 	Tokens      int64  `json:"tokens"`
 	Tool        string `json:"tool"`
+	GroupCode   string `json:"group_code,omitempty"`
+}
+
+// archiveGroup 是每日快照里的一组统计。
+type archiveGroup struct {
+	Code        string `json:"code"`
+	Name        string `json:"name"`
+	TotalTokens int64  `json:"total_tokens"`
+	MemberCount int    `json:"member_count"`
+	TopMember   string `json:"top_member"`
 }
 
 // archiveSnapshot 是一天的完整快照。
@@ -190,6 +213,7 @@ type archiveSnapshot struct {
 	ActiveUsers  int            `json:"active_users"`
 	Participants []archiveEntry `json:"participants"`
 	Leaderboard  []archiveEntry `json:"leaderboard"`
+	Groups       []archiveGroup `json:"groups,omitempty"`
 }
 
 // formatArchiveTools 按 token 降序拼接工具名, 对齐客户端 _format_report_tools。
@@ -261,6 +285,7 @@ func (h *relayHandler) runArchive() error {
 			DisplayName: r.DisplayName,
 			Tokens:      r.TodayTokens,
 			Tool:        formatArchiveTools(r.ByTool),
+			GroupCode:   r.GroupCode,
 		})
 	}
 	limit := 10
@@ -269,6 +294,35 @@ func (h *relayHandler) runArchive() error {
 	}
 	entries := append([]archiveEntry(nil), participants[:limit]...)
 
+	// 组队聚合: 按 group_code 分组统计
+	groupStats := map[string]*archiveGroup{}
+	groupNames := map[string]string{} // code -> name (from groups table)
+	for _, r := range active {
+		code := r.GroupCode
+		if code == "" {
+			continue
+		}
+		if _, ok := groupStats[code]; !ok {
+			name, _, _ := h.profiles.getGroup(ctx, code)
+			groupStats[code] = &archiveGroup{Code: code, Name: name}
+			groupNames[code] = name
+		}
+		groupStats[code].TotalTokens += r.TodayTokens
+		groupStats[code].MemberCount++
+		if r.DisplayName != "" && (groupStats[code].TopMember == "" || r.TodayTokens > 0) {
+			groupStats[code].TopMember = r.DisplayName
+		}
+	}
+	groups := make([]archiveGroup, 0, len(groupStats))
+	for _, g := range groupStats {
+		if g.MemberCount > 0 {
+			groups = append(groups, *g)
+		}
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].TotalTokens > groups[j].TotalTokens
+	})
+
 	snapshot := archiveSnapshot{
 		Date:         today,
 		GeneratedAt:  now.UTC().Format(time.RFC3339),
@@ -276,6 +330,7 @@ func (h *relayHandler) runArchive() error {
 		ActiveUsers:  len(active),
 		Participants: participants,
 		Leaderboard:  entries,
+		Groups:       groups,
 	}
 	data, _ := json.MarshalIndent(snapshot, "", "  ")
 	return h.store.WriteArchive(ctx, today, data)
@@ -288,6 +343,80 @@ func (h *relayHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "status": "archived", "message": "每日排行榜快照已归档",
+	})
+}
+
+func (h *relayHandler) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		writeError(w, http.StatusUnsupportedMediaType, "invalid_content_type", "请求必须使用 JSON")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 2*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var request groupRequest
+	if err := decoder.Decode(&request); err != nil || ensureJSONEnd(decoder) != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "请求格式不正确")
+		return
+	}
+	if request.Name == "" {
+		writeError(w, http.StatusBadRequest, "invalid_name", "组名不能为空")
+		return
+	}
+
+	// Authenticate via device secret in the profile header
+	credential := r.Header.Get("X-Device-ID")
+	secret := r.Header.Get("X-Device-Secret")
+	if !communityIDPattern.MatchString(credential) {
+		writeError(w, http.StatusBadRequest, "invalid_credential", "设备凭据格式不正确")
+		return
+	}
+	existing, _, err := h.store.Get(r.Context(), credential)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "storage_unavailable", "社区存储暂时不可用")
+		return
+	}
+	if existing == nil || existing.AuthHash == "" {
+		writeError(w, http.StatusNotFound, "profile_not_found", "请先完成一次社区同步")
+		return
+	}
+	if !validateDeviceSecret(secret, existing.AuthHash) {
+		writeError(w, http.StatusForbidden, "credential_invalid", "设备凭据不匹配")
+		return
+	}
+
+	result, err := h.profiles.createGroup(r.Context(), credential, request.Name, h.now())
+	if err != nil {
+		if pe, ok := err.(*profileError); ok {
+			writeJSON(w, pe.status, map[string]interface{}{"ok": false, "status": pe.code, "message": pe.message})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "group_creation_failed", "创建组队失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":   true,
+		"code": result.Code,
+		"name": result.Name,
+	})
+}
+
+func (h *relayHandler) handleGetGroup(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimPrefix(r.URL.Path, "/v1/groups/")
+	if len(code) != 5 || !regexp.MustCompile(`^[0-9]{5}$`).MatchString(code) {
+		writeError(w, http.StatusBadRequest, "invalid_code", "组码格式不正确")
+		return
+	}
+	name, createdBy, ok := h.profiles.getGroup(r.Context(), code)
+	if !ok {
+		writeError(w, http.StatusNotFound, "group_not_found", "组队不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":         true,
+		"code":       code,
+		"name":       name,
+		"created_by": createdBy,
 	})
 }
 
@@ -441,9 +570,11 @@ type gitCodeStore struct {
 }
 
 func (s *gitCodeStore) Get(ctx context.Context, id string) (*reportDocument, string, error) {
-	url := fmt.Sprintf("%s/contents/community/reports/%s.json?ref=%s", s.apiBase, id, s.branch)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Header.Set("Authorization", "Bearer "+s.token)
+		url := fmt.Sprintf("%s/contents/community/reports/%s.json?ref=%s", s.apiBase, id, s.branch)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("Cache-Control", "no-cache")
+		req.Header.Set("Pragma", "no-cache")
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -503,9 +634,11 @@ func (s *gitCodeStore) Write(ctx context.Context, doc reportDocument, sha string
 
 // ListReports 读取 community/reports/ 目录下所有报告文件并解析。
 func (s *gitCodeStore) ListReports(ctx context.Context) ([]reportDocument, error) {
-	url := fmt.Sprintf("%s/contents/community/reports?ref=%s", s.apiBase, s.branch)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Header.Set("Authorization", "Bearer "+s.token)
+		url := fmt.Sprintf("%s/contents/community/reports?ref=%s", s.apiBase, s.branch)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("Cache-Control", "no-cache")
+		req.Header.Set("Pragma", "no-cache")
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -531,12 +664,14 @@ func (s *gitCodeStore) ListReports(ctx context.Context) ([]reportDocument, error
 			continue
 		}
 		wg.Add(1)
-		go func(downloadURL string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
-			req.Header.Set("Authorization", "Bearer "+s.token)
+go func(downloadURL string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				req, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+				req.Header.Set("Authorization", "Bearer "+s.token)
+				req.Header.Set("Cache-Control", "no-cache")
+				req.Header.Set("Pragma", "no-cache")
 			r, err := s.client.Do(req)
 			if err != nil {
 				return
@@ -562,10 +697,12 @@ func (s *gitCodeStore) ListReports(ctx context.Context) ([]reportDocument, error
 
 // WriteArchive 将每日 TOP10 快照写入 community/archive/{date}.json。
 func (s *gitCodeStore) WriteArchive(ctx context.Context, date string, data []byte) error {
-	// 先尝试 GET 获取 sha (已存在则 PUT, 不存在则 POST)
-	url := fmt.Sprintf("%s/contents/community/archive/%s.json?ref=%s", s.apiBase, date, s.branch)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Header.Set("Authorization", "Bearer "+s.token)
+		// 先尝试 GET 获取 sha (已存在则 PUT, 不存在则 POST)
+		url := fmt.Sprintf("%s/contents/community/archive/%s.json?ref=%s", s.apiBase, date, s.branch)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("Cache-Control", "no-cache")
+		req.Header.Set("Pragma", "no-cache")
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return err
