@@ -716,6 +716,7 @@ def get_community_stats(force_refresh=False):
 
     # 排名在全部今日参与用户中计算；榜单仅展示前 10。
     my_rank = next((i + 1 for i, r in enumerate(sorted_reports) if r.get("id") == my_id), None)
+
     leaderboard = sorted_reports[:LEADERBOARD_LIMIT]
     leaderboard = [{
         "id": r.get("id", "?"),
@@ -778,6 +779,17 @@ def get_community_stats(force_refresh=False):
             }
     my_groups = sorted(my_groups_dict.values(), key=lambda g: -g["total_tokens"])
 
+    # v1.5.08: 按组计算我的排名
+    my_group_ranks = {}
+    for code in my_group_codes:
+        group_reports = [
+            r for r in sorted_reports
+            if code in _normalize_group_codes(r.get("group_codes", r.get("group_code")))
+        ]
+        my_group_ranks[code] = next(
+            (i + 1 for i, r in enumerate(group_reports) if r.get("id") == my_id), None
+        )
+
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)
     my_tokens = my_report.get("today_tokens", 0) if my_synced_today else 0
@@ -830,6 +842,7 @@ def get_community_stats(force_refresh=False):
         "my_name_changed_at": my_report.get("name_changed_at") if my_report else None,
         "my_group_codes": my_group_codes,
         "my_groups": my_groups,
+        "my_group_ranks": my_group_ranks,
         "groups": groups,
         "rank_status": rank_status,
         "rank_message": rank_message,

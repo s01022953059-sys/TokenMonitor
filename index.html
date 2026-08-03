@@ -4449,22 +4449,27 @@
             return resp.json();
         }
 
+        // v1.5.08: 页面内内联输入，不用弹窗
+        let _groupInlineMode = ''; // '', 'join', 'create'
+
         function renderGroupLine(data) {
             const myGroups = data.my_groups || [];
+            const inlineEditor = _groupInlineMode ? renderGroupInlineEditor(_groupInlineMode) : '';
             if (!myGroups.length) {
-                // 紧凑一行：状态点 + 文字 + 两个操作按钮靠右
-                return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:10px;">' +
-                    '<span style="color:var(--text-muted);"><span style="color:#f59e0b;">●</span> 当前在公共池（未加入任何组队）</span>' +
-                    '<span style="margin-left:auto;display:inline-flex;gap:4px;">' +
-                        '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:2px 8px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">+ 创建</button>' +
-                        '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-primary);cursor:pointer;">+ 加入</button>' +
-                    '</span>' +
+                return '<div style="padding:4px 0;font-size:10px;">' +
+                    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                        '<span style="color:var(--text-muted);"><span style="color:#f59e0b;">●</span> 当前在公共池</span>' +
+                        '<span style="margin-left:auto;display:inline-flex;gap:4px;">' +
+                            '<button onclick="setGroupInlineMode(\'join\')" style="font-size:10px;padding:2px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-primary);cursor:pointer;">加入组队</button>' +
+                            '<button onclick="setGroupInlineMode(\'create\')" style="font-size:10px;padding:2px 8px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">创建组队</button>' +
+                        '</span>' +
+                    '</div>' + inlineEditor +
                     '</div>';
             }
             const tags = myGroups.map(g => {
                 const display = g.name && g.name !== g.code ? g.name : '未知组队';
                 const pendingTag = g.pending_report
-                    ? '<span style="font-size:8px;color:var(--text-muted);margin-left:3px;" title="本机已加入，等待下次上报同步到服务端">待同步</span>'
+                    ? '<span style="font-size:8px;color:var(--text-muted);margin-left:3px;" title="等待下次上报同步">待同步</span>'
                     : '';
                 const codeTag = g.is_creator
                     ? '<span onclick="event.stopPropagation();copyGroupCode(\'' + escapeHtml(g.code) + '\', this)" style="font-family:JetBrains Mono,monospace;font-size:9px;color:#f59e0b;background:rgba(245,158,11,0.1);padding:1px 5px;border-radius:3px;margin-left:4px;cursor:pointer;" title="点击复制码">码 ' + escapeHtml(g.code) + '</span>'
@@ -4475,14 +4480,75 @@
                 '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="cursor:pointer;color:var(--text-muted);font-weight:400;margin-left:2px;" title="退出">×</span>' +
                 '</span>';
             }).join('');
-            return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:10px;">' +
-                '<span style="color:var(--text-muted);white-space:nowrap;"><span style="color:var(--neon-green);">●</span> 已加入 ' + myGroups.length + ' 个组队</span>' +
-                '<span style="margin-left:auto;display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;">' + tags +
-                    '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:2px 8px;border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.1);color:#f59e0b;font-weight:600;cursor:pointer;">+ 创建</button>' +
-                    '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--border-color);border-radius:12px;background:transparent;color:var(--text-muted);cursor:pointer;">+ 加入</button>' +
-                    '<button onclick="clearAllGroups()" style="font-size:10px;padding:2px 6px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;text-decoration:underline;" title="清空本地组码记录">清空</button>' +
-                '</span>' +
+            return '<div style="padding:4px 0;font-size:10px;">' +
+                '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                    '<span style="color:var(--text-muted);white-space:nowrap;"><span style="color:var(--neon-green);">●</span> 已加入 ' + myGroups.length + ' 个组队</span>' +
+                    '<span style="margin-left:auto;display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;">' + tags +
+                        '<button onclick="setGroupInlineMode(\'join\')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--border-color);border-radius:12px;background:transparent;color:var(--text-muted);cursor:pointer;">+加入</button>' +
+                        '<button onclick="setGroupInlineMode(\'create\')" style="font-size:10px;padding:2px 8px;border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.1);color:#f59e0b;font-weight:600;cursor:pointer;">+创建</button>' +
+                        '<button onclick="clearAllGroups()" style="font-size:10px;padding:2px 6px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;text-decoration:underline;" title="清空全部">清空</button>' +
+                    '</span>' +
+                '</div>' + inlineEditor +
                 '</div>';
+        }
+
+        function renderGroupInlineEditor(mode) {
+            if (mode === 'join') {
+                return '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">' +
+                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-family:JetBrains Mono,monospace;" placeholder="输入5位组码" maxlength="5" autocomplete="off">' +
+                    '<button id="groupInlineConfirm" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:var(--neon-green);color:#000;font-weight:600;cursor:pointer;">加入</button>' +
+                    '<button onclick="setGroupInlineMode(\'\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-muted);cursor:pointer;">取消</button>' +
+                    '<span id="groupInlineFeedback" style="font-size:9px;color:var(--text-muted);"></span>' +
+                    '</div>';
+            }
+            if (mode === 'create') {
+                return '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">' +
+                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);" placeholder="输入组名（1-16字符）" maxlength="16" autocomplete="off">' +
+                    '<button id="groupInlineConfirm" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">创建</button>' +
+                    '<button onclick="setGroupInlineMode(\'\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-muted);cursor:pointer;">取消</button>' +
+                    '<span id="groupInlineFeedback" style="font-size:9px;color:var(--text-muted);"></span>' +
+                    '</div>';
+            }
+            return '';
+        }
+
+        function setGroupInlineMode(mode) {
+            _groupInlineMode = mode;
+            loadCommunity({preferCache: true});
+            setTimeout(() => {
+                const input = document.getElementById('groupInlineInput');
+                if (input) input.focus();
+                const confirm = document.getElementById('groupInlineConfirm');
+                if (confirm && input) {
+                    confirm.onclick = async () => {
+                        const value = input.value.trim();
+                        const feedback = document.getElementById('groupInlineFeedback');
+                        if (mode === 'create') {
+                            if (!value) { feedback.textContent = '组名不能为空'; return; }
+                            feedback.textContent = '创建中...';
+                            const result = await createGroup(value);
+                            if (result.ok) {
+                                feedback.textContent = '✅ 码: ' + result.code;
+                                setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 800);
+                            } else {
+                                feedback.textContent = '❌ ' + (result.message || '创建失败');
+                            }
+                        } else {
+                            if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
+                            feedback.textContent = '加入中...';
+                            const result = await joinGroup(value);
+                            if (result.ok) {
+                                feedback.textContent = '✅ 已加入';
+                                setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 500);
+                            } else {
+                                feedback.textContent = '❌ ' + (result.message || '加入失败');
+                            }
+                        }
+                    };
+                    input.onkeydown = (e) => { if (e.key === 'Enter') confirm.click(); };
+                }
+            }, 100);
+        }
         }
 
         function renderGroupTabs(data) {
@@ -4671,6 +4737,7 @@
             const leaderboard = data.leaderboard || [];
             const toolDist = data.tool_distribution || {};
             const myRank = data.my_rank;
+            const myGroupRanks = data.my_group_ranks || {};
             const myTokens = data.my_tokens || 0;
             const rankStatus = data.rank_status || 'pending';
             const rankMessage = data.rank_message || '等待今日首次同步';
@@ -4781,7 +4848,11 @@
                 '</div>' +
                 '<div style="display:grid;grid-template-columns:repeat(2,minmax(150px,1fr));gap:8px;margin-bottom:16px;">' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
-                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
+                    '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (function() {
+                        if (_leaderboardGroupTab === "all") return myRank ? "No." + myRank + " / " + rankTotal : "--";
+                        var gr = myGroupRanks[_leaderboardGroupTab];
+                        return gr ? "No." + gr + " / 组内" : "组内暂无";
+                    })() + '</div></div>' +
                 '</div>' +
                 (leaderboard.length > 0 ? renderGroupTabs(data) + '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + (filteredLeaderboard.length > 0 ? leaderboardRows : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">该组暂无活跃成员</div>') + '</div>' : '') +

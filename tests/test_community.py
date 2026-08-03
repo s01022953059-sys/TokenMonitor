@@ -466,6 +466,34 @@ class CommunityTests(unittest.TestCase):
         no_group = next(e for e in result["leaderboard"] if e["id"] == "User_NO_GROUP")
         self.assertEqual(no_group["group_codes"], [])
 
+    def test_my_group_ranks_calculated_per_group(self):
+        """v1.5.08 测试：my_group_ranks 按组计算我的排名。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_TEST1", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}, "group_codes": ["11111", "22222"]},
+            {"id": "User_A1", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}, "group_codes": ["11111"]},
+            {"id": "User_B1", "report_date": today, "today_tokens": 1000, "by_tool": {"Claude": 1000}, "group_codes": ["22222"]},
+            {"id": "User_GLOBAL", "report_date": today, "today_tokens": 9999, "by_tool": {"Claude": 9999}},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        # 本地加入两个组
+        community.add_group_code("11111")
+        community.add_group_code("22222")
+
+        with mock.patch.object(community, "_lookup_group_name", return_value=None), \
+             mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # 全局排名: User_GLOBAL(9999) > User_A1(5000) > User_ME(3000) → 第 3
+        self.assertEqual(result["my_rank"], 3)
+        # 组 11111: User_A1(5000) > User_ME(3000) → 第 2
+        self.assertEqual(result["my_group_ranks"]["11111"], 2)
+        # 组 22222: User_ME(3000) > User_B1(1000) → 第 1
+        self.assertEqual(result["my_group_ranks"]["22222"], 1)
+
     def test_clear_all_group_codes_resets_everything(self):
         """v1.5.04 测试：清空全部会重置组码 + 创建记录。"""
         if os.path.exists(self.credential_file):
