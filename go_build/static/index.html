@@ -4478,28 +4478,43 @@
                 '</div>';
         }
 
-        function renderGroupRanking(groups) {
+        function renderGroupRanking(groups, data) {
             if (!groups || !groups.length) return '';
-            const expanded = _groupRankingExpanded;
-            let html = '<div style="margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:8px;">' +
-                '<div onclick="_groupRankingExpanded=!_groupRankingExpanded;loadCommunity({preferCache:true});" style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;gap:4px;">' +
-                '🏆 组队排行 ' + (expanded ? '▾' : '▸') + '</div>';
-            if (expanded) {
-                html += '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:6px;"><thead><tr style="border-bottom:1px solid var(--border-subtle);">' +
-                    '<th style="text-align:left;padding:4px 6px;color:var(--text-muted);">#</th>' +
-                    '<th style="text-align:left;padding:4px 6px;color:var(--text-muted);">组名</th>' +
-                    '<th style="text-align:right;padding:4px 6px;color:var(--text-muted);">Token</th>' +
-                    '<th style="text-align:right;padding:4px 6px;color:var(--text-muted);">人数</th>' +
-                    '</tr></thead><tbody>' +
-                    groups.map((g, i) => '<tr style="border-bottom:1px solid var(--border-subtle);">' +
-                        '<td style="padding:4px 6px;font-family:JetBrains Mono,monospace;">' + (i + 1) + '</td>' +
-                        '<td style="padding:4px 6px;font-weight:600;">' + escapeHtml(g.name || g.code) + '</td>' +
-                        '<td style="padding:4px 6px;text-align:right;font-family:JetBrains Mono,monospace;">' + formatTokens(g.total_tokens || 0) + '</td>' +
-                        '<td style="padding:4px 6px;text-align:right;">' + (g.member_count || 0) + '</td>' +
-                        '</tr>').join('') + '</tbody></table>';
+            const myGroups = data.my_groups || [];
+            if (!myGroups.length) return '';
+            // 默认选第一个组
+            if (!window._groupRankTab || !myGroups.find(g => g.code === window._groupRankTab)) {
+                window._groupRankTab = myGroups[0].code;
             }
+            const activeCode = window._groupRankTab;
+            const activeGroup = myGroups.find(g => g.code === activeCode) || myGroups[0];
+            // Tab 按钮
+            const tabs = myGroups.map(g => {
+                const name = (g.name && g.name !== g.code) ? g.name : '未知组队';
+                const isActive = g.code === activeCode;
+                return '<button onclick="switchGroupRankTab(\'' + escapeHtml(g.code) + '\')" style="font-size:10px;padding:3px 10px;border:none;border-bottom:2px solid ' + (isActive ? 'var(--neon-green)' : 'transparent') + ';background:transparent;color:' + (isActive ? 'var(--neon-green)' : 'var(--text-muted)') + ';cursor:pointer;">' + escapeHtml(name) + '</button>';
+            }).join('');
+            // 该组成员排行榜：从全局 leaderboard 筛选（leaderboard 里有 group_codes 的话）
+            // 由于 leaderboard entries 不含 group_codes，我们用 participants 数据
+            // 目前只显示该组的汇总信息
+            const groupMembers = (data.groups || []).filter(gr => gr.code === activeCode);
+            const groupInfo = groupMembers[0] || activeGroup;
+            let html = '<div style="margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:8px;">' +
+                '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">🏆 组队排行</div>' +
+                '<div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:8px;overflow-x:auto;">' + tabs + '</div>';
+            // 当前组信息
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">' +
+                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">总 Token</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + formatTokens(groupInfo.total_tokens || 0) + '</div></div>' +
+                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">人数</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (groupInfo.member_count || 0) + '</div></div>' +
+                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">头名</div><div style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(groupInfo.top_member || '-') + '</div></div>' +
+                '</div>';
             html += '</div>';
             return html;
+        }
+
+        function switchGroupRankTab(code) {
+            window._groupRankTab = code;
+            loadCommunity({preferCache: true});
         }
 
         function showGroupDialog(mode) {
@@ -4534,10 +4549,7 @@
                     }
                 } else {
                     if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
-                    feedback.textContent = '查询中...';
-                    const info = await fetchGroupInfo(value);
-                    if (!info.ok) { feedback.textContent = '❌ 组队不存在'; return; }
-                    feedback.textContent = '加入 ' + info.name + ' ...';
+                    feedback.textContent = '加入中...';
                     const result = await joinGroup(value);
                     if (result.ok) {
                         feedback.textContent = '✅ 已加入！';
@@ -4775,6 +4787,7 @@
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
+                renderGroupRanking(data.groups, data) +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
                     '社区仅展示匿名 ID、Token 数量和工具汇总，不包含对话、模型名称或个人信息。刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。' +
                 '</div>';

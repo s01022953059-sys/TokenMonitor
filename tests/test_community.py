@@ -392,7 +392,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(len(result["groups"]), 2)
 
     def test_add_remove_group_codes_manages_local_list(self):
-        """v1.5.01+ 测试：add_group_code 校验服务端后维护本地列表。"""
+        """v1.5.06 测试：add_group_code 直接保存本地，不要求服务端校验。"""
         # 清空环境
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
@@ -400,23 +400,19 @@ class CommunityTests(unittest.TestCase):
         # 初始状态：未加入任何组
         self.assertEqual(community.get_group_codes(), [])
 
-        # 添加组码（mock 中继校验通过）
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "12345", "name": "测试组1"}):
-            result = community.add_group_code("12345")
+        # 添加组码（不调中继，直接保存）
+        result = community.add_group_code("12345")
         self.assertTrue(result["ok"])
         self.assertEqual(community.get_group_codes(), ["12345"])
 
         # 重复添加应该去重
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "12345", "name": "测试组1"}):
-            community.add_group_code("12345")
+        result = community.add_group_code("12345")
+        self.assertTrue(result["ok"])
+        self.assertTrue(result.get("already_member"))
         self.assertEqual(community.get_group_codes(), ["12345"])
 
         # 添加第二个
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "67890", "name": "测试组2"}):
-            community.add_group_code("67890")
+        community.add_group_code("67890")
         self.assertEqual(community.get_group_codes(), ["12345", "67890"])
 
         # 移除一个
@@ -427,31 +423,28 @@ class CommunityTests(unittest.TestCase):
         community.remove_group_code("99999")
         self.assertEqual(community.get_group_codes(), ["67890"])
 
-    def test_add_group_code_rejects_invalid(self):
-        """v1.5.04 测试：组码无效时 add_group_code 返回错误，不污染本地列表。"""
+    def test_add_group_code_works_without_relay(self):
+        """v1.5.06 测试：中继不可达时加入仍然成功（组名延迟解析）。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        # 中继返回不存在
+        # 不 mock get_group_info，让它真的调中继（会失败）
+        # 但 _lookup_group_name 内部 catch 了异常，不会阻塞
         with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": False, "status": "group_not_found"}):
-            result = community.add_group_code("99999")
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["status"], "group_not_found")
-        # 本地列表不能被污染
-        self.assertEqual(community.get_group_codes(), [])
+                               return_value={"ok": False, "status": "network_error"}):
+            result = community.add_group_code("90245")
+        # 关键断言：即使中继不可达，加入仍然成功
+        self.assertTrue(result["ok"])
+        self.assertIn("90245", result["codes"])
+        self.assertEqual(community.get_group_codes(), ["90245"])
 
     def test_clear_all_group_codes_resets_everything(self):
         """v1.5.04 测试：清空全部会重置组码 + 创建记录。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "11111", "name": "组A"}):
-            community.add_group_code("11111")
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "22222", "name": "组B"}):
-            community.add_group_code("22222")
+        community.add_group_code("11111")
+        community.add_group_code("22222")
 
         self.assertEqual(len(community.get_group_codes()), 2)
         community._record_created_code("11111")
@@ -463,17 +456,12 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(community._load_created_codes(), [])
 
     def test_report_includes_group_codes(self):
-        """v1.5.01+ 测试：report_community_stats 上报时携带 group_codes。"""
+        """v1.5.06 测试：report_community_stats 上报时携带 group_codes。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        # mock 中继校验，让 add_group_code 成功
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "11111", "name": "组1"}):
-            community.add_group_code("11111")
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "22222", "name": "组2"}):
-            community.add_group_code("22222")
+        community.add_group_code("11111")
+        community.add_group_code("22222")
 
         captured = {}
         def fake_relay(report):
@@ -498,10 +486,8 @@ class CommunityTests(unittest.TestCase):
         files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
         by_url = {item["download_url"]: report for item, report in zip(files, reports)}
 
-        # 本地加入了一个服务端没有的组
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "LOCAL1", "name": "本地新建组"}):
-            community.add_group_code("LOCAL1")
+        # 本地加入了一个服务端没有的组（v1.5.06: 不需要中继校验）
+        community.add_group_code("LOCAL1")
 
         with mock.patch.object(community, "_lookup_group_name", return_value="本地新建组"), \
              mock.patch.object(community, "_gitcode_api", return_value=files), \
@@ -531,10 +517,8 @@ class CommunityTests(unittest.TestCase):
 
         # 标记 11111 是我创建的，22222 不是
         community._record_created_code("11111")
-        # 把我创建的组加入本地组码列表
-        with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": True, "code": "11111", "name": "我创建的组"}):
-            community.add_group_code("11111")
+        # v1.5.06: add_group_code 不需要中继校验
+        community.add_group_code("11111")
         # 把本地列表设为只包含 11111（我创建的）
         with mock.patch.object(community, "_lookup_group_name",
                                side_effect=lambda code: {"11111": "我创建的组", "22222": "别人的组"}.get(code)):

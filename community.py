@@ -441,20 +441,27 @@ def _lookup_group_name(code):
 
 
 def add_group_code(code):
-    """加入组队：先调中继校验组码存在，加入后缓存组名。失败时回滚本地列表。"""
+    """加入组队：直接保存组码到本地，不要求服务端校验。
+
+    v1.5.06: 之前要求先调中继 GET /v1/groups/:code 校验组码存在才加入，
+    但中国用户 Python 进程可能无法直连 new.taqi.cc（即使 VPN），
+    导致加入永远失败。改为直接保存，组名延迟解析（能连上时自动补）。
+    """
     code = str(code or "").strip()
     if not code:
         return {"ok": False, "status": "empty_code", "message": "组码不能为空"}
     codes = get_group_codes()
     if code in codes:
         return {"ok": True, "codes": codes, "already_member": True}
-    info = get_group_info(code)
-    if not info.get("ok"):
-        return {"ok": False, "status": "group_not_found",
-                "message": info.get("message", "组队不存在")}
     codes.append(code)
     _save_group_codes(codes)
-    _save_group_name_cache({**_load_group_name_cache(), code: info["name"]})
+    # 尝试异步解析组名，失败不阻塞加入
+    try:
+        name = _lookup_group_name(code)
+        if name:
+            _save_group_name_cache({**_load_group_name_cache(), code: name})
+    except Exception:
+        pass
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
     return {"ok": True, "codes": codes}
