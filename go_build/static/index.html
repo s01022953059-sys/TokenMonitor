@@ -4439,26 +4439,33 @@
         function renderGroupLine(data) {
             const myGroups = data.my_groups || [];
             if (!myGroups.length) {
-                return '<div style="background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.25);border-radius:6px;padding:8px 10px;font-size:10px;color:var(--text-primary);line-height:1.5;">' +
-                    '<div style="font-weight:600;color:#f59e0b;margin-bottom:3px;">🌐 当前在公共池</div>' +
-                    '<div style="color:var(--text-muted);margin-bottom:6px;">你在全员排行榜，不属于任何组队。</div>' +
-                    '<div style="display:flex;gap:6px;">' +
-                        '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:3px 10px;border:none;border-radius:4px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">+ 创建组队</button>' +
-                        '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:3px 10px;border:1px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-primary);cursor:pointer;">+ 加入组队</button>' +
-                    '</div>' +
+                // 紧凑一行：状态点 + 文字 + 两个操作按钮靠右
+                return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:10px;">' +
+                    '<span style="color:var(--text-muted);"><span style="color:#f59e0b;">●</span> 当前在公共池（未加入任何组队）</span>' +
+                    '<span style="margin-left:auto;display:inline-flex;gap:4px;">' +
+                        '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:2px 8px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">+ 创建</button>' +
+                        '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-primary);cursor:pointer;">+ 加入</button>' +
+                    '</span>' +
                     '</div>';
             }
-            const tags = myGroups.map(g =>
-                '<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(20,184,166,0.15);border:1px solid rgba(20,184,166,0.3);border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--neon-green);">' +
-                escapeHtml(g.name || g.code) +
+            const tags = myGroups.map(g => {
+                const display = g.name && g.name !== g.code ? g.name : '未知组队';
+                const codeTag = g.is_creator
+                    ? '<span onclick="event.stopPropagation();copyGroupCode(\'' + escapeHtml(g.code) + '\', this)" style="font-family:JetBrains Mono,monospace;font-size:9px;color:#f59e0b;background:rgba(245,158,11,0.1);padding:1px 5px;border-radius:3px;margin-left:4px;cursor:pointer;" title="点击复制码">码 ' + escapeHtml(g.code) + '</span>'
+                    : '';
+                return '<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(20,184,166,0.15);border:1px solid rgba(20,184,166,0.3);border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--neon-green);">' +
+                escapeHtml(display) + codeTag +
                 '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="cursor:pointer;color:var(--text-muted);font-weight:400;margin-left:2px;" title="退出">×</span>' +
-                '</span>'
-            ).join('');
-            return '<div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.25);border-radius:6px;padding:8px 10px;font-size:10px;line-height:1.5;">' +
-                '<div style="font-weight:600;color:var(--neon-green);margin-bottom:4px;">🎯 已加入 ' + myGroups.length + ' 个组队</div>' +
-                '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">' + tags +
-                '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--border-color);border-radius:12px;background:transparent;color:var(--text-muted);cursor:pointer;">+ 加入更多</button>' +
-                '</div></div>';
+                '</span>';
+            }).join('');
+            return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:10px;">' +
+                '<span style="color:var(--text-muted);white-space:nowrap;"><span style="color:var(--neon-green);">●</span> 已加入 ' + myGroups.length + ' 个组队</span>' +
+                '<span style="margin-left:auto;display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;">' + tags +
+                    '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:2px 8px;border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.1);color:#f59e0b;font-weight:600;cursor:pointer;">+ 创建</button>' +
+                    '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--border-color);border-radius:12px;background:transparent;color:var(--text-muted);cursor:pointer;">+ 加入</button>' +
+                    '<button onclick="clearAllGroups()" style="font-size:10px;padding:2px 6px;border:none;background:transparent;color:var(--text-muted);cursor:pointer;text-decoration:underline;" title="清空本地组码记录">清空</button>' +
+                '</span>' +
+                '</div>';
         }
 
         function renderGroupRanking(groups) {
@@ -4547,6 +4554,32 @@
             const result = await resp.json();
             if (result.ok) {
                 await loadCommunity({forceRefresh: true});
+            }
+        }
+
+        async function clearAllGroups() {
+            if (!confirm('清空所有已加入/已创建的组队记录？\n（不会影响服务端，只是清理本机的测试残留）')) return;
+            const resp = await fetch('/api/community/groups/clear', {method: 'POST'});
+            const result = await resp.json();
+            if (result.ok) {
+                await loadCommunity({forceRefresh: true});
+            }
+        }
+
+        async function copyGroupCode(code, el) {
+            try {
+                await navigator.clipboard.writeText(String(code || ''));
+                const orig = el.textContent;
+                el.textContent = '已复制';
+                el.style.background = 'rgba(34,197,94,0.2)';
+                el.style.color = '#22c55e';
+                setTimeout(() => {
+                    el.textContent = orig;
+                    el.style.background = '';
+                    el.style.color = '';
+                }, 1200);
+            } catch (err) {
+                alert('复制失败，请手动选择码: ' + code);
             }
         }
 

@@ -30,6 +30,8 @@ USER_ID_FILE = os.path.join(COMMUNITY_DIR, "community_id.txt")
 OPTIN_FILE = os.path.join(COMMUNITY_DIR, "community_optin.txt")
 CREDENTIAL_FILE = os.path.join(COMMUNITY_DIR, "community_credential.json")
 GROUP_CODE_FILE = os.path.join(COMMUNITY_DIR, "group_code.txt")
+GROUP_CREATED_FILE = os.path.join(COMMUNITY_DIR, "created_groups.txt")
+GROUP_NAME_CACHE_FILE = os.path.join(COMMUNITY_DIR, "group_names.json")
 GITCODE_API = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMonitor"
 REPORTS_PATH = "community/reports"
 COMMUNITY_BRANCH = os.environ.get("TOKEN_MONITOR_COMMUNITY_BRANCH", "community-data")
@@ -366,15 +368,95 @@ def _save_group_codes(codes):
         f.write(",".join(str(c).strip() for c in codes if str(c).strip()))
 
 
-def add_group_code(code):
-    """添加一个组码（不重复）。"""
-    codes = get_group_codes()
+def _load_created_codes():
+    """读取本地保存的我创建的组码列表。"""
+    try:
+        with open(GROUP_CREATED_FILE, "r") as f:
+            raw = f.read().strip()
+            return [c for c in raw.split(",") if c.strip()] if raw else []
+    except OSError:
+        return []
+
+
+def _save_created_codes(codes):
+    """保存我创建的组码到本地。"""
+    _ensure_dir()
+    with open(GROUP_CREATED_FILE, "w") as f:
+        f.write(",".join(str(c).strip() for c in codes if str(c).strip()))
+
+
+def _record_created_code(code):
+    """记录一个我创建的组码。"""
     code = str(code or "").strip()
-    if code and code not in codes:
+    if not code:
+        return
+    codes = _load_created_codes()
+    if code not in codes:
         codes.append(code)
-        _save_group_codes(codes)
-        _aggregate_cache["data"] = None
-        _aggregate_cache["ts"] = 0
+        _save_created_codes(codes)
+
+
+def _remove_created_code(code):
+    """退出创建的组队时清理本地记录（仅本地，不影响服务端）。"""
+    code = str(code or "").strip()
+    codes = _load_created_codes()
+    codes = [c for c in codes if c != code]
+    _save_created_codes(codes)
+
+
+def _load_group_name_cache():
+    """读取本地缓存的 code → name 映射。"""
+    try:
+        with open(GROUP_NAME_CACHE_FILE, "r") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_group_name_cache(cache):
+    """持久化 code → name 映射。"""
+    _ensure_dir()
+    try:
+        with open(GROUP_NAME_CACHE_FILE, "w") as f:
+            json.dump(cache, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _lookup_group_name(code):
+    """查 group name：先查本地缓存，否则调中继。失败返回 None。"""
+    code = str(code or "").strip()
+    if not code:
+        return None
+    cache = _load_group_name_cache()
+    if code in cache:
+        return cache[code]
+    info = get_group_info(code)
+    if info.get("ok") and info.get("name"):
+        cache[code] = info["name"]
+        _save_group_name_cache(cache)
+        return info["name"]
+    return None
+
+
+def add_group_code(code):
+    """加入组队：先调中继校验组码存在，加入后缓存组名。失败时回滚本地列表。"""
+    code = str(code or "").strip()
+    if not code:
+        return {"ok": False, "status": "empty_code", "message": "组码不能为空"}
+    codes = get_group_codes()
+    if code in codes:
+        return {"ok": True, "codes": codes, "already_member": True}
+    info = get_group_info(code)
+    if not info.get("ok"):
+        return {"ok": False, "status": "group_not_found",
+                "message": info.get("message", "组队不存在")}
+    codes.append(code)
+    _save_group_codes(codes)
+    _save_group_name_cache({**_load_group_name_cache(), code: info["name"]})
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
     return {"ok": True, "codes": codes}
 
 
@@ -387,6 +469,15 @@ def remove_group_code(code):
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
     return {"ok": True, "codes": codes}
+
+
+def clear_all_group_codes():
+    """清空所有组码（用于清理测试残留或彻底退出所有组队）。"""
+    _save_group_codes([])
+    _save_created_codes([])
+    _aggregate_cache["data"] = None
+    _aggregate_cache["ts"] = 0
+    return {"ok": True}
 
 
 def create_group(name):
@@ -416,7 +507,12 @@ def create_group(name):
         return {"ok": False, "status": "relay_unavailable", "message": f"组队中继暂时不可用：{exc}"}
 
     if result.get("ok"):
-        add_group_code(result["code"])
+        _save_group_name_cache({**_load_group_name_cache(), result["code"]: result["name"]})
+        _record_created_code(result["code"])
+        codes = get_group_codes()
+        if result["code"] not in codes:
+            codes.append(result["code"])
+            _save_group_codes(codes)
         _aggregate_cache["data"] = None
         _aggregate_cache["ts"] = 0
     return result
@@ -645,8 +741,10 @@ def get_community_stats(force_refresh=False):
             code = str(code).strip()
             if not code:
                 continue
+            # v1.5.04: 用本地缓存的名称，没有则显示组码
+            name = _lookup_group_name(code) or code
             if code not in group_stats:
-                group_stats[code] = {"code": code, "total_tokens": 0, "member_count": 0, "top_member": ""}
+                group_stats[code] = {"code": code, "name": name, "total_tokens": 0, "member_count": 0, "top_member": ""}
             group_stats[code]["total_tokens"] += int(r.get("today_tokens") or 0)
             group_stats[code]["member_count"] += 1
             display = str(r.get("display_name") or "")
@@ -654,7 +752,10 @@ def get_community_stats(force_refresh=False):
                 group_stats[code]["top_member"] = display
     groups = sorted(group_stats.values(), key=lambda g: -g["total_tokens"])
     my_group_codes = get_group_codes()
+    my_created_codes = _load_created_codes()
     my_groups = [g for g in groups if g["code"] in my_group_codes]
+    for g in my_groups:
+        g["is_creator"] = g["code"] in my_created_codes
 
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)

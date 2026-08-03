@@ -19,6 +19,8 @@ class CommunityTests(unittest.TestCase):
         self.optin_file = os.path.join(self.community_dir, "community_optin.txt")
         self.credential_file = os.path.join(self.community_dir, "community_credential.json")
         self.group_code_file = os.path.join(self.community_dir, "group_code.txt")
+        self.group_created_file = os.path.join(self.community_dir, "created_groups.txt")
+        self.group_name_cache_file = os.path.join(self.community_dir, "group_names.json")
         with open(self.user_id_file, "w") as f:
             f.write("User_TEST1")
         with open(self.optin_file, "w") as f:
@@ -30,6 +32,8 @@ class CommunityTests(unittest.TestCase):
             ("OPTIN_FILE", self.optin_file),
             ("CREDENTIAL_FILE", self.credential_file),
             ("GROUP_CODE_FILE", self.group_code_file),
+            ("GROUP_CREATED_FILE", self.group_created_file),
+            ("GROUP_NAME_CACHE_FILE", self.group_name_cache_file),
         ):
             patcher = mock.patch.object(community, name, value)
             patcher.start()
@@ -388,7 +392,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(len(result["groups"]), 2)
 
     def test_add_remove_group_codes_manages_local_list(self):
-        """v1.5.01 测试：add_group_code/remove_group_code 维护本地组码列表。"""
+        """v1.5.01+ 测试：add_group_code 校验服务端后维护本地列表。"""
         # 清空环境
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
@@ -396,17 +400,23 @@ class CommunityTests(unittest.TestCase):
         # 初始状态：未加入任何组
         self.assertEqual(community.get_group_codes(), [])
 
-        # 添加组码
-        result = community.add_group_code("12345")
+        # 添加组码（mock 中继校验通过）
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "12345", "name": "测试组1"}):
+            result = community.add_group_code("12345")
         self.assertTrue(result["ok"])
         self.assertEqual(community.get_group_codes(), ["12345"])
 
         # 重复添加应该去重
-        community.add_group_code("12345")
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "12345", "name": "测试组1"}):
+            community.add_group_code("12345")
         self.assertEqual(community.get_group_codes(), ["12345"])
 
         # 添加第二个
-        community.add_group_code("67890")
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "67890", "name": "测试组2"}):
+            community.add_group_code("67890")
         self.assertEqual(community.get_group_codes(), ["12345", "67890"])
 
         # 移除一个
@@ -417,13 +427,53 @@ class CommunityTests(unittest.TestCase):
         community.remove_group_code("99999")
         self.assertEqual(community.get_group_codes(), ["67890"])
 
-    def test_report_includes_group_codes(self):
-        """v1.5.01 测试：report_community_stats 上报时携带 group_codes。"""
+    def test_add_group_code_rejects_invalid(self):
+        """v1.5.04 测试：组码无效时 add_group_code 返回错误，不污染本地列表。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        community.add_group_code("11111")
-        community.add_group_code("22222")
+        # 中继返回不存在
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": False, "status": "group_not_found"}):
+            result = community.add_group_code("99999")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "group_not_found")
+        # 本地列表不能被污染
+        self.assertEqual(community.get_group_codes(), [])
+
+    def test_clear_all_group_codes_resets_everything(self):
+        """v1.5.04 测试：清空全部会重置组码 + 创建记录。"""
+        if os.path.exists(self.credential_file):
+            os.remove(self.credential_file)
+
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "11111", "name": "组A"}):
+            community.add_group_code("11111")
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "22222", "name": "组B"}):
+            community.add_group_code("22222")
+
+        self.assertEqual(len(community.get_group_codes()), 2)
+        community._record_created_code("11111")
+        self.assertIn("11111", community._load_created_codes())
+
+        result = community.clear_all_group_codes()
+        self.assertTrue(result["ok"])
+        self.assertEqual(community.get_group_codes(), [])
+        self.assertEqual(community._load_created_codes(), [])
+
+    def test_report_includes_group_codes(self):
+        """v1.5.01+ 测试：report_community_stats 上报时携带 group_codes。"""
+        if os.path.exists(self.credential_file):
+            os.remove(self.credential_file)
+
+        # mock 中继校验，让 add_group_code 成功
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "11111", "name": "组1"}):
+            community.add_group_code("11111")
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "22222", "name": "组2"}):
+            community.add_group_code("22222")
 
         captured = {}
         def fake_relay(report):
@@ -437,6 +487,38 @@ class CommunityTests(unittest.TestCase):
             community.report_community_stats(usage)
 
         self.assertEqual(captured["report"]["group_codes"], ["11111", "22222"])
+
+    def test_my_groups_mark_creator_with_code(self):
+        """v1.5.04 测试：创建者本地记录的组会带 is_creator=true，便于前端显示码。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_ME", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}, "group_codes": ["11111"]},
+            {"id": "User_OTHER", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}, "group_codes": ["22222"]},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        # 标记 11111 是我创建的，22222 不是
+        community._record_created_code("11111")
+        # 把我创建的组加入本地组码列表
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "11111", "name": "我创建的组"}):
+            community.add_group_code("11111")
+        # 把本地列表设为只包含 11111（我创建的）
+        with mock.patch.object(community, "_lookup_group_name",
+                               side_effect=lambda code: {"11111": "我创建的组", "22222": "别人的组"}.get(code)):
+            with mock.patch.object(community, "_gitcode_api", return_value=files), \
+                 mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+                result = community.get_community_stats()
+
+        my_groups = result["my_groups"]
+        self.assertEqual(len(my_groups), 1)
+        self.assertEqual(my_groups[0]["code"], "11111")
+        self.assertEqual(my_groups[0]["name"], "我创建的组")
+        self.assertTrue(my_groups[0]["is_creator"])
+        # 全局 groups 里两个都在
+        all_codes = {g["code"] for g in result["groups"]}
+        self.assertEqual(all_codes, {"11111", "22222"})
 
     def test_no_group_code_no_group_aggregation(self):
         """没有组码的报告不参与组队聚合，但仍在公共池排行。"""
