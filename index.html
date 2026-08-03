@@ -3583,6 +3583,9 @@
             ],
             '1.5.08': [
                 '加入/创建改为页面内内联输入（不用弹窗）；我的今日排名按组 Tab 切换显示组内排名；彻底去掉加入时的网络调用。'
+            ],
+            '1.5.09': [
+                '修复加入组队按钮无响应：去掉 setTimeout 事件绑定（异步渲染后 DOM 被替换导致 onclick 丢失），改为 HTML onclick 属性直接绑定全局函数。'
             ]
         });
 
@@ -4498,16 +4501,16 @@
         function renderGroupInlineEditor(mode) {
             if (mode === 'join') {
                 return '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">' +
-                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-family:JetBrains Mono,monospace;" placeholder="输入5位组码" maxlength="5" autocomplete="off">' +
-                    '<button id="groupInlineConfirm" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:var(--neon-green);color:#000;font-weight:600;cursor:pointer;">加入</button>' +
+                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);font-family:JetBrains Mono,monospace;" placeholder="输入5位组码" maxlength="5" autocomplete="off" onkeydown="if(event.key===\'Enter\')confirmGroupInline()">' +
+                    '<button onclick="confirmGroupInline()" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:var(--neon-green);color:#000;font-weight:600;cursor:pointer;">加入</button>' +
                     '<button onclick="setGroupInlineMode(\'\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-muted);cursor:pointer;">取消</button>' +
                     '<span id="groupInlineFeedback" style="font-size:9px;color:var(--text-muted);"></span>' +
                     '</div>';
             }
             if (mode === 'create') {
                 return '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">' +
-                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);" placeholder="输入组名（1-16字符）" maxlength="16" autocomplete="off">' +
-                    '<button id="groupInlineConfirm" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">创建</button>' +
+                    '<input id="groupInlineInput" style="flex:1;min-width:80px;max-width:160px;padding:3px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);" placeholder="输入组名（1-16字符）" maxlength="16" autocomplete="off" onkeydown="if(event.key===\'Enter\')confirmGroupInline()">' +
+                    '<button onclick="confirmGroupInline()" style="font-size:10px;padding:3px 10px;border:none;border-radius:3px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">创建</button>' +
                     '<button onclick="setGroupInlineMode(\'\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--border-color);border-radius:3px;background:transparent;color:var(--text-muted);cursor:pointer;">取消</button>' +
                     '<span id="groupInlineFeedback" style="font-size:9px;color:var(--text-muted);"></span>' +
                     '</div>';
@@ -4515,42 +4518,38 @@
             return '';
         }
 
+        async function confirmGroupInline() {
+            const input = document.getElementById('groupInlineInput');
+            if (!input) return;
+            const value = input.value.trim();
+            const feedback = document.getElementById('groupInlineFeedback');
+            if (!feedback) return;
+            if (_groupInlineMode === 'create') {
+                if (!value) { feedback.textContent = '组名不能为空'; return; }
+                feedback.textContent = '创建中...';
+                const result = await createGroup(value);
+                if (result.ok) {
+                    feedback.textContent = '✅ 码: ' + result.code;
+                    setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 800);
+                } else {
+                    feedback.textContent = '❌ ' + (result.message || '创建失败');
+                }
+            } else if (_groupInlineMode === 'join') {
+                if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
+                feedback.textContent = '加入中...';
+                const result = await joinGroup(value);
+                if (result.ok) {
+                    feedback.textContent = '✅ 已加入';
+                    setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 500);
+                } else {
+                    feedback.textContent = '❌ ' + (result.message || '加入失败');
+                }
+            }
+        }
+
         function setGroupInlineMode(mode) {
             _groupInlineMode = mode;
             loadCommunity({preferCache: true});
-            setTimeout(() => {
-                const input = document.getElementById('groupInlineInput');
-                if (input) input.focus();
-                const confirm = document.getElementById('groupInlineConfirm');
-                if (confirm && input) {
-                    confirm.onclick = async () => {
-                        const value = input.value.trim();
-                        const feedback = document.getElementById('groupInlineFeedback');
-                        if (mode === 'create') {
-                            if (!value) { feedback.textContent = '组名不能为空'; return; }
-                            feedback.textContent = '创建中...';
-                            const result = await createGroup(value);
-                            if (result.ok) {
-                                feedback.textContent = '✅ 码: ' + result.code;
-                                setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 800);
-                            } else {
-                                feedback.textContent = '❌ ' + (result.message || '创建失败');
-                            }
-                        } else {
-                            if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
-                            feedback.textContent = '加入中...';
-                            const result = await joinGroup(value);
-                            if (result.ok) {
-                                feedback.textContent = '✅ 已加入';
-                                setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 500);
-                            } else {
-                                feedback.textContent = '❌ ' + (result.message || '加入失败');
-                            }
-                        }
-                    };
-                    input.onkeydown = (e) => { if (e.key === 'Enter') confirm.click(); };
-                }
-            }, 100);
         }
 
         function renderGroupTabs(data) {
