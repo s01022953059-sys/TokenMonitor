@@ -109,7 +109,6 @@ case r.Method == http.MethodPost && r.URL.Path == "/v1/archive":
 func (h *relayHandler) handleReport(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	var request reportRequest
 	if err := decoder.Decode(&request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "请求格式不正确")
@@ -352,7 +351,6 @@ func (h *relayHandler) handleCreateGroup(w http.ResponseWriter, r *http.Request)
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 2*1024)
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	var request groupRequest
 	if err := decoder.Decode(&request); err != nil || ensureJSONEnd(decoder) != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "请求格式不正确")
@@ -424,10 +422,9 @@ func (h *relayHandler) handleProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnsupportedMediaType, "invalid_content_type", "请求必须使用 JSON")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	var request profileRequest
+r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
+		decoder := json.NewDecoder(r.Body)
+		var request profileRequest
 	if err := decoder.Decode(&request); err != nil || ensureJSONEnd(decoder) != nil || validateProfileRequest(request) != nil {
 		writeError(w, http.StatusBadRequest, "name_invalid", "昵称请求格式不正确")
 		return

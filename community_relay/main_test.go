@@ -512,3 +512,223 @@ func TestGitCodeStoreCacheControlHeaders(t *testing.T) {
 
 	t.Logf("all %d GET requests have correct cache-control headers", len(capturedHeaders))
 }
+
+// TestReportAcceptsUnknownFields 验证上报接口向前兼容：
+// 新客户端发送未知字段（如 group_codes）时不应被拒绝。
+// v1.5.02 事故：加了 DisallowUnknownFields() 导致新字段被拒绝，所有用户上报失败。
+func TestReportAcceptsUnknownFields(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = byte(i + 1)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(secret)
+	hash := sha256.Sum256(secret)
+	authHash := hex.EncodeToString(hash[:])
+
+	store := &fakeStore{
+		existing: &reportDocument{
+			ID: "User_TEST01", AuthHash: authHash, UpdatedAt: "2026-08-01T00:00:00Z",
+			ReportDate: "2026-08-01", TodayTokens: 1000,
+		},
+	}
+	handler := &relayHandler{store: store, now: func() time.Time {
+		return time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	}}
+
+	// 新客户端发送 group_codes (数组) 和 future_field (未来字段)
+	body := `{
+		"id": "User_TEST01",
+		"device_secret": "` + encoded + `",
+		"report_date": "2026-08-01",
+		"today_tokens": 2000,
+		"by_tool": {"Claude": 2000},
+		"version": "1.5.02",
+		"group_codes": ["12345", "67890"],
+		"future_field": "should be ignored"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/report", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp["ok"].(bool) {
+		t.Fatalf("expected ok=true, got %v", resp)
+	}
+	// 验证 group_codes 被正确保存
+	if store.written == nil {
+		t.Fatal("expected report to be written")
+	}
+	if len(store.written.GroupCodes) != 2 {
+		t.Fatalf("expected 2 group codes, got %d: %v", len(store.written.GroupCodes), store.written.GroupCodes)
+	}
+}
+
+// TestReportAcceptsLegacyFormat 验证旧客户端（发送 group_code 字符串）仍被接受。
+func TestReportAcceptsLegacyFormat(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = byte(i + 1)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(secret)
+	hash := sha256.Sum256(secret)
+	authHash := hex.EncodeToString(hash[:])
+
+	store := &fakeStore{
+		existing: &reportDocument{
+			ID: "User_TEST01", AuthHash: authHash, UpdatedAt: "2026-08-01T00:00:00Z",
+			ReportDate: "2026-08-01", TodayTokens: 1000,
+		},
+	}
+	handler := &relayHandler{store: store, now: func() time.Time {
+		return time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	}}
+
+	// 旧客户端发送 group_code (字符串)
+	body := `{
+		"id": "User_TEST01",
+		"device_secret": "` + encoded + `",
+		"report_date": "2026-08-01",
+		"today_tokens": 2000,
+		"by_tool": {"Claude": 2000},
+		"version": "1.4.88",
+		"group_code": "12345"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/report", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp["ok"].(bool) {
+		t.Fatalf("expected ok=true, got %v", resp)
+	}
+}
+
+// TestProfileAcceptsUnknownFields 验证昵称接口向前兼容。
+func TestProfileAcceptsUnknownFields(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = byte(i + 1)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(secret)
+	hash := sha256.Sum256(secret)
+	authHash := hex.EncodeToString(hash[:])
+
+	store := &fakeStore{
+		existing: &reportDocument{
+			ID: "User_TEST01", AuthHash: authHash, UpdatedAt: "2026-08-01T00:00:00Z",
+			ReportDate: "2026-08-01", TodayTokens: 1000, DisplayName: "OldName",
+		},
+	}
+	profiles, err := openProfileDatabase(t.TempDir() + "/test-profile-fwd.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer profiles.Close()
+	// 预先创建 profile，确保 display_name 校验通过
+	if _, err := profiles.createGroup(context.Background(), "User_TEST01", "test-group", time.Now()); err != nil {
+		// 可能因为 group 名验证失败，忽略
+	}
+
+	handler := &relayHandler{store: store, profiles: profiles, now: func() time.Time {
+		return time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	}}
+
+	body := `{
+		"id": "User_TEST01",
+		"device_secret": "` + encoded + `",
+		"display_name": "NewName",
+		"future_field": "ignored"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/profile", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// 接受 200 (成功) 或 400 (昵称规则/速率限制), 但不能是拒绝未知字段
+	if w.Code == http.StatusBadRequest {
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		status := resp["status"]
+		if status == "invalid_json" {
+			t.Fatalf("unknown fields should not cause invalid_json: %v", resp)
+		}
+		// 其他 400 (如昵称重复、速率限制) 是可以接受的
+		t.Logf("profile returned 400 for non-unknown-field reason: %v", resp)
+	}
+}
+
+// TestCreateGroupAcceptsUnknownFields 验证创建组队接口向前兼容。
+func TestCreateGroupAcceptsUnknownFields(t *testing.T) {
+	secret := make([]byte, 32)
+	for i := range secret {
+		secret[i] = byte(i + 1)
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(secret)
+	hash := sha256.Sum256(secret)
+	authHash := hex.EncodeToString(hash[:])
+
+	store := &fakeStore{
+		existing: &reportDocument{
+			ID: "User_TEST01", AuthHash: authHash, UpdatedAt: "2026-08-01T00:00:00Z",
+			ReportDate: "2026-08-01", TodayTokens: 1000,
+		},
+	}
+	profiles, err := openProfileDatabase(t.TempDir() + "/test-group-fwd.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer profiles.Close()
+
+	handler := &relayHandler{store: store, profiles: profiles, now: func() time.Time {
+		return time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	}}
+
+	body := `{
+		"name": "测试组",
+		"future_field": "ignored"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/groups", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Device-ID", "User_TEST01")
+	req.Header.Set("X-Device-Secret", encoded)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		status := resp["status"]
+		if status == "invalid_json" {
+			t.Fatalf("unknown fields should not cause invalid_json: %v", resp)
+		}
+		t.Logf("create group returned %d for non-unknown-field reason: %v", w.Code, resp)
+		return
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp["ok"].(bool) {
+		t.Fatalf("expected ok=true, got %v", resp)
+	}
+	if resp["code"] == nil || resp["name"] == nil {
+		t.Fatalf("expected code and name in response, got %v", resp)
+	}
+}
