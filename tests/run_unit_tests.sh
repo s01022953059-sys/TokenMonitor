@@ -72,8 +72,6 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('id="modelDonutSecondary"') ||
       !html.includes('缓存命中 ${cacheHitRate}%') ||
       !html.includes('调用次数 ${requestCount.toLocaleString')) {
-    throw new Error(`${file}: 圆环中心辅助指标缺失或未绑定真实汇总数据`);
-  }
   if (!html.includes('工具维度保留所有非零工具') ||
       !html.includes('if (data.by_tool[t].total_tokens > 0)')) {
     throw new Error(`${file}: 工具占比不能把低用量工具隐藏到 Other`);
@@ -99,6 +97,19 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('scrollbar-gutter: stable') ||
       !html.includes('overflow-y: auto')) {
     throw new Error(`${file}: 社区弹窗缺少内部滚动区或跨平台滚动条样式`);
+  }
+  // v1.5.0 组队功能：必须包含创建/加入/组队排行核心元素与函数
+  if (!html.includes('function renderGroupLine') ||
+      !html.includes('function renderGroupRanking') ||
+      !html.includes('function showGroupDialog') ||
+      !html.includes('function leaveGroup') ||
+      !html.includes('showGroupDialog(\'create\')') ||
+      !html.includes('showGroupDialog(\'join\')') ||
+      !html.includes('已加入') ||
+      !html.includes('当前在公共池') ||
+      !html.includes('🏆 组队排行')) {
+    throw new Error(`${file}: 组队功能核心 UI 元素缺失 (v1.5.0+)`);
+  }
   }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));

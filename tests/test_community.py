@@ -18,6 +18,7 @@ class CommunityTests(unittest.TestCase):
         self.user_id_file = os.path.join(self.community_dir, "community_id.txt")
         self.optin_file = os.path.join(self.community_dir, "community_optin.txt")
         self.credential_file = os.path.join(self.community_dir, "community_credential.json")
+        self.group_code_file = os.path.join(self.community_dir, "group_code.txt")
         with open(self.user_id_file, "w") as f:
             f.write("User_TEST1")
         with open(self.optin_file, "w") as f:
@@ -28,6 +29,7 @@ class CommunityTests(unittest.TestCase):
             ("USER_ID_FILE", self.user_id_file),
             ("OPTIN_FILE", self.optin_file),
             ("CREDENTIAL_FILE", self.credential_file),
+            ("GROUP_CODE_FILE", self.group_code_file),
         ):
             patcher = mock.patch.object(community, name, value)
             patcher.start()
@@ -333,6 +335,130 @@ class CommunityTests(unittest.TestCase):
                       "小昆的统计不应因指纹碰撞而丢失")
         self.assertIn("User_XXXXXX", leaderboard_ids)
         self.assertIn("User_OTHER1", leaderboard_ids)
+
+    def test_group_codes_aggregate_per_group(self):
+        """v1.5.01 测试：用户同时属于多个组时，Token 在所有组里都计入。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_MULTI1", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}, "group_codes": ["11111", "22222"]},
+            {"id": "User_GROUP1", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}, "group_codes": ["11111"]},
+            {"id": "User_GROUP2", "report_date": today, "today_tokens": 2000, "by_tool": {"Claude": 2000}, "group_codes": ["22222"]},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # 两个组都应该出现，且 Token 各自正确聚合
+        group_codes = {g["code"]: g for g in result["groups"]}
+        self.assertIn("11111", group_codes)
+        self.assertIn("22222", group_codes)
+        # 11111 = User_MULTI1(3000) + User_GROUP1(5000) = 8000
+        self.assertEqual(group_codes["11111"]["total_tokens"], 8000)
+        self.assertEqual(group_codes["11111"]["member_count"], 2)
+        # 22222 = User_MULTI1(3000) + User_GROUP2(2000) = 5000
+        self.assertEqual(group_codes["22222"]["total_tokens"], 5000)
+        self.assertEqual(group_codes["22222"]["member_count"], 2)
+
+    def test_group_codes_handle_legacy_string_format(self):
+        """v1.5.01 向后兼容：旧中继/旧客户端发送字符串格式 group_code 也能正确处理。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            # 新格式 (数组)
+            {"id": "User_NEW", "report_date": today, "today_tokens": 1000, "by_tool": {"Claude": 1000}, "group_codes": ["33333"]},
+            # 旧格式 (字符串)
+            {"id": "User_OLD", "report_date": today, "today_tokens": 2000, "by_tool": {"Claude": 2000}, "group_code": "44444"},
+            # 两种都没有
+            {"id": "User_NONE", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # 应该有两个组都正确识别
+        group_codes = {g["code"]: g for g in result["groups"]}
+        self.assertEqual(group_codes.get("33333", {}).get("total_tokens"), 1000)
+        self.assertEqual(group_codes.get("44444", {}).get("total_tokens"), 2000)
+        # User_NONE 不应该出现在任何组里
+        self.assertEqual(len(result["groups"]), 2)
+
+    def test_add_remove_group_codes_manages_local_list(self):
+        """v1.5.01 测试：add_group_code/remove_group_code 维护本地组码列表。"""
+        # 清空环境
+        if os.path.exists(self.credential_file):
+            os.remove(self.credential_file)
+
+        # 初始状态：未加入任何组
+        self.assertEqual(community.get_group_codes(), [])
+
+        # 添加组码
+        result = community.add_group_code("12345")
+        self.assertTrue(result["ok"])
+        self.assertEqual(community.get_group_codes(), ["12345"])
+
+        # 重复添加应该去重
+        community.add_group_code("12345")
+        self.assertEqual(community.get_group_codes(), ["12345"])
+
+        # 添加第二个
+        community.add_group_code("67890")
+        self.assertEqual(community.get_group_codes(), ["12345", "67890"])
+
+        # 移除一个
+        community.remove_group_code("12345")
+        self.assertEqual(community.get_group_codes(), ["67890"])
+
+        # 移除不存在的码不报错
+        community.remove_group_code("99999")
+        self.assertEqual(community.get_group_codes(), ["67890"])
+
+    def test_report_includes_group_codes(self):
+        """v1.5.01 测试：report_community_stats 上报时携带 group_codes。"""
+        if os.path.exists(self.credential_file):
+            os.remove(self.credential_file)
+
+        community.add_group_code("11111")
+        community.add_group_code("22222")
+
+        captured = {}
+        def fake_relay(report):
+            captured["report"] = report
+            return {"ok": True, "status": "synced", "message": "ok"}
+        with mock.patch.object(community, "_relay_request", side_effect=fake_relay):
+            usage = {
+                "summary": {"date": community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat(), "total_tokens": 1000},
+                "by_tool": {"Claude": {"total_tokens": 1000}},
+            }
+            community.report_community_stats(usage)
+
+        self.assertEqual(captured["report"]["group_codes"], ["11111", "22222"])
+
+    def test_no_group_code_no_group_aggregation(self):
+        """没有组码的报告不参与组队聚合，但仍在公共池排行。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_SOLO", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}},  # 无组
+            {"id": "User_TEAM", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}, "group_codes": ["99999"]},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # User_SOLO 在公共池排行
+        self.assertEqual(result["total_tokens_today"], 8000)
+        self.assertEqual(result["today_active_users"], 2)
+        # 但组队聚合只有 99999
+        self.assertEqual(len(result["groups"]), 1)
+        self.assertEqual(result["groups"][0]["code"], "99999")
+        self.assertEqual(result["groups"][0]["total_tokens"], 3000)
 
     def test_historical_reporter_remains_in_community_count(self):
         today = datetime.date.today()

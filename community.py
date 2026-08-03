@@ -632,9 +632,13 @@ def get_community_stats(force_refresh=False):
     # 组队统计: 用户可能属于多个组，每个组都计入
     group_stats = {}
     for r in active_reports:
-        codes = r.get("group_codes") or []
+        # v1.5.01 兼容旧格式：单字符串 group_code 视为单一组码
+        codes = r.get("group_codes")
+        if codes is None:
+            legacy = r.get("group_code")
+            codes = [legacy] if isinstance(legacy, str) and legacy.strip() else []
         if isinstance(codes, str):
-            codes = [codes]  # 兼容旧格式（单个字符串）
+            codes = [codes]
         if not isinstance(codes, list):
             codes = []
         for code in codes:
