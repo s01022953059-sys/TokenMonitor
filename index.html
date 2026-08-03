@@ -3565,6 +3565,9 @@
             ],
             '1.5.02': [
                 '极简化组队 UI：组信息融入身份行，创建/加入改为小弹窗，组队排行折叠在底部。'
+            ],
+            '1.5.03': [
+                '组队 UI 升级：明确显示公共池/已加入状态，带引导说明，组标签可点击退出。'
             ]
         });
 
@@ -4434,19 +4437,28 @@
         }
 
         function renderGroupLine(data) {
-            const codes = data.my_group_codes || [];
             const myGroups = data.my_groups || [];
             if (!myGroups.length) {
-                return '<span style="font-size:10px;color:var(--text-muted);">👥 </span>' +
-                    '<button class="community-group-btn" onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:1px 6px;">+创建</button>' +
-                    '<button class="community-group-btn" onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:1px 6px;margin-left:4px;">+加入</button>';
+                return '<div style="background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.25);border-radius:6px;padding:8px 10px;font-size:10px;color:var(--text-primary);line-height:1.5;">' +
+                    '<div style="font-weight:600;color:#f59e0b;margin-bottom:3px;">🌐 当前在公共池</div>' +
+                    '<div style="color:var(--text-muted);margin-bottom:6px;">你在全员排行榜，不属于任何组队。</div>' +
+                    '<div style="display:flex;gap:6px;">' +
+                        '<button onclick="showGroupDialog(\'create\')" style="font-size:10px;padding:3px 10px;border:none;border-radius:4px;background:#f59e0b;color:#000;font-weight:600;cursor:pointer;">+ 创建组队</button>' +
+                        '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:3px 10px;border:1px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-primary);cursor:pointer;">+ 加入组队</button>' +
+                    '</div>' +
+                    '</div>';
             }
-            return '<span style="font-size:10px;color:var(--text-muted);">👥</span> ' +
-                myGroups.map((g, i) =>
-                    '<span style="font-size:10px;font-weight:600;color:var(--neon-green);margin-right:2px;">' + escapeHtml(g.name || g.code) + '</span>' +
-                    '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="font-size:9px;color:var(--text-muted);cursor:pointer;margin-right:6px;" title="退出">×</span>'
-                ).join('') +
-                '<button class="community-group-btn" onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:1px 6px;">+</button>';
+            const tags = myGroups.map(g =>
+                '<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(20,184,166,0.15);border:1px solid rgba(20,184,166,0.3);border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--neon-green);">' +
+                escapeHtml(g.name || g.code) +
+                '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="cursor:pointer;color:var(--text-muted);font-weight:400;margin-left:2px;" title="退出">×</span>' +
+                '</span>'
+            ).join('');
+            return '<div style="background:rgba(20,184,166,0.08);border:1px solid rgba(20,184,166,0.25);border-radius:6px;padding:8px 10px;font-size:10px;line-height:1.5;">' +
+                '<div style="font-weight:600;color:var(--neon-green);margin-bottom:4px;">🎯 已加入 ' + myGroups.length + ' 个组队</div>' +
+                '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">' + tags +
+                '<button onclick="showGroupDialog(\'join\')" style="font-size:10px;padding:2px 8px;border:1px dashed var(--border-color);border-radius:12px;background:transparent;color:var(--text-muted);cursor:pointer;">+ 加入更多</button>' +
+                '</div></div>';
         }
 
         function renderGroupRanking(groups) {
