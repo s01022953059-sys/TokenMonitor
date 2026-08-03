@@ -424,19 +424,47 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(community.get_group_codes(), ["67890"])
 
     def test_add_group_code_works_without_relay(self):
-        """v1.5.06 测试：中继不可达时加入仍然成功（组名延迟解析）。"""
+        """v1.5.07 测试：add_group_code 完全不调网络，即使中继不可达也能加入。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        # 不 mock get_group_info，让它真的调中继（会失败）
-        # 但 _lookup_group_name 内部 catch 了异常，不会阻塞
+        # mock get_group_info 抛异常（模拟网络不可达）
         with mock.patch.object(community, "get_group_info",
-                               return_value={"ok": False, "status": "network_error"}):
-            result = community.add_group_code("90245")
-        # 关键断言：即使中继不可达，加入仍然成功
+                               side_effect=Exception("connection refused")):
+            with mock.patch.object(community, "_lookup_group_name",
+                               side_effect=Exception("connection refused")):
+                result = community.add_group_code("90245")
+        # 关键断言：即使网络完全不可达，加入仍然成功
         self.assertTrue(result["ok"])
         self.assertIn("90245", result["codes"])
         self.assertEqual(community.get_group_codes(), ["90245"])
+
+    def test_leaderboard_includes_group_codes(self):
+        """v1.5.07 测试：leaderboard 条目带 group_codes，前端按 Tab 筛选。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            {"id": "User_TEAM_A", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}, "group_codes": ["11111"]},
+            {"id": "User_TEAM_B", "report_date": today, "today_tokens": 3000, "by_tool": {"Claude": 3000}, "group_codes": ["22222"]},
+            {"id": "User_NO_GROUP", "report_date": today, "today_tokens": 1000, "by_tool": {"Claude": 1000}},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # leaderboard 条目必须带 group_codes
+        for entry in result["leaderboard"]:
+            self.assertIn("group_codes", entry)
+            self.assertIsInstance(entry["group_codes"], list)
+        # 验证具体值
+        team_a = next(e for e in result["leaderboard"] if e["id"] == "User_TEAM_A")
+        self.assertEqual(team_a["group_codes"], ["11111"])
+        team_b = next(e for e in result["leaderboard"] if e["id"] == "User_TEAM_B")
+        self.assertEqual(team_b["group_codes"], ["22222"])
+        no_group = next(e for e in result["leaderboard"] if e["id"] == "User_NO_GROUP")
+        self.assertEqual(no_group["group_codes"], [])
 
     def test_clear_all_group_codes_resets_everything(self):
         """v1.5.04 测试：清空全部会重置组码 + 创建记录。"""

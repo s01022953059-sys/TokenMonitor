@@ -67,6 +67,15 @@ def _community_today():
     return datetime.datetime.now(beijing_tz).strftime("%Y-%m-%d")
 
 
+def _normalize_group_codes(raw):
+    """把 group_codes 字段统一为 list[str]，兼容旧字符串格式。"""
+    if isinstance(raw, str) and raw.strip():
+        return [raw.strip()]
+    if isinstance(raw, list):
+        return [str(c).strip() for c in raw if str(c).strip()]
+    return []
+
+
 def _ensure_dir():
     os.makedirs(COMMUNITY_DIR, exist_ok=True)
 
@@ -441,11 +450,11 @@ def _lookup_group_name(code):
 
 
 def add_group_code(code):
-    """加入组队：直接保存组码到本地，不要求服务端校验。
+    """加入组队：直接保存组码到本地，完全不调网络。
 
-    v1.5.06: 之前要求先调中继 GET /v1/groups/:code 校验组码存在才加入，
-    但中国用户 Python 进程可能无法直连 new.taqi.cc（即使 VPN），
-    导致加入永远失败。改为直接保存，组名延迟解析（能连上时自动补）。
+    v1.5.07: v1.5.06 虽然去掉了校验，但 _lookup_group_name 仍调中继 GET，
+    中国用户连不上 new.taqi.cc 时 10 秒阻塞导致前端请求超时。
+    现在完全不做网络请求，组名在 get_community_stats 聚合时延迟解析。
     """
     code = str(code or "").strip()
     if not code:
@@ -455,13 +464,6 @@ def add_group_code(code):
         return {"ok": True, "codes": codes, "already_member": True}
     codes.append(code)
     _save_group_codes(codes)
-    # 尝试异步解析组名，失败不阻塞加入
-    try:
-        name = _lookup_group_name(code)
-        if name:
-            _save_group_name_cache({**_load_group_name_cache(), code: name})
-    except Exception:
-        pass
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
     return {"ok": True, "codes": codes}
@@ -720,7 +722,8 @@ def get_community_stats(force_refresh=False):
         "display_name": r.get("display_name", ""),
         "tokens": r.get("today_tokens", 0),
         "tool": _format_report_tools(r.get("by_tool", {})),
-        "is_me": r.get("id") == my_id
+        "is_me": r.get("id") == my_id,
+        "group_codes": _normalize_group_codes(r.get("group_codes", r.get("group_code"))),
     } for r in leaderboard]
 
     # 工具占比

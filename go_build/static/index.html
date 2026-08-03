@@ -4421,6 +4421,7 @@
 
         // ─── 组队功能（极简版）───
         let _groupRankingExpanded = false;
+        let _leaderboardGroupTab = 'all'; // 'all' or group code
 
         async function createGroup(name) {
             const resp = await fetch('/api/community/groups/create', {
@@ -4481,43 +4482,35 @@
                 '</div>';
         }
 
-        function renderGroupRanking(groups, data) {
-            if (!groups || !groups.length) return '';
+        function renderGroupTabs(data) {
             const myGroups = data.my_groups || [];
             if (!myGroups.length) return '';
             // 默认选第一个组
-            if (!window._groupRankTab || !myGroups.find(g => g.code === window._groupRankTab)) {
-                window._groupRankTab = myGroups[0].code;
+            if (!_leaderboardGroupTab || (_leaderboardGroupTab !== 'all' && !myGroups.find(g => g.code === _leaderboardGroupTab))) {
+                _leaderboardGroupTab = myGroups[0].code;
             }
-            const activeCode = window._groupRankTab;
-            const activeGroup = myGroups.find(g => g.code === activeCode) || myGroups[0];
-            // Tab 按钮
-            const tabs = myGroups.map(g => {
+            const tabs = [
+                '<button onclick="switchLeaderboardGroup(\'all\')" style="font-size:10px;padding:3px 10px;border:none;border-bottom:2px solid ' + (_leaderboardGroupTab === 'all' ? 'var(--neon-green)' : 'transparent') + ';background:transparent;color:' + (_leaderboardGroupTab === 'all' ? 'var(--neon-green)' : 'var(--text-muted)') + ';cursor:pointer;">全员</button>'
+            ];
+            myGroups.forEach(g => {
                 const name = (g.name && g.name !== g.code) ? g.name : '未知组队';
-                const isActive = g.code === activeCode;
-                return '<button onclick="switchGroupRankTab(\'' + escapeHtml(g.code) + '\')" style="font-size:10px;padding:3px 10px;border:none;border-bottom:2px solid ' + (isActive ? 'var(--neon-green)' : 'transparent') + ';background:transparent;color:' + (isActive ? 'var(--neon-green)' : 'var(--text-muted)') + ';cursor:pointer;">' + escapeHtml(name) + '</button>';
-            }).join('');
-            // 该组成员排行榜：从全局 leaderboard 筛选（leaderboard 里有 group_codes 的话）
-            // 由于 leaderboard entries 不含 group_codes，我们用 participants 数据
-            // 目前只显示该组的汇总信息
-            const groupMembers = (data.groups || []).filter(gr => gr.code === activeCode);
-            const groupInfo = groupMembers[0] || activeGroup;
-            let html = '<div style="margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:8px;">' +
-                '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">🏆 组队排行</div>' +
-                '<div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:8px;overflow-x:auto;">' + tabs + '</div>';
-            // 当前组信息
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">' +
-                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">总 Token</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + formatTokens(groupInfo.total_tokens || 0) + '</div></div>' +
-                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">人数</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;">' + (groupInfo.member_count || 0) + '</div></div>' +
-                '<div style="text-align:center;"><div style="font-size:9px;color:var(--text-muted);">头名</div><div style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(groupInfo.top_member || '-') + '</div></div>' +
-                '</div>';
-            html += '</div>';
-            return html;
+                const isActive = g.code === _leaderboardGroupTab;
+                tabs.push('<button onclick="switchLeaderboardGroup(\'' + escapeHtml(g.code) + '\')" style="font-size:10px;padding:3px 10px;border:none;border-bottom:2px solid ' + (isActive ? 'var(--neon-green)' : 'transparent') + ';background:transparent;color:' + (isActive ? 'var(--neon-green)' : 'var(--text-muted)') + ';cursor:pointer;">' + escapeHtml(name) + '</button>');
+            });
+            return '<div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:8px;overflow-x:auto;">' + tabs.join('') + '</div>';
         }
 
-        function switchGroupRankTab(code) {
-            window._groupRankTab = code;
+        function switchLeaderboardGroup(code) {
+            _leaderboardGroupTab = code;
             loadCommunity({preferCache: true});
+        }
+
+        function filterLeaderboardByGroup(leaderboard, groupCode) {
+            if (!groupCode || groupCode === 'all') return leaderboard;
+            return leaderboard.filter(u => {
+                const codes = u.group_codes || [];
+                return Array.isArray(codes) && codes.includes(groupCode);
+            });
         }
 
         function showGroupDialog(mode) {
@@ -4716,8 +4709,9 @@
             const SEGMENT_THRESHOLD = 1000000;
             const SMALL_MAX = 15;
             const segLog = Math.log10(SEGMENT_THRESHOLD);
-            const maxLeaderTokens = leaderboard.reduce((m, u) => Math.max(m, Number(u.tokens) || 0), 0);
-            const leaderboardRows = leaderboard.map((u, i) => {
+            const filteredLeaderboard = filterLeaderboardByGroup(leaderboard, _leaderboardGroupTab);
+            const maxLeaderTokens = filteredLeaderboard.reduce((m, u) => Math.max(m, Number(u.tokens) || 0), 0);
+            const leaderboardRows = filteredLeaderboard.map((u, i) => {
                 const publicName = u.display_name || u.id || '?';
                 const identityTitle = u.display_name ? ' title="ID: ' + escapeHtml(u.id || '') + '"' : '';
                 return '<div style="display:grid;grid-template-columns:44px minmax(100px,1fr) minmax(60px,0.6fr) 52px 80px;align-items:center;gap:8px;padding:9px 10px;border-top:' + (i ? '1px solid var(--border-subtle)' : '0') + ';' + (u.is_me ? 'background:var(--hover-bg);' : '') + '">' +
@@ -4786,11 +4780,10 @@
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日用量</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (mySyncedToday ? formatTokens(myTokens) : '--') + '</div></div>' +
                     '<div style="background:var(--bg-subtle);border-radius:8px;padding:10px 12px;"><div style="font-size:9px;color:var(--text-muted);">我的今日排名</div><div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:800;margin-top:4px;">' + (myRank ? 'No.' + myRank + ' / ' + rankTotal : '--') + '</div></div>' +
                 '</div>' +
-                (leaderboard.length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
-                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
+                (leaderboard.length > 0 ? renderGroupTabs(data) + '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日活跃用户 Top 10</div>' +
+                    '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + (filteredLeaderboard.length > 0 ? leaderboardRows : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;">该组暂无活跃成员</div>') + '</div>' : '') +
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
-                renderGroupRanking(data.groups, data) +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
                     '社区仅展示匿名 ID、Token 数量和工具汇总，不包含对话、模型名称或个人信息。刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。' +
                 '</div>';
