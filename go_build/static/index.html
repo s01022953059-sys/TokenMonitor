@@ -3580,6 +3580,9 @@
             ],
             '1.5.07': [
                 '彻底修复加入组队失败：add_group_code 完全不调网络（v1.5.06 仍调 _lookup_group_name 导致 10s 超时）；Top10 排行榜按组 Tab 筛选，切换即看组内排名。'
+            ],
+            '1.5.08': [
+                '加入/创建改为页面内内联输入（不用弹窗）；我的今日排名按组 Tab 切换显示组内排名；彻底去掉加入时的网络调用。'
             ]
         });
 
@@ -4548,7 +4551,6 @@
                     input.onkeydown = (e) => { if (e.key === 'Enter') confirm.click(); };
                 }
             }, 100);
-        }
         }
 
         function renderGroupTabs(data) {
