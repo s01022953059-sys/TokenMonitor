@@ -753,9 +753,20 @@ def get_community_stats(force_refresh=False):
     groups = sorted(group_stats.values(), key=lambda g: -g["total_tokens"])
     my_group_codes = get_group_codes()
     my_created_codes = _load_created_codes()
-    my_groups = [g for g in groups if g["code"] in my_group_codes]
-    for g in my_groups:
-        g["is_creator"] = g["code"] in my_created_codes
+    # v1.5.04: 本地已加入但服务端还没上报的组也要出现，避免用户创建后 UI 仍显示公共池
+    my_groups_dict = {}
+    for g in groups:
+        if g["code"] in my_group_codes:
+            my_groups_dict[g["code"]] = dict(g, is_creator=g["code"] in my_created_codes)
+    for code in my_group_codes:
+        if code not in my_groups_dict:
+            name = _lookup_group_name(code) or "未知组队"
+            my_groups_dict[code] = {
+                "code": code, "name": name,
+                "total_tokens": 0, "member_count": 0, "top_member": "",
+                "is_creator": code in my_created_codes, "pending_report": True,
+            }
+    my_groups = sorted(my_groups_dict.values(), key=lambda g: -g["total_tokens"])
 
     my_report = next((r for r in reports if r.get("id") == my_id), None)
     my_synced_today = bool(my_report and report_date(my_report) == today)

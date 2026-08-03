@@ -488,6 +488,37 @@ class CommunityTests(unittest.TestCase):
 
         self.assertEqual(captured["report"]["group_codes"], ["11111", "22222"])
 
+    def test_my_groups_include_local_codes_pending_report(self):
+        """v1.5.04 测试：本地加入但服务端未上报的组也要在 my_groups 出现，标 pending_report。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        # 服务端没有任何该组的报告
+        reports = [
+            {"id": "User_OTHER", "report_date": today, "today_tokens": 5000, "by_tool": {"Claude": 5000}, "group_codes": ["OTHER1"]},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        # 本地加入了一个服务端没有的组
+        with mock.patch.object(community, "get_group_info",
+                               return_value={"ok": True, "code": "LOCAL1", "name": "本地新建组"}):
+            community.add_group_code("LOCAL1")
+
+        with mock.patch.object(community, "_lookup_group_name", return_value="本地新建组"), \
+             mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        # 关键断言：本地加入的组也要出现
+        my_codes = {g["code"] for g in result["my_groups"]}
+        self.assertIn("LOCAL1", my_codes)
+        # 服务端有的 OTHER1 不在 my_groups（本地没加入）
+        self.assertNotIn("OTHER1", my_codes)
+        # 待同步标记
+        local_group = next(g for g in result["my_groups"] if g["code"] == "LOCAL1")
+        self.assertTrue(local_group.get("pending_report"))
+        self.assertEqual(local_group["name"], "本地新建组")
+        self.assertEqual(local_group["total_tokens"], 0)
+
     def test_my_groups_mark_creator_with_code(self):
         """v1.5.04 测试：创建者本地记录的组会带 is_creator=true，便于前端显示码。"""
         today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()

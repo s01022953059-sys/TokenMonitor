@@ -4453,11 +4453,15 @@
             }
             const tags = myGroups.map(g => {
                 const display = g.name && g.name !== g.code ? g.name : '未知组队';
+                const pendingTag = g.pending_report
+                    ? '<span style="font-size:8px;color:var(--text-muted);margin-left:3px;" title="本机已加入，等待下次上报同步到服务端">待同步</span>'
+                    : '';
                 const codeTag = g.is_creator
                     ? '<span onclick="event.stopPropagation();copyGroupCode(\'' + escapeHtml(g.code) + '\', this)" style="font-family:JetBrains Mono,monospace;font-size:9px;color:#f59e0b;background:rgba(245,158,11,0.1);padding:1px 5px;border-radius:3px;margin-left:4px;cursor:pointer;" title="点击复制码">码 ' + escapeHtml(g.code) + '</span>'
                     : '';
-                return '<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(20,184,166,0.15);border:1px solid rgba(20,184,166,0.3);border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--neon-green);">' +
-                escapeHtml(display) + codeTag +
+                const opacity = g.pending_report ? 'opacity:0.7;' : '';
+                return '<span style="display:inline-flex;align-items:center;gap:2px;background:rgba(20,184,166,0.15);border:1px solid rgba(20,184,166,0.3);border-radius:12px;padding:2px 8px;font-size:10px;font-weight:600;color:var(--neon-green);' + opacity + '">' +
+                escapeHtml(display) + codeTag + pendingTag +
                 '<span onclick="leaveGroup(\'' + escapeHtml(g.code) + '\')" style="cursor:pointer;color:var(--text-muted);font-weight:400;margin-left:2px;" title="退出">×</span>' +
                 '</span>';
             }).join('');
@@ -4768,7 +4772,6 @@
                     '<div style="background:var(--bg-subtle);border:1px solid var(--border-card);border-radius:8px;overflow:hidden;margin-bottom:16px;">' + leaderboardRows + '</div>' : '') +
                 (Object.keys(toolDist).length > 0 ? '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">今日工具占比</div>' +
                     '<div style="background:var(--bg-subtle);border-radius:10px;padding:12px;margin-bottom:16px;">' + toolDots + '</div>' : '') +
-                renderGroupRanking(data.groups) +
                 '<div style="text-align:center;font-size:9px;color:var(--text-muted);padding:12px 0;border-top:1px solid var(--border-subtle);">' +
                     '社区仅展示匿名 ID、Token 数量和工具汇总，不包含对话、模型名称或个人信息。刚产生的用量可能暂时与首页略有差异，通常几分钟内会自动更新。' +
                 '</div>';
