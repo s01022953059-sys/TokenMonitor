@@ -753,7 +753,7 @@ def get_community_stats(force_refresh=False):
             if not code:
                 continue
             # v1.5.04: 用本地缓存的名称，没有则显示组码
-            name = _lookup_group_name(code) or code
+            name = (_load_group_name_cache().get(code) or code)
             if code not in group_stats:
                 group_stats[code] = {"code": code, "name": name, "total_tokens": 0, "member_count": 0, "top_member": ""}
             group_stats[code]["total_tokens"] += int(r.get("today_tokens") or 0)
@@ -771,7 +771,7 @@ def get_community_stats(force_refresh=False):
             my_groups_dict[g["code"]] = dict(g, is_creator=g["code"] in my_created_codes)
     for code in my_group_codes:
         if code not in my_groups_dict:
-            name = _lookup_group_name(code) or "未知组队"
+            name = _load_group_name_cache().get(code) or "未知组队"
             my_groups_dict[code] = {
                 "code": code, "name": name,
                 "total_tokens": 0, "member_count": 0, "top_member": "",

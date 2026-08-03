@@ -431,7 +431,7 @@ class CommunityTests(unittest.TestCase):
         # mock get_group_info 抛异常（模拟网络不可达）
         with mock.patch.object(community, "get_group_info",
                                side_effect=Exception("connection refused")):
-            with mock.patch.object(community, "_lookup_group_name",
+            with mock.patch.object(community, "_load_group_name_cache",
                                side_effect=Exception("connection refused")):
                 result = community.add_group_code("90245")
         # 关键断言：即使网络完全不可达，加入仍然成功
@@ -482,7 +482,7 @@ class CommunityTests(unittest.TestCase):
         community.add_group_code("11111")
         community.add_group_code("22222")
 
-        with mock.patch.object(community, "_lookup_group_name", return_value=None), \
+        with mock.patch.object(community, "_load_group_name_cache", return_value={}), \
              mock.patch.object(community, "_gitcode_api", return_value=files), \
              mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
             result = community.get_community_stats()
@@ -545,7 +545,7 @@ class CommunityTests(unittest.TestCase):
         # 本地加入了一个服务端没有的组（v1.5.06: 不需要中继校验）
         community.add_group_code("LOCAL1")
 
-        with mock.patch.object(community, "_lookup_group_name", return_value="本地新建组"), \
+        with mock.patch.object(community, "_load_group_name_cache", return_value={"LOCAL1": "本地新建组"}), \
              mock.patch.object(community, "_gitcode_api", return_value=files), \
              mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
             result = community.get_community_stats()
@@ -576,8 +576,8 @@ class CommunityTests(unittest.TestCase):
         # v1.5.06: add_group_code 不需要中继校验
         community.add_group_code("11111")
         # 把本地列表设为只包含 11111（我创建的）
-        with mock.patch.object(community, "_lookup_group_name",
-                               side_effect=lambda code: {"11111": "我创建的组", "22222": "别人的组"}.get(code)):
+        with mock.patch.object(community, "_load_group_name_cache",
+                               return_value={"11111": "我创建的组", "22222": "别人的组"}):
             with mock.patch.object(community, "_gitcode_api", return_value=files), \
                  mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
                 result = community.get_community_stats()
