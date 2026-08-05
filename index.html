@@ -3589,6 +3589,9 @@
             ],
             '1.5.10': [
                 '彻底修复加入组队卡在"加入中"：get_community_stats 里的 _lookup_group_name 仍在调中继（中国用户连不上 10s 阻塞），改为只读本地缓存不调网络。'
+            ],
+            '1.5.11': [
+                'MiniMax Code 数据源升级：v2 主源改为 ~/.minimax/v2/sqlite/runtime-state.sqlite 的 local_runtime_token_usage（仅取 mvs_ 前缀会话），JSONL 兜底 + turn_id 去重；修复 3.x 桌面端用量未统计的问题。'
             ]
         });
 

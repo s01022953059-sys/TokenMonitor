@@ -23,6 +23,11 @@ ZCODE_DB_PATH = os.path.expanduser("~/.zcode/cli/db/db.sqlite")
 WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
 WORKBUDDY_PROJECTS_DIR = os.path.expanduser("~/.workbuddy/projects")
 MINIMAX_SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
+# MiniMax Code 桌面端 3.x 的主数据源: SQLite 里的 local_runtime_token_usage 表
+# (每行是一次 LLM 调用的逐请求 token 用量, 字段已经规范化)
+MINIMAX_DB_PATH = os.path.expanduser("~/.minimax/v2/sqlite/runtime-state.sqlite")
+# session_id 前缀: 只读 MiniMax Code 桌面端 (mavis runtime) 的会话, 避免误吞其他客户端
+MINIMAX_SESSION_ID_PREFIX = "mvs_"
 CLAUDE_PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 CODEX_LOG_DB_PATH = os.path.expanduser("~/.codex/logs_2.sqlite")
 CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
@@ -712,15 +717,120 @@ def _parse_pi_timestamp(ts_str):
         return 0
 
 
-def scan_minimax_tokens(start_timestamp, end_timestamp=None):
-    """只读扫描 MiniMax Code (Pi Agent) 会话 JSONL 中的逐请求 token 用量。
+def _scan_minimax_sqlite(start_timestamp, end_timestamp=None):
+    """MiniMax Code v2 主源: 读 SQLite local_runtime_token_usage。
 
-    MiniMax Code 桌面端基于开源框架 Pi Agent, 会话存于
-    ~/.pi/agent/sessions/**/*.jsonl。每行是一个 JSON 事件, 其中 role=assistant
-    的 message 事件带 message.usage 字段 (input/output/cacheRead/cacheWrite/
-    totalTokens), 是 Anthropic 式分离口径 (input 不含 cache)。
+    schema (实测 v3.0.58):
+      id, session_id, agent_name, framework_type, turn_id,
+      model, ts (ms), input_tokens, output_tokens, reasoning_tokens,
+      cache_read_tokens, cache_write_tokens, cost_usd, raw
 
-    时间戳是 ISO 8601 字符串, 需转 unix 秒后与其他数据源对齐参与跨源去重。
+    只取 session_id 以 mvs_ 开头的行 (MiniMax Code 桌面端 mavis runtime 的会话),
+    避免误读其他客户端写进同一张表的脏数据。ts 是毫秒, 转秒后参与跨源去重。
+    """
+    logs_data = []
+    if not os.path.isfile(MINIMAX_DB_PATH):
+        return logs_data
+
+    start_ms = max(0, int(start_timestamp * 1000))
+    end_ms = int(end_timestamp * 1000) if end_timestamp is not None else None
+
+    try:
+        conn = _open_sqlite_readonly(MINIMAX_DB_PATH)
+    except (OSError, sqlite3.OperationalError) as exc:
+        print(f"[-] 打开 MiniMax SQLite 失败: {exc}")
+        return logs_data
+
+    try:
+        cur = conn.cursor()
+        # 表可能在升级中临时缺失/列缺失, 单独 try 不影响其它数据源
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='local_runtime_token_usage'")
+            if cur.fetchone() is None:
+                return logs_data
+            cur.execute("PRAGMA table_info(local_runtime_token_usage)")
+            cols = {row[1] for row in cur.fetchall()}
+            required = {"session_id", "ts", "input_tokens", "output_tokens"}
+            if not required.issubset(cols):
+                print(f"[-] local_runtime_token_usage 缺列, 当前有 {sorted(cols)}")
+                return logs_data
+
+            if end_ms is not None:
+                cur.execute(
+                    """
+                    SELECT turn_id, session_id, model, ts,
+                           input_tokens, output_tokens, reasoning_tokens,
+                           cache_read_tokens, cache_write_tokens
+                      FROM local_runtime_token_usage
+                     WHERE ts >= ? AND ts < ?
+                       AND session_id LIKE ?
+                    """,
+                    (start_ms, end_ms, MINIMAX_SESSION_ID_PREFIX + "%"),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT turn_id, session_id, model, ts,
+                           input_tokens, output_tokens, reasoning_tokens,
+                           cache_read_tokens, cache_write_tokens
+                      FROM local_runtime_token_usage
+                     WHERE ts >= ?
+                       AND session_id LIKE ?
+                    """,
+                    (start_ms, MINIMAX_SESSION_ID_PREFIX + "%"),
+                )
+        except sqlite3.OperationalError as exc:
+            print(f"[-] 读取 local_runtime_token_usage 失败: {exc}")
+            return logs_data
+
+        rows = cur.fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    for row in rows:
+        turn_id, session_id, model, ts_ms, in_t, out_t, reasoning_t, cache_r, cache_w = row
+        ts_seconds = int(ts_ms) // 1000
+        if ts_seconds <= 0:
+            continue
+        in_t = int(in_t or 0)
+        out_t = int(out_t or 0)
+        # reasoning_tokens 不计 total (跟其他 Agent 口径对齐: total = input + output)
+        cache_r = int(cache_r or 0)
+        cache_w = int(cache_w or 0)
+        i_cached = cache_r + cache_w
+        total_input = in_t + i_cached
+        total_tokens = in_t + out_t
+        if total_tokens <= 0:
+            continue
+
+        logs_data.append({
+            "time": datetime.datetime.fromtimestamp(ts_seconds).strftime("%H:%M:%S"),
+            "timestamp": ts_seconds,
+            "tool": "MiniMax Code",
+            "model": normalize_model_name(model) if model else "Unknown",
+            "input_tokens": total_input,
+            "output_tokens": out_t,
+            "total_tokens": total_tokens,
+            "input_cached": i_cached,
+            "input_uncached": in_t,
+            "latency_ms": 0,
+            "session_id": session_id or "",
+            "turn_id": turn_id or "",
+            "_source": "minimax_sqlite",  # 跨源去重时优先保留
+        })
+
+    return logs_data
+
+
+def _scan_minimax_pi_jsonl(start_timestamp, end_timestamp=None):
+    """MiniMax Code v1 兼容源: 读 ~/.pi/agent/sessions/**/*.jsonl。
+
+    旧版 Pi Agent 框架会把 assistant message 的 usage 写到 JSONL,
+    3.x 桌面端已改用 SQLite, 该路径仅作兜底。事件无 turn_id 字段,
+    跨源去重时退到 session_id + timestamp 组合键。
     """
     logs_data = []
     if not os.path.isdir(MINIMAX_SESSIONS_DIR):
@@ -783,11 +893,67 @@ def scan_minimax_tokens(start_timestamp, end_timestamp=None):
                         "input_uncached": i_uncached,
                         "latency_ms": 0,
                         "session_id": os.path.splitext(os.path.basename(path))[0],
+                        "turn_id": "",
+                        "_source": "minimax_jsonl",
                     })
         except OSError:
             continue
 
-    return _dedup_events(logs_data)
+    return logs_data
+
+
+def _merge_minimax_sources(sqlite_logs, jsonl_logs):
+    """合并 SQLite (主) + JSONL (兜底) 事件。
+
+    去重 key: turn_id 优先 (v2 每行都带); 旧 JSONL 没 turn_id 时
+    退到 (session_id, timestamp) 组合键。SQLite 命中永远赢。
+    SQLite 的事件同时把 fallback key 也记入, 防止同名 session + 同时间戳的
+    旧 JSONL 重复计入。
+    """
+    seen_turns = set()
+    seen_fallback = set()
+    merged = []
+
+    # SQLite 优先 (既记 turn_id, 也记 fallback key, 防 JSONL 同 session+ts 重复)
+    for ev in sqlite_logs:
+        tid = ev.get("turn_id") or ""
+        if tid:
+            seen_turns.add(tid)
+        seen_fallback.add((ev.get("session_id", ""), ev.get("timestamp", 0)))
+        merged.append(ev)
+
+    # JSONL 只补 SQLite 没覆盖的部分
+    for ev in jsonl_logs:
+        tid = ev.get("turn_id") or ""
+        if tid:
+            if tid in seen_turns:
+                continue
+            seen_turns.add(tid)
+        else:
+            key = (ev.get("session_id", ""), ev.get("timestamp", 0))
+            if key in seen_fallback:
+                continue
+            seen_fallback.add(key)
+        merged.append(ev)
+
+    return merged
+
+
+def scan_minimax_tokens(start_timestamp, end_timestamp=None):
+    """扫描 MiniMax Code 桌面端的逐请求 token 用量。
+
+    v2 主源: ~/.minimax/v2/sqlite/runtime-state.sqlite -> local_runtime_token_usage
+             (3.x 桌面端 mavis runtime, 每行是一次 LLM 调用的 token 用量)
+    v1 兜底: ~/.pi/agent/sessions/**/*.jsonl (旧版 Pi Agent 框架)
+
+    两者按 turn_id (有) 或 (session_id, timestamp) (无 turn_id) 去重,
+    SQLite 永远赢。结果按时间戳排序后返回。
+    """
+    sqlite_logs = _scan_minimax_sqlite(start_timestamp, end_timestamp)
+    jsonl_logs = _scan_minimax_pi_jsonl(start_timestamp, end_timestamp)
+    merged = _merge_minimax_sources(sqlite_logs, jsonl_logs)
+    # _dedup_events 再走一次通用窗口去重, 跟其他数据源对齐 (time±2s + total_tokens)
+    return _dedup_events(merged)
 
 def _workbuddy_usage_value(usage, *keys):
     for key in keys:

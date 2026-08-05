@@ -111,17 +111,33 @@ class ZCodeScannerTests(unittest.TestCase):
 
 
 class MiniMaxScannerTests(unittest.TestCase):
-    """MiniMax Code (Pi Agent) 数据源: ISO 时间戳、message.usage、assistant 过滤。"""
+    """MiniMax Code 数据源:
+
+    v2 主源: ~/.minimax/v2/sqlite/runtime-state.sqlite -> local_runtime_token_usage
+    v1 兼容: ~/.pi/agent/sessions/**/*.jsonl
+
+    SQLite 用例覆盖毫秒 ts 转秒 / mvs_ 前缀过滤 / cache 独立口径 /
+    reasoning 不计入 total / 跨源去重 / 库缺失容错;JSONL 用例保留老路径回归。
+    """
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.sessions_dir = os.path.join(self.temp_dir.name, "sessions", "proj")
         os.makedirs(self.sessions_dir)
-        self.patcher = mock.patch.object(scanner, "MINIMAX_SESSIONS_DIR",
-                                         os.path.join(self.temp_dir.name, "sessions"))
-        self.patcher.start()
-        self.addCleanup(self.patcher.stop)
+        self.db_path = os.path.join(self.temp_dir.name, "runtime-state.sqlite")
+
+        self.dir_patcher = mock.patch.object(
+            scanner, "MINIMAX_SESSIONS_DIR",
+            os.path.join(self.temp_dir.name, "sessions"),
+        )
+        self.db_patcher = mock.patch.object(scanner, "MINIMAX_DB_PATH", self.db_path)
+        self.dir_patcher.start()
+        self.db_patcher.start()
+        self.addCleanup(self.dir_patcher.stop)
+        self.addCleanup(self.db_patcher.stop)
         self.addCleanup(self.temp_dir.cleanup)
+
+    # --- helpers ---
 
     def _write_session(self, name, events):
         path = os.path.join(self.sessions_dir, name)
@@ -129,6 +145,278 @@ class MiniMaxScannerTests(unittest.TestCase):
             for event in events:
                 stream.write(json.dumps(event) + "\n")
         return path
+
+    def _make_minimax_db(self, rows):
+        """rows: list[(turn_id, session_id, model, ts_ms, input, output,
+                       reasoning, cache_read, cache_write)]"""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("""
+            CREATE TABLE local_runtime_token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                agent_name TEXT,
+                framework_type TEXT,
+                turn_id TEXT,
+                model TEXT,
+                ts INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+                cost_usd REAL,
+                raw TEXT
+            )
+        """)
+        conn.executemany(
+            """INSERT INTO local_runtime_token_usage
+               (turn_id, session_id, model, ts, input_tokens, output_tokens,
+                reasoning_tokens, cache_read_tokens, cache_write_tokens)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            rows,
+        )
+        conn.commit()
+        conn.close()
+
+    # --- JSONL (v1 兜底) 用例 ---
+
+    def test_jsonl_iso_timestamp_converted_to_seconds(self):
+        """ISO 8601 字符串转成 unix 秒, 与其他源对齐。"""
+        self._write_session("s1.jsonl", [
+            {"type": "session", "timestamp": "2026-05-26T10:00:00.000Z"},
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20, "totalTokens": 120}}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+        expected = int(datetime.datetime.fromisoformat(
+            "2026-05-26T10:00:01.000+00:00").astimezone().timestamp())
+        self.assertEqual(events[0]["timestamp"], expected)
+
+    def test_jsonl_only_assistant_messages_counted(self):
+        """user message 没有 usage, 不应产生事件。"""
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:00.000Z",
+             "message": {"role": "user", "content": "hello"}},
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20, "totalTokens": 120}}},
+            {"type": "model_change", "timestamp": "2026-05-26T10:00:00.500Z"},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+
+    def test_jsonl_anthropic_cache_split(self):
+        """input 不含 cache, cacheRead/cacheWrite 独立。"""
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20,
+                                   "cacheRead": 50, "cacheWrite": 30,
+                                   "totalTokens": 200}}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        e = events[0]
+        self.assertEqual(e["input_uncached"], 100)
+        self.assertEqual(e["input_cached"], 80)  # 50 + 30
+        self.assertEqual(e["input_tokens"], 180)  # 100 + 80
+        self.assertEqual(e["total_tokens"], 200)  # 180 + 20
+
+    def test_jsonl_total_tokens_fallback_when_zero(self):
+        """totalTokens=0 时回退为 input+output+cache。"""
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20,
+                                   "cacheRead": 0, "cacheWrite": 0,
+                                   "totalTokens": 0}}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["total_tokens"], 120)
+
+    def test_jsonl_skips_message_without_usage(self):
+        """assistant message 但没有 usage 字段, 不应产生事件。"""
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5"}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 0)
+
+    def test_jsonl_end_timestamp_filters_range(self):
+        """end_timestamp 参数正确过滤上界。"""
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20, "totalTokens": 120}}},
+            {"type": "message", "timestamp": "2026-05-26T11:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 200, "output": 20, "totalTokens": 220}}},
+        ])
+        end_ts = int(datetime.datetime.fromisoformat(
+            "2026-05-26T10:30:00.000+00:00").astimezone().timestamp())
+        events = scanner.scan_minimax_tokens(1_700_000_000, end_ts)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["total_tokens"], 120)
+
+    # --- SQLite (v2 主源) 用例 ---
+
+    def test_sqlite_millisecond_timestamp_converted_to_seconds(self):
+        """ts 列是毫秒, 返回的 timestamp 必须是秒。"""
+        self._make_minimax_db([
+            ("turn-1", "mvs_aaa", "custom_provider:zhipu-maas/glm-5.2",
+             1_800_000_000_000, 100, 20, 0, 0, 0),
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["timestamp"], 1_800_000_000)
+        self.assertEqual(events[0]["tool"], "MiniMax Code")
+        self.assertEqual(events[0]["turn_id"], "turn-1")
+
+    def test_sqlite_total_is_input_plus_output(self):
+        """total_tokens = input + output, reasoning 不计入。"""
+        self._make_minimax_db([
+            ("t1", "mvs_aaa", "glm-5.2",
+             1_800_000_000_000, 100, 20, 999, 0, 0),  # reasoning=999 必须被忽略
+        ])
+        e = scanner.scan_minimax_tokens(1_700_000_000)[0]
+        self.assertEqual(e["input_uncached"], 100)
+        self.assertEqual(e["input_cached"], 0)
+        self.assertEqual(e["output_tokens"], 20)
+        self.assertEqual(e["total_tokens"], 120)  # 不是 1119
+
+    def test_sqlite_cache_split_into_input_cached(self):
+        """cache_read + cache_write 计入 input_cached (Anthropic 式分离)。"""
+        self._make_minimax_db([
+            ("t1", "mvs_aaa", "glm-5.2",
+             1_800_000_000_000, 100, 20, 0, 50, 30),
+        ])
+        e = scanner.scan_minimax_tokens(1_700_000_000)[0]
+        self.assertEqual(e["input_uncached"], 100)
+        self.assertEqual(e["input_cached"], 80)    # 50 + 30
+        self.assertEqual(e["input_tokens"], 180)   # 100 + 80
+        self.assertEqual(e["output_tokens"], 20)
+        self.assertEqual(e["total_tokens"], 120)   # input_uncached + output
+
+    def test_sqlite_session_id_mvs_prefix_filter(self):
+        """只接 mvs_ 前缀的 session_id, 其他客户端写进同一张表的数据不混入。"""
+        # 时间错开 > DEDUP_WINDOW_SECONDS, 避免被 _dedup_events 误合并
+        self._make_minimax_db([
+            ("t1", "mvs_aaaaaa", "glm-5.2", 1_800_000_000_000, 100, 20, 0, 0, 0),
+            ("t2", "mvs_bbbbbb", "glm-5.2", 1_800_000_010_000, 100, 20, 0, 0, 0),
+            ("t3", "other_xxx",  "glm-5.2", 1_800_000_020_000, 999, 99, 0, 0, 0),
+            ("t4", "px_yyyy",    "glm-5.2", 1_800_000_030_000, 999, 99, 0, 0, 0),
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        ids = sorted(e["session_id"] for e in events)
+        self.assertEqual(ids, ["mvs_aaaaaa", "mvs_bbbbbb"])
+
+    def test_sqlite_skips_zero_total_rows(self):
+        """input+output=0 的行不产生事件 (避免噪声)。"""
+        self._make_minimax_db([
+            ("t1", "mvs_aaa", "glm-5.2", 1_800_000_000_000, 0, 0, 0, 50, 30),
+            ("t2", "mvs_bbb", "glm-5.2", 1_800_000_001_000, 100, 20, 0, 0, 0),
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["session_id"], "mvs_bbb")
+
+    def test_sqlite_skips_rows_outside_time_window(self):
+        """ts 不在 [start, end) 窗口的行被过滤。"""
+        self._make_minimax_db([
+            ("t1", "mvs_aaa", "glm-5.2", 1_600_000_000_000, 100, 20, 0, 0, 0),  # 太早
+            ("t2", "mvs_bbb", "glm-5.2", 1_800_000_000_000, 100, 20, 0, 0, 0),
+            ("t3", "mvs_ccc", "glm-5.2", 2_000_000_000_000, 100, 20, 0, 0, 0),  # 太晚
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000, 1_900_000_000)
+        ids = sorted(e["session_id"] for e in events)
+        self.assertEqual(ids, ["mvs_bbb"])
+
+    def test_sqlite_missing_db_returns_empty(self):
+        """SQLite 不存在时静默返回空 (旧 JSONL 路径仍生效)。"""
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+        self._write_session("s1.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 100, "output": 20, "totalTokens": 120}}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["turn_id"], "")
+
+    def test_sqlite_missing_table_returns_empty(self):
+        """数据库存在但 local_runtime_token_usage 表缺失 (升级中) 不崩。"""
+        # 创建一个空库, 没有 local_runtime_token_usage 表
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("CREATE TABLE other_stuff (id INTEGER)")
+        conn.commit()
+        conn.close()
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        self.assertEqual(events, [])
+
+    # --- 跨源优先级用例 ---
+
+    def test_merge_minimax_sources_dedupes_by_turn_id(self):
+        """_merge_minimax_sources 按 turn_id 去重: SQLite 优先。"""
+        sqlite_logs = [
+            {"turn_id": "t1", "session_id": "mvs_aaa", "timestamp": 1800000000,
+             "total_tokens": 150, "_source": "minimax_sqlite"},
+        ]
+        jsonl_logs = [
+            # 同 turn_id 应被丢弃
+            {"turn_id": "t1", "session_id": "mvs_aaa", "timestamp": 1800000000,
+             "total_tokens": 999, "_source": "minimax_jsonl"},
+            # 不同 turn_id 应保留
+            {"turn_id": "t2", "session_id": "mvs_bbb", "timestamp": 1800000010,
+             "total_tokens": 230, "_source": "minimax_jsonl"},
+        ]
+        merged = scanner._merge_minimax_sources(sqlite_logs, jsonl_logs)
+        self.assertEqual(len(merged), 2)
+        # SQLite 的 t1 必须保留 (不是 JSONL 的 999 那条)
+        t1 = next(e for e in merged if e["turn_id"] == "t1")
+        self.assertEqual(t1["_source"], "minimax_sqlite")
+        self.assertEqual(t1["total_tokens"], 150)
+
+    def test_merge_minimax_sources_falls_back_to_session_ts(self):
+        """没有 turn_id 的旧 JSONL 事件用 (session_id, timestamp) 兜底去重。"""
+        sqlite_logs = [
+            {"turn_id": "t1", "session_id": "mvs_aaa", "timestamp": 1800000000,
+             "total_tokens": 150, "_source": "minimax_sqlite"},
+        ]
+        jsonl_logs = [
+            # 同 (session_id, timestamp) 应被丢弃
+            {"turn_id": "", "session_id": "mvs_aaa", "timestamp": 1800000000,
+             "total_tokens": 999, "_source": "minimax_jsonl"},
+            # 不同 session_id 应保留
+            {"turn_id": "", "session_id": "mvs_bbb", "timestamp": 1800000000,
+             "total_tokens": 230, "_source": "minimax_jsonl"},
+        ]
+        merged = scanner._merge_minimax_sources(sqlite_logs, jsonl_logs)
+        self.assertEqual(len(merged), 2)
+        t1 = next(e for e in merged if e["session_id"] == "mvs_aaa")
+        self.assertEqual(t1["_source"], "minimax_sqlite")
+        self.assertEqual(t1["total_tokens"], 150)
+
+    def test_jsonl_fills_in_turns_not_in_sqlite(self):
+        """SQLite 没覆盖的 turn (旧版) 仍能从 JSONL 补上。"""
+        # SQLite: 只 1 条
+        self._make_minimax_db([
+            ("t_sqlite", "mvs_aaa", "glm-5.2",
+             1_800_000_000_000, 100, 50, 0, 0, 0),
+        ])
+        # JSONL: 不同的 turn (JSONL 无 turn_id, 用 session_id+timestamp 兜底)
+        # 写到一个文件名 sid-jsonl-turn, 让 session_id 不撞 SQLite 的
+        self._write_session("sid-jsonl-turn.jsonl", [
+            {"type": "message", "timestamp": "2026-05-26T10:00:01.000Z",
+             "message": {"role": "assistant", "model": "gpt-5.5",
+                         "usage": {"input": 200, "output": 30, "totalTokens": 230}}},
+        ])
+        events = scanner.scan_minimax_tokens(1_700_000_000)
+        totals = sorted(e["total_tokens"] for e in events)
+        self.assertEqual(totals, [150, 230])
 
     def test_iso_timestamp_converted_to_seconds(self):
         """ISO 8601 字符串转成 unix 秒, 与其他源对齐。"""

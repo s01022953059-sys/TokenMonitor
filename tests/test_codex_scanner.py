@@ -25,6 +25,9 @@ class CodexScannerTests(unittest.TestCase):
             mock.patch.object(scanner, "WORKBUDDY_DB_PATH", os.path.join(self.temp_dir.name, "missing-workbuddy.db")),
             mock.patch.object(scanner, "WORKBUDDY_PROJECTS_DIR", os.path.join(self.temp_dir.name, "missing-workbuddy-projects")),
             mock.patch.object(scanner, "ANTIGRAVITY_STATS_PATH", os.path.join(self.temp_dir.name, "missing-antigravity.json")),
+            # 隔离 MiniMax Code (v2 SQLite 主源 + v1 JSONL 兜底), 避免真机数据混入
+            mock.patch.object(scanner, "MINIMAX_DB_PATH", os.path.join(self.temp_dir.name, "missing-minimax.db")),
+            mock.patch.object(scanner, "MINIMAX_SESSIONS_DIR", os.path.join(self.temp_dir.name, "missing-minimax-sessions")),
         ]
         for patcher in self.patchers:
             patcher.start()
