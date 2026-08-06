@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.5.12"
+var appVersion = "1.5.13"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -100,6 +100,8 @@ type LogEntry struct {
 	InputCached   int64  `json:"input_cached"`
 	InputUncached int64  `json:"input_uncached"`
 	SessionID     string `json:"session_id"`
+	// TurnID 用于跨源去重 (v1.5.13: MiniMax Code SQLite + JSONL 兜底场景)。
+	TurnID string `json:"turn_id,omitempty"`
 }
 
 type ToolStats struct {
@@ -312,6 +314,19 @@ func normalizeModelName(rawModel string) string {
 		return "Other"
 	}
 	s := strings.ToLower(strings.TrimSpace(rawModel))
+	// v1.5.13 同步 macOS 1.5.12: 剥掉 MiniMax Code 写入的 provider 前缀。
+	//   custom_provider:<provider>/<model>  -> <model>
+	//   custom-local:<model>                -> <model>
+	if strings.HasPrefix(s, "custom_provider:") {
+		rest := s[len("custom_provider:"):]
+		if idx := strings.Index(rest, "/"); idx >= 0 {
+			s = rest[idx+1:]
+		} else {
+			s = rest
+		}
+	} else if strings.HasPrefix(s, "custom-local:") {
+		s = s[len("custom-local:"):]
+	}
 	// 去掉 -YYYY-MM-DD 日期后缀
 	s = dateSuffixRe.ReplaceAllString(s, "")
 	// 别名表
@@ -939,19 +954,170 @@ func scanZCodeTokens(todayStart int64) []LogEntry {
 	return logs
 }
 
-// 5. MiniMax Code (Pi Agent)
-// MiniMax Code 桌面端基于开源框架 Pi Agent, 会话存于
-// ~/.pi/agent/sessions/**/*.jsonl。每行是一个 JSON 事件, 其中 role=assistant
-// 的 message 事件带 message.usage (input/output/cacheRead/cacheWrite/totalTokens),
-// Anthropic 式分离口径。时间戳是 ISO 8601, 需转 unix 秒后参与跨源去重。
+// 5. MiniMax Code
+//
+// v1.5.13 同步 macOS 1.5.11: 桌面端 3.x 的真实数据落点已从
+// ~/.pi/agent/sessions/**/*.jsonl (旧 Pi Agent 框架) 迁到
+// ~/.minimax/v2/sqlite/runtime-state.sqlite 的 local_runtime_token_usage 表
+// (新 mavis runtime 写入)。
+//
+// 实现策略:
+//   - SQLite 主源: scanMiniMaxSQLite, 优先读 mvs_ 前缀会话的最新数据。
+//   - JSONL 兜底: scanMiniMaxJSONL, 兼容还没升级到 3.x 的旧用户。
+//   - 跨源去重: mergeMiniMaxSources, 按 turn_id (有) 或 (session_id, timestamp)
+//     (无 turn_id 的旧 JSONL 事件) 去重, SQLite 永远赢。
+//   - 最后走 dedupEvents 跟其他数据源按 time±2s + total_tokens 二次去重。
+//
+// SQLite schema (实测 v3.0.58):
+//   id, session_id, agent_name, framework_type, turn_id, model,
+//   ts (ms), input_tokens, output_tokens, reasoning_tokens,
+//   cache_read_tokens, cache_write_tokens, cost_usd, raw
+//
+// 口径 (对齐 macOS scanner.py normalize_model_name / by_tool 累加规则):
+//   total_tokens    = input_tokens + output_tokens     (reasoning 不计入)
+//   input_cached    = cache_read_tokens + cache_write_tokens
+//   input_uncached  = input_tokens
+//   total_input     = input_uncached + input_cached
 func scanMiniMaxTokens(todayStart int64) []LogEntry {
+	sqliteLogs := scanMiniMaxSQLite(todayStart)
+	jsonlLogs := scanMiniMaxJSONL(todayStart)
+	merged := mergeMiniMaxSources(sqliteLogs, jsonlLogs)
+	return dedupEvents(merged)
+}
+
+// minimaxDBPath: v2 主源 — 桌面端 3.x 的 mavis runtime SQLite。
+func minimaxDBPath() string {
+	return filepath.Join(homeDir(), ".minimax", "v2", "sqlite", "runtime-state.sqlite")
+}
+
+// minimaxSessionPrefix: 只读 mvs_ 前缀的会话, 避免误吞其他客户端写进
+// 同一张表的脏数据 (与 macOS 端 MINIMAX_SESSION_ID_PREFIX 对齐)。
+const minimaxSessionPrefix = "mvs_"
+
+// scanMiniMaxSQLite: v2 主源 — 读 ~/.minimax/v2/sqlite/runtime-state.sqlite
+// 的 local_runtime_token_usage 表。库/表/列缺失或读失败一律静默返回空,
+// 让 JSONL 兜底路径接管。
+func scanMiniMaxSQLite(todayStart int64) []LogEntry {
+	dbPath := minimaxDBPath()
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return nil
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		fmt.Printf("[-] 打开 MiniMax SQLite 失败: %v\n", err)
+		return nil
+	}
+	defer db.Close()
+
+	// 检查表是否存在, 升级中可能临时缺失。
+	var tableName string
+	if err := db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='local_runtime_token_usage'`,
+	).Scan(&tableName); err != nil {
+		return nil
+	}
+
+	// 检查必需列是否齐全, 缺列直接放弃 (不抛错)。
+	required := map[string]bool{
+		"session_id": false, "ts": false, "input_tokens": false, "output_tokens": false,
+	}
+	rows, err := db.Query(`PRAGMA table_info(local_runtime_token_usage)`)
+	if err != nil {
+		return nil
+	}
+	for rows.Next() {
+		var cid int64
+		var name, ctype string
+		var notnull, dfltValue, pk sql.NullInt64
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if _, ok := required[name]; ok {
+			required[name] = true
+		}
+	}
+	rows.Close()
+	for _, ok := range required {
+		if !ok {
+			fmt.Printf("[-] local_runtime_token_usage 缺列, 跳过\n")
+			return nil
+		}
+	}
+
+	startMs := todayStart * 1000
+	q, err := db.Query(`
+		SELECT turn_id, session_id, model, ts,
+		       input_tokens, output_tokens, reasoning_tokens,
+		       cache_read_tokens, cache_write_tokens
+		FROM local_runtime_token_usage
+		WHERE ts >= ?
+		  AND session_id LIKE ?
+		ORDER BY ts ASC
+	`, startMs, minimaxSessionPrefix+"%")
+	if err != nil {
+		fmt.Printf("[-] 读取 local_runtime_token_usage 失败: %v\n", err)
+		return nil
+	}
+	defer q.Close()
+
+	var events []LogEntry
+	for q.Next() {
+		var turnID, sessionID, model sql.NullString
+		var tsMs, inputT, outputT, reasoningT, cacheReadT, cacheWriteT sql.NullInt64
+		if err := q.Scan(&turnID, &sessionID, &model, &tsMs,
+			&inputT, &outputT, &reasoningT, &cacheReadT, &cacheWriteT); err != nil {
+			continue
+		}
+
+		tsSec := tsMs.Int64 / 1000
+		if tsSec <= 0 {
+			continue
+		}
+		inT := inputT.Int64
+		outT := outputT.Int64
+		// reasoning_tokens 不计入 total (跟其他 Agent / macOS 端口径对齐)
+		crT := cacheReadT.Int64
+		cwT := cacheWriteT.Int64
+		iCached := crT + cwT
+		totalTokens := inT + outT
+		if totalTokens <= 0 {
+			continue
+		}
+
+		m := "Unknown"
+		if model.Valid && model.String != "" {
+			m = normalizeModelName(model.String)
+		}
+
+		events = append(events, LogEntry{
+			Time:          time.Unix(tsSec, 0).Format("15:04:05"),
+			Timestamp:     tsSec,
+			Tool:          "MiniMax Code",
+			Model:         m,
+			InputTokens:   inT + iCached,
+			OutputTokens:  outT,
+			TotalTokens:   totalTokens,
+			InputCached:   iCached,
+			InputUncached: inT,
+			SessionID:     sessionID.String,
+			TurnID:        turnID.String,
+		})
+	}
+	return events
+}
+
+// scanMiniMaxJSONL: v1 兼容源 — 读 ~/.pi/agent/sessions/**/*.jsonl。
+// 旧版 Pi Agent 框架把 assistant message 的 usage 写到 JSONL,
+// 3.x 桌面端已改用 SQLite, 该路径仅作兜底。事件无 turn_id,
+// 跨源去重时退到 (session_id, timestamp) 组合键。
+func scanMiniMaxJSONL(todayStart int64) []LogEntry {
 	root := minimaxSessionsPath()
 	if !fileExists(root) {
 		return nil
 	}
 	var events []LogEntry
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
 			return nil
 		}
 		if info.ModTime().Unix() < todayStart-86400 {
@@ -1030,11 +1196,58 @@ func scanMiniMaxTokens(todayStart int64) []LogEntry {
 				InputCached:   iCached,
 				InputUncached: iUncached,
 				SessionID:     strings.TrimSuffix(info.Name(), filepath.Ext(info.Name())),
+				TurnID:        "",
 			})
 		}
 		return nil
 	})
-	return dedupEvents(events)
+	return events
+}
+
+// mergeMiniMaxSources: 合并 SQLite (主) + JSONL (兜底)。
+//
+// 去重 key:
+//   - turn_id 优先 (v2 每行都带, 是稳定 UUID);
+//   - 旧 JSONL 没 turn_id 时退到 (session_id, timestamp) 组合键。
+//
+// SQLite 的事件既把 turn_id 也把 (session_id, timestamp) 记入 seen 集合,
+// 防止同名 session + 同时间戳的旧 JSONL 重复计入。
+// SQLite 命中永远赢。
+func mergeMiniMaxSources(sqliteLogs, jsonlLogs []LogEntry) []LogEntry {
+	seenTurns := make(map[string]bool)
+	seenFallback := make(map[fallbackKey]bool)
+	var merged []LogEntry
+
+	for _, ev := range sqliteLogs {
+		if ev.TurnID != "" {
+			seenTurns[ev.TurnID] = true
+		}
+		seenFallback[fallbackKey{ev.SessionID, ev.Timestamp}] = true
+		merged = append(merged, ev)
+	}
+
+	for _, ev := range jsonlLogs {
+		if ev.TurnID != "" {
+			if seenTurns[ev.TurnID] {
+				continue
+			}
+			seenTurns[ev.TurnID] = true
+		} else {
+			key := fallbackKey{ev.SessionID, ev.Timestamp}
+			if seenFallback[key] {
+				continue
+			}
+			seenFallback[key] = true
+		}
+		merged = append(merged, ev)
+	}
+
+	return merged
+}
+
+type fallbackKey struct {
+	SessionID string
+	Timestamp int64
 }
 
 // ───── 跨源去重 (对齐 scanner.py _dedup_events) ─────

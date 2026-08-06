@@ -3595,6 +3595,9 @@
             ],
             '1.5.12': [
                 'MiniMax Code 模型名展示优化：剥掉 custom_provider:<provider>/<model> 前缀，只显示真实模型名（glm-5.2 / kimi-k3 / deepseek-v4-flash 等），dashboard 二级菜单更清爽。'
+            ],
+            '1.5.13': [
+                'Windows 端同步：MiniMax Code 数据源升级到 SQLite 主源（~/.minimax/v2/sqlite/runtime-state.sqlite 的 local_runtime_token_usage，mvs_ 前缀过滤）+ JSONL 兜底 + 同步剥 custom_provider: 前缀。修复 Windows 用户 3.x 桌面端用量未统计的问题。'
             ]
         });
 
