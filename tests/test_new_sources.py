@@ -502,6 +502,65 @@ class MiniMaxScannerTests(unittest.TestCase):
         self.assertEqual(events[0]["total_tokens"], 120)
 
 
+class NormalizeModelNameTests(unittest.TestCase):
+    """normalize_model_name: 剥 provider 前缀, 折叠 cc-switch 噪声变体。
+
+    1.5.12 新增: MiniMax Code 在 SQLite 里写的是 'custom_provider:<provider>/<model>',
+       dashboard 之前直接展示这个长串很难看。这里剥前缀只留 <model>。
+    """
+
+    def test_strips_custom_provider_prefix(self):
+        """custom_provider:<provider>/<model> -> <model>"""
+        self.assertEqual(
+            scanner.normalize_model_name("custom_provider:zhipu-maas/glm-5.2"),
+            "glm-5.2",
+        )
+        self.assertEqual(
+            scanner.normalize_model_name("custom_provider:opencode-go/kimi-k3"),
+            "kimi-k3",
+        )
+        self.assertEqual(
+            scanner.normalize_model_name("custom_provider:opencode-go/deepseek-v4-flash"),
+            "deepseek-v4-flash",
+        )
+
+    def test_strips_custom_local_prefix(self):
+        """custom-local:<model> -> <model>"""
+        self.assertEqual(
+            scanner.normalize_model_name("custom-local:MiniMax-M3"),
+            "minimax-m3",
+        )
+
+    def test_custom_provider_prefix_is_lowercased_first(self):
+        """大小写归一化在剥前缀之前: 'CUSTOM_PROVIDER:...' 也能正确剥。"""
+        self.assertEqual(
+            scanner.normalize_model_name("CUSTOM_PROVIDER:ZhIPu-MAAS/GLM-5.2"),
+            "glm-5.2",
+        )
+
+    def test_custom_provider_prefix_without_slash_keeps_rest(self):
+        """防御: custom_provider:<model> (无 provider/分隔) 不崩, 保留全部 rest。"""
+        self.assertEqual(
+            scanner.normalize_model_name("custom_provider:somemodel"),
+            "somemodel",
+        )
+
+    def test_non_prefixed_models_unchanged(self):
+        """没有前缀的 model (其他 Agent 写的) 不受影响。"""
+        self.assertEqual(scanner.normalize_model_name("glm-5.2"), "glm-5.2")
+        self.assertEqual(scanner.normalize_model_name("gpt-5.6"), "gpt-5.6")
+        self.assertEqual(scanner.normalize_model_name("qwen3.6-plus"), "qwen3.6-plus")
+        self.assertEqual(scanner.normalize_model_name("qwen3.6-Plus"), "qwen3.6-plus")
+        self.assertEqual(scanner.normalize_model_name("qwen3.6-plus-2026-04-02"),
+                         "qwen3.6-plus")
+        self.assertEqual(scanner.normalize_model_name("qwen3.6-plus-vl"),
+                         "qwen3.6-plus-vl")
+
+    def test_empty_and_none_return_other(self):
+        self.assertEqual(scanner.normalize_model_name(""), "Other")
+        self.assertEqual(scanner.normalize_model_name(None), "Other")
+
+
 class CrossSourceDedupTests(unittest.TestCase):
     """新工具与 cc-switch / 其他源不产生误合并或漏算。"""
 

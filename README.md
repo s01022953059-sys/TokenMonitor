@@ -29,7 +29,7 @@
 
 本地 SQLite 全部以只读方式打开；Agent 正在写入或原子替换数据库时会短暂重试，避免一次瞬时读取失败让整个工具当天显示为 0。
 
-**模型名归一化**：自动折叠 cc-switch 写入的噪声变体（如 `qwen3.6-Plus` / `qwen3.6-plus-2026-04-02` 统一为 `qwen3.6-plus`）。
+**模型名归一化**：自动折叠 cc-switch 写入的噪声变体（如 `qwen3.6-Plus` / `qwen3.6-plus-2026-04-02` 统一为 `qwen3.6-plus`）；MiniMax Code v2 在 SQLite 里写的是 `custom_provider:<provider>/<model>`，剥掉 provider 前缀只显示 `<model>`（如 `custom_provider:zhipu-maas/glm-5.2 → glm-5.2`）。
 
 **DeepSeek 余额查询**：从 cc-switch 数据库中按语义匹配（provider_type / name / app_type 含 deepseek）提取 API Key，请求 DeepSeek 官方余额接口，每 60 秒刷新一次。
 

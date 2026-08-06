@@ -430,12 +430,25 @@ def normalize_model_name(raw_model):
 
     折叠规则 (按顺序匹配):
     1. 转小写、strip 空白
-    2. 去掉 '日期后缀' 形式 -YYYY-MM-DD (cc-switch 版本快照)
-    3. 找到最长前缀匹配 (例如 'qwen3.6-plus' 是 'qwen3.6-plus-...' 的前缀)
+    2. 剥掉 'custom_provider:<provider>/<model>' 这类 MiniMax Code 写入的 provider 前缀,
+       只保留真正的 model 名 (避免展示 'custom_provider:zhipu-maas/glm-5.2' 这类噪声)
+    4. 去掉 '-YYYY-MM-DD' 这种日期后缀 (cc-switch 版本快照)
+    5. 找到最长前缀匹配 (例如 'qwen3.6-plus' 是 'qwen3.6-plus-...' 的前缀)
     """
     if not raw_model:
         return "Other"
     s = str(raw_model).strip().lower()
+    # 剥掉 MiniMax Code 写入的 provider 前缀:
+    #   custom_provider:<provider>/<model>  -> <model>
+    #   custom-local:<model>                -> <model>
+    if s.startswith("custom_provider:"):
+        rest = s[len("custom_provider:"):]
+        if "/" in rest:
+            s = rest.split("/", 1)[1]
+        else:
+            s = rest
+    elif s.startswith("custom-local:"):
+        s = s[len("custom-local:"):]
     # 去掉 '-YYYY-MM-DD' 这种日期后缀
     s = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', s)
     # 别名表: 多个变体指向同一标准名
