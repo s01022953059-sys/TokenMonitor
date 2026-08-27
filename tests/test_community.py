@@ -366,6 +366,31 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(group_codes["22222"]["total_tokens"], 5000)
         self.assertEqual(group_codes["22222"]["member_count"], 2)
 
+    def test_zero_token_member_counts_toward_group_membership(self):
+        """v1.5.16: 创建组后自己必须在组里——0 Token 的今日报告也计入组成员数
+        （新装用户/当天还没用量的创建者），但不进排行榜、不计 Token。"""
+        today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()
+        reports = [
+            # 创建者：当天还没有任何用量 (0 Token 初始化报告)
+            {"id": "User_CREATOR", "report_date": today, "today_tokens": 0, "by_tool": {}, "group_codes": ["99999"]},
+            # 队友：有用量
+            {"id": "User_MATE", "report_date": today, "today_tokens": 700, "by_tool": {"Claude": 700}, "group_codes": ["99999"]},
+        ]
+        files = [{"name": f"{r['id']}.json", "download_url": f"https://example.test/{i}"} for i, r in enumerate(reports)]
+        by_url = {item["download_url"]: report for item, report in zip(files, reports)}
+
+        with mock.patch.object(community, "_gitcode_api", return_value=files), \
+             mock.patch.object(community, "_read_remote_json", side_effect=lambda url, token=None: (by_url[url], None)):
+            result = community.get_community_stats()
+
+        group = next((g for g in result["groups"] if g["code"] == "99999"), None)
+        self.assertIsNotNone(group, "只有 0 Token 成员的组也必须出现在聚合里")
+        self.assertEqual(group["member_count"], 2, "0 Token 成员必须计入成员数")
+        self.assertEqual(group["total_tokens"], 700, "组 Token 只计有用量成员")
+        # 0 Token 成员不进排行榜/排名
+        self.assertEqual(result["today_active_users"], 1)
+        self.assertTrue(all(item["id"] != "User_CREATOR" for item in result["leaderboard"]))
+
     def test_group_codes_handle_legacy_string_format(self):
         """v1.5.01 向后兼容：旧中继/旧客户端发送字符串格式 group_code 也能正确处理。"""
         today = community._community_today() if hasattr(community, '_community_today') else datetime.date.today().isoformat()

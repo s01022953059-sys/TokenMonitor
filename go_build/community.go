@@ -290,9 +290,13 @@ type communityGroupSummary struct {
 	PendingReport bool   `json:"pending_report,omitempty"`
 }
 
-func buildCommunityGroupViews(activeReports []communityReportData, myID string, myGroupCodes, createdGroupCodes []string, groupNames map[string]string) ([]communityGroupSummary, []communityGroupSummary, map[string]int) {
+// buildCommunityGroupViews 聚合组视图。
+// v1.5.16: 成员统计改用 todayReports (含 0 Token)——成员资格不等于贡献，
+// 新装用户/当天还没用量的创建者也要算进成员数，否则"创建组后自己不在组里"。
+// myGroupRanks 仍用 rankedReports (0 Token 不参与排名)，与 macOS 对齐。
+func buildCommunityGroupViews(todayReports, rankedReports []communityReportData, myID string, myGroupCodes, createdGroupCodes []string, groupNames map[string]string) ([]communityGroupSummary, []communityGroupSummary, map[string]int) {
 	groupStats := map[string]*communityGroupSummary{}
-	for _, report := range activeReports {
+	for _, report := range todayReports {
 		for _, rawCode := range communityReportGroupCodes(report) {
 			code := strings.TrimSpace(rawCode)
 			if code == "" {
@@ -352,7 +356,7 @@ func buildCommunityGroupViews(activeReports []communityReportData, myID string, 
 	myGroupRanks := map[string]int{}
 	for _, code := range myGroupCodes {
 		groupPosition := 0
-		for _, report := range activeReports {
+		for _, report := range rankedReports {
 			belongsToGroup := false
 			for _, reportCode := range communityReportGroupCodes(report) {
 				if reportCode == code {
@@ -980,7 +984,7 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 
 	myGroupCodes := getCommunityGroupCodes()
 	groups, myGroups, myGroupRanks := buildCommunityGroupViews(
-		activeReports, myID, myGroupCodes, getCreatedCommunityGroupCodes(), readCommunityGroupNames(),
+		reportsToday, activeReports, myID, myGroupCodes, getCreatedCommunityGroupCodes(), readCommunityGroupNames(),
 	)
 	// 工具占比
 	toolTotals := map[string]int64{}

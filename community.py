@@ -759,9 +759,12 @@ def get_community_stats(force_refresh=False):
     tool_distribution = {k: round(v / total_tool_tokens * 100, 1) for k, v in tool_totals.items()}
     tool_distribution = dict(sorted(tool_distribution.items(), key=lambda x: -x[1]))
 
-    # 组队统计: 用户可能属于多个组，每个组都计入
+    # 组队统计: 用户可能属于多个组，每个组都计入。
+    # v1.5.16 修复: 组成员统计用今日全部报告 (含 0 Token)——成员资格不等于贡献，
+    # 新装用户/当天还没用量的创建者也要算进成员数，否则"创建组后自己不在组里"。
+    # 排行与组内排名仍用 active_reports (0 Token 不参与排名)。
     group_stats = {}
-    for r in active_reports:
+    for r in reports_today:
         # v1.5.01 兼容旧格式：单字符串 group_code 视为单一组码
         codes = r.get("group_codes")
         if codes is None:

@@ -348,7 +348,7 @@ func TestBuildCommunityGroupViewsMatchesMacGroupSemantics(t *testing.T) {
 		{ID: "User_B", DisplayName: "B", TodayTokens: 100, GroupCodes: []string{"22222"}},
 	}
 	groups, mine, ranks := buildCommunityGroupViews(
-		reports, "User_ME", []string{"11111", "22222", "33333"}, []string{"33333"},
+		reports, reports, "User_ME", []string{"11111", "22222", "33333"}, []string{"33333"},
 		map[string]string{"11111": "一组", "22222": "二组", "33333": "待同步组"},
 	)
 	if len(groups) != 2 || groups[0].Code != "11111" || groups[0].TotalTokens != 800 || groups[0].MemberCount != 2 {
@@ -365,6 +365,28 @@ func TestBuildCommunityGroupViewsMatchesMacGroupSemantics(t *testing.T) {
 	}
 	if !pendingFound {
 		t.Fatalf("pending local group missing: %#v", mine)
+	}
+}
+
+// v1.5.16: 创建组后自己必须算成员——0 Token 的今日报告也计入组成员数，
+// 但不参与排名 (与 macOS 聚合语义一致)。
+func TestBuildCommunityGroupViewsCountsZeroTokenMembers(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_ME", DisplayName: "我", TodayTokens: 0, GroupCodes: []string{"44444"}},
+		{ID: "User_MATE", DisplayName: "队友", TodayTokens: 700, GroupCodes: []string{"44444"}},
+	}
+	groups, mine, ranks := buildCommunityGroupViews(
+		reports, reports, "User_ME", []string{"44444"}, []string{"44444"},
+		map[string]string{"44444": "新建组"},
+	)
+	if len(groups) != 1 || groups[0].Code != "44444" || groups[0].MemberCount != 2 || groups[0].TotalTokens != 700 {
+		t.Fatalf("zero-token member not counted: %#v", groups)
+	}
+	if ranks["44444"] != 1 {
+		t.Fatalf("zero-token member should not be ranked before the scorer: ranks=%#v", ranks)
+	}
+	if len(mine) != 1 || mine[0].PendingReport || !mine[0].IsCreator {
+		t.Fatalf("creator group should not be pending: %#v", mine)
 	}
 }
 

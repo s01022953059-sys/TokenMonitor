@@ -4495,6 +4495,9 @@
                     return true;
                 }
             } catch (_) {}
+            // v1.5.16: 立即同步失败 (中继/网络抖动) 时清掉 5 分钟节流，
+            // 让下一拍社区补报立刻重试，创建/加入后不必干等一个节流周期。
+            try { localStorage.removeItem(COMMUNITY_SYNC_KEY); } catch (_) {}
             return false;
         }
 
