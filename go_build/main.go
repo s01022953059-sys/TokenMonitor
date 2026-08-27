@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.5.14"
+var appVersion = "1.5.15"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -1833,7 +1833,14 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 	if len(assetList) == 0 {
 		return ""
 	}
-	// 应用内更新必须选当前平台的可安装资产。
+	// GitCode 源码归档 (type=source) 不是可安装附件: 其 URL 是
+	// archive/refs/heads/<tag>.zip, 而 GitCode 禁止同名分支+tag, 对 tag 发布
+	// 该地址必然 404/占位页 (v1.5.14 更新失败事故)。GitHub 风格无 type 字段。
+	isAttachment := func(asset map[string]interface{}) bool {
+		assetType := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", asset["type"])))
+		return assetType == "" || assetType == "<nil>" || assetType == "attach"
+	}
+	// 应用内更新必须选当前平台的真实安装附件。
 	suffixes := []string{".dmg", ".zip"}
 	if targetOS == "windows" {
 		suffixes = []string{"tokenmonitor-setup.exe"}
@@ -1842,7 +1849,7 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 		for _, a := range assetList {
 			if asset, ok := a.(map[string]interface{}); ok {
 				name := strings.ToLower(fmt.Sprintf("%v", asset["name"]))
-				if strings.HasSuffix(name, suffix) {
+				if strings.HasSuffix(name, suffix) && isAttachment(asset) {
 					return getAssetURL(asset)
 				}
 			}
@@ -1851,9 +1858,13 @@ func pickAssetURLForOS(payload map[string]interface{}, targetOS string) string {
 	if targetOS == "windows" {
 		return ""
 	}
-	// 兜底: 第一个
-	if asset, ok := assetList[0].(map[string]interface{}); ok {
-		return getAssetURL(asset)
+	// 兜底: 第一个真实附件
+	for _, a := range assetList {
+		if asset, ok := a.(map[string]interface{}); ok {
+			if isAttachment(asset) {
+				return getAssetURL(asset)
+			}
+		}
 	}
 	return ""
 }

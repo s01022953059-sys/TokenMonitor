@@ -261,8 +261,57 @@ if [[ "$(uname)" == "Darwin" ]]; then
     curl -fsSL --retry 5 --retry-delay 3 -o "$VERIFY_DIR/Token-Monitor.dmg" "$DOWNLOAD_BASE/Token%20Monitor.dmg"
     hdiutil verify "$VERIFY_DIR/Token-Monitor.dmg" >/dev/null
 fi
-rm -rf "$VERIFY_DIR"
 echo "[release] ✔ DMG / Windows 安装程序下载与文件校验通过"
+
+# ─── 验证应用内更新路径 (模拟客户端资产选择) ───
+# v1.5.14 事故: 客户端从 releases/latest 的 assets 里选中了 GitCode 源码归档
+# (type=source, archive/refs/heads/<tag>.zip)。GitCode 禁止同名分支+tag, 该归档
+# 对 tag 发布必然 404/download-error 占位页, 导致 macOS 自动更新永远失败。
+# 这里按客户端规则 (跳过 source, DMG 优先) 校验首选资产是 DMG 附件, 再真实挂载
+# DMG 验证里面的 .app 版本, 保证应用内更新链路端到端可用。
+echo ""
+echo "=== 验证应用内更新路径 (客户端模拟) ==="
+PICKED_URL=$(curl -sS -H "Authorization: Bearer $GITCODE_TOKEN" "$API_BASE/releases/tags/$TAG" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+installable = [
+    a for a in d.get('assets', [])
+    if (a.get('name') or '').lower().endswith(('.dmg', '.zip'))
+    and str(a.get('type') or '').strip().lower() in ('', 'attach')
+]
+preferred = None
+for a in installable:
+    if (a.get('name') or '').lower().endswith('.dmg'):
+        preferred = a
+        break
+if preferred is None and installable:
+    preferred = installable[0]
+print(preferred['browser_download_url'] if preferred else '')
+")
+if [[ "$PICKED_URL" != *"/releases/download/$TAG/Token%20Monitor.dmg" ]]; then
+    echo "[release] ✘ 客户端首选资产不是 DMG 附件: '$PICKED_URL'" >&2
+    exit 1
+fi
+echo "[release] ✔ 客户端首选资产 = Token Monitor.dmg"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    DMG_MOUNT=$(mktemp -d /tmp/token-monitor-mount.XXXXXX)
+    hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$DMG_MOUNT" "$VERIFY_DIR/Token-Monitor.dmg" >/dev/null
+    if ! test -d "$DMG_MOUNT/Token Monitor.app"; then
+        hdiutil detach "$DMG_MOUNT" >/dev/null 2>&1 || true
+        echo "[release] ✘ DMG 里没有 Token Monitor.app" >&2
+        exit 1
+    fi
+    MNT_VER=$(plutil -extract CFBundleShortVersionString raw -o - "$DMG_MOUNT/Token Monitor.app/Contents/Info.plist")
+    hdiutil detach "$DMG_MOUNT" >/dev/null
+    rmdir "$DMG_MOUNT"
+    if [[ "$MNT_VER" != "$APP_VERSION" ]]; then
+        echo "[release] ✘ DMG 内 .app 版本 ($MNT_VER) 与发布版本 ($APP_VERSION) 不一致" >&2
+        exit 1
+    fi
+    echo "[release] ✔ DMG 内 .app 版本 = $MNT_VER, 应用内更新链路可用"
+fi
+rm -rf "$VERIFY_DIR"
 
 echo ""
 echo "============================================"

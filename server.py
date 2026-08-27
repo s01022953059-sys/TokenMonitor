@@ -757,25 +757,31 @@ def _normalize_release_download_url(url):
     return value
 
 
+def _is_release_attachment(asset):
+    """GitCode 源码归档 (type=source) 不是可安装附件: 其 URL 是
+    archive/refs/heads/<tag>.zip, 而 GitCode 禁止同名分支+tag, 对 tag 发布
+    该地址必然 404/占位页 (v1.5.14 更新失败事故)。GitHub 风格 assets 无 type 字段。"""
+    asset_type = str(asset.get("type") or "").strip().lower()
+    return asset_type in ("", "attach")
+
+
 def _pick_asset_url(payload):
     """从 assets/files 数组里挑出安装包下载地址,优先 .dmg/.zip。"""
     asset_list = payload.get("assets") or payload.get("files") or []
     if not isinstance(asset_list, list):
         return ""
-    # 两轮扫描: 先找安装包 .dmg, 再退到 .zip, 避免误选源码包。
+    # 两轮扫描: 先找安装包 .dmg, 再退到 .zip; 只挑真实附件, 排除源码归档。
     preferred = None
     for suffix in (".dmg", ".zip"):
         for asset in asset_list:
             if not isinstance(asset, dict):
                 continue
             name = (asset.get("name") or "").lower()
-            if name.endswith(suffix):
+            if name.endswith(suffix) and _is_release_attachment(asset):
                 preferred = asset
                 break
         if preferred:
             break
-    if preferred is None and asset_list:
-        preferred = asset_list[0] if isinstance(asset_list[0], dict) else None
     if not preferred:
         return ""
     return _normalize_release_download_url(

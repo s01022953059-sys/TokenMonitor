@@ -62,6 +62,69 @@ class UpdateFeedTests(unittest.TestCase):
         self.assertEqual(proxy_handler.proxies["https"], "http://127.0.0.1:7890")
         opener.open.assert_called_once_with(request, timeout=8)
 
+    def test_gitcode_source_archives_are_skipped(self):
+        """v1.5.14 事故: GitCode releases/latest 的 type=source 源码归档排在
+        assets 前部, 其 URL (archive/refs/heads/<tag>.zip) 对 tag 发布必然
+        404/占位页。选择器必须跳过 source, 选到真实 DMG 附件。"""
+        payload = {
+            "tag_name": "v1.5.14",
+            "assets": [
+                {
+                    "name": "v1.5.14.zip",
+                    "type": "source",
+                    "browser_download_url": "https://raw.gitcode.com/acme/TokenMonitor/archive/refs/heads/v1.5.14.zip",
+                },
+                {
+                    "name": "v1.5.14.tar.gz",
+                    "type": "source",
+                    "browser_download_url": "https://raw.gitcode.com/acme/TokenMonitor/archive/refs/heads/v1.5.14.tar.gz",
+                },
+                {
+                    "name": "Token Monitor.dmg",
+                    "type": "attach",
+                    "browser_download_url": "https://gitcode.com/acme/TokenMonitor/releases/download/v1.5.14/Token%20Monitor.dmg",
+                },
+            ],
+        }
+
+        info = server._extract_release_info(payload)
+
+        self.assertEqual(
+            info["download_url"],
+            "https://gitcode.com/acme/TokenMonitor/releases/download/v1.5.14/Token%20Monitor.dmg",
+        )
+
+    def test_only_source_archives_falls_back_to_release_page(self):
+        payload = {
+            "tag_name": "v9.9.9",
+            "html_url": "https://example.test/releases/v9.9.9",
+            "assets": [
+                {
+                    "name": "v9.9.9.zip",
+                    "type": "source",
+                    "browser_download_url": "https://raw.gitcode.com/acme/app/archive/refs/heads/v9.9.9.zip",
+                }
+            ],
+        }
+
+        info = server._extract_release_info(payload)
+
+        self.assertEqual(info["download_url"], "https://example.test/releases/v9.9.9")
+
+    def test_assets_without_type_field_are_accepted(self):
+        """GitHub 风格 assets 没有 type 字段, 不能被误伤。"""
+        payload = {
+            "tag_name": "v9.9.9",
+            "assets": [
+                {"name": "source.zip", "browser_download_url": "https://example.test/source.zip"},
+                {"name": "Token Monitor.dmg", "browser_download_url": "https://example.test/Token-Monitor.dmg"},
+            ],
+        }
+
+        info = server._extract_release_info(payload)
+
+        self.assertEqual(info["download_url"], "https://example.test/Token-Monitor.dmg")
+
 
 if __name__ == "__main__":
     unittest.main()

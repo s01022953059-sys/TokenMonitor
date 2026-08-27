@@ -126,7 +126,7 @@
 
 ### 应用内自更新
 
-- macOS：下载发布包、构建并替换 `.app`，然后自动重启
+- macOS：下载 Release 的 `Token Monitor.dmg` 附件，挂载后拷贝替换 `.app`，然后自动重启；不再下载源码本地编译（GitCode 禁止同名分支+tag，`releases/latest` 里 `type=source` 的 `archive/refs/heads/<tag>.zip` 对 tag 发布必然 404/download-error 占位页，v1.5.14 因此全员更新失败；源码编译路径仅保留给 `.zip` 附件兜底）
 - macOS 更新不再请求管理员密码：目标目录可写时原地替换，不可写时自动迁移到 `~/Applications`，并按新路径重启
 - 发布前验证会覆盖 macOS 原地更新与无权限迁移两条路径，并检查更新脚本不含管理员提权调用
 - Windows：下载并校验 Release 中的 `TokenMonitor-Setup.exe`，由安装程序完成升级并重启
@@ -412,10 +412,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.14](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.14)
+最新版本：[v1.5.15](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.15)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.14/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.14/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.15/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.15/TokenMonitor-Setup.exe)
+
+> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明），需手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。
 
 ## 发布与验证规则
 
@@ -424,7 +426,7 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 启动本地服务验证今日总数、90 天热力图、会话分页、`/api/check-update` 的平台资产选择
 - 使用浏览器实际打开 About 页，验证更新检查、进度、错误状态以及桌面/移动端布局
 - Windows 注册表自启、退出替换和重启属于系统行为，正式发布前仍需在真实 Windows 机器完成一次验收
-- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，任一项失败就终止发布
+- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，同时模拟客户端资产选择规则（跳过 GitCode `type=source` 源码归档）确认首选资产是 DMG 附件并真实挂载校验 `.app` 版本号，任一项失败就终止发布
 - 热力图发布前必须验证默认选中范围与请求参数一致、近一年返回 365 个日格、四个范围切换后的起止日期正确，以及缓存命中低于 500ms
 - 发布验证采用三层门禁：充分的单元测试、Python/macOS 与 Go/Windows 双后端 API 契约测试、少量关键用户路径 E2E；详见 [`tests/README.md`](tests/README.md)
 - 单条调用详情 E2E 使用带大体积无关事件的 Codex 会话夹具，必须验证首次打开低于 1 秒、再次打开低于 300ms，并确认真实消息已完成渲染
@@ -433,6 +435,13 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.15
+- 修复 macOS 自动更新永久失败（v1.5.14 事故）：`releases/latest` 的 assets 前部是 GitCode 自动生成的源码归档（`type=source`，URL 为 `archive/refs/heads/<tag>.zip`），而 GitCode 禁止分支与 tag 同名（push hook 与 API 三条路径均实测被拒），该归档对 tag 发布必然 302 到 `download-error` 占位页（3576 字节 HTML），旧版客户端"第一个 `.dmg`/`.zip`"的选择规则正中此坑。
+- macOS 自更新改为优先下载 Release 的 `Token Monitor.dmg` 附件：挂载只读镜像 → `ditto` 拷出 `.app` → 卸载 → `update_helper.sh` 静默替换重启，全程无需管理员权限，也不再依赖本机 Swift 编译；资产选择跳过 `type=source`，`.zip` 附件仍走源码编译兜底路径。
+- server.py 与 Windows Go 端的资产选择同步排除 `type=source` 归档，`/api/check-update` 的下载地址始终是真实附件。
+- `release_all.sh` 上传后新增端到端校验：按客户端选择规则确认首选资产是 DMG，并真实挂载 DMG 校验内含 `.app` 的版本号与发布版本一致。
+- Windows 端不受此事故影响（选择器只匹配 `TokenMonitor-Setup.exe` 附件）；macOS v1.5.13 及更早客户端需手动下载 DMG 升级一次。
 
 ### v1.5.14
 - 修复跨平台加入组：macOS 与 Windows 都会校验真实 5 位组码、缓存并显示组名；不存在的组码、格式错误和网络失败不再产生虚假成员关系。

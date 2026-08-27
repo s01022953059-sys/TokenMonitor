@@ -611,10 +611,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         var downloadString = (json["download_url"] as? String) ?? (json["downloadUrl"] as? String)
         let assetList = (json["assets"] as? [[String: Any]]) ?? (json["files"] as? [[String: Any]])
         if downloadString == nil, let assets = assetList {
-            let preferredAsset = assets.first { asset in
+            // 只挑真实附件。GitCode 会把源码归档 (type=source) 列在 assets 前部,
+            // 其 URL 是 archive/refs/heads/<tag>.zip; GitCode 禁止同名分支+tag,
+            // 对 tag 发布该地址必然 302 到 download-error 占位页 (v1.5.14 事故)。
+            let installable = assets.filter { asset in
                 let name = (asset["name"] as? String ?? "").lowercased()
-                return name.hasSuffix(".dmg") || name.hasSuffix(".zip")
-            } ?? assets.first
+                guard name.hasSuffix(".dmg") || name.hasSuffix(".zip") else { return false }
+                guard let typeRaw = asset["type"] as? String else { return true }
+                let type = typeRaw.lowercased()
+                return type.isEmpty || type == "attach"
+            }
+            // DMG 是 macOS 安装包, 优先; .zip 附件兜底
+            let preferredAsset = installable.first {
+                ($0["name"] as? String ?? "").lowercased().hasSuffix(".dmg")
+            } ?? installable.first
             downloadString =
                 (preferredAsset?["browser_download_url"] as? String) ??
                 (preferredAsset?["download_url"] as? String) ??
@@ -714,12 +724,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         updateCheckInProgress = true
 
         let updateDir = "/tmp/TokenMonitor/update-\(update.version)"
-        let zipPath = "\(updateDir).zip"
         let fm = FileManager.default
 
         // 准备暂存目录
         try? fm.removeItem(atPath: updateDir)
-        try? fm.removeItem(atPath: zipPath)
         try? fm.createDirectory(atPath: "/tmp/TokenMonitor", withIntermediateDirectories: true)
         debugLog("staged dir prepared: \(updateDir)")
 
@@ -756,6 +764,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             }
         }
         debugLog("download URL: \(downloadURL.absoluteString)")
+
+        // 只吃安装包地址。资产里全是源码归档时 parseUpdateInfo 会兜底到
+        // release 页面 (html_url), 这里拦住, 别把 HTML 当安装包下载。
+        let packageExtension = downloadURL.pathExtension.lowercased()
+        guard packageExtension == "dmg" || packageExtension == "zip" else {
+            failAutoUpdate(update: update, message: "更新源没有 macOS 安装包 (DMG/ZIP), 请到发布页手动下载")
+            return
+        }
+        // dmg → 挂载安装; zip → 解压编译 (v1.5.15 起主路径是 DMG)
+        let packagePath = "\(updateDir).\(packageExtension)"
 
         var request = URLRequest(url: downloadURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -795,12 +813,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 return
             }
             do {
-                try fm.moveItem(at: tempURL, to: URL(fileURLWithPath: zipPath))
+                try fm.moveItem(at: tempURL, to: URL(fileURLWithPath: packagePath))
             } catch {
                 self.failAutoUpdate(update: update, message: "暂存下载文件失败: \(error.localizedDescription)")
                 return
             }
-            self.continueAutoUpdateAfterDownload(update: update, zipPath: zipPath, updateDir: updateDir)
+            self.continueAutoUpdateAfterDownload(update: update, packagePath: packagePath, updateDir: updateDir)
         }
         // 进度反馈: 每收到 ~64KB 更新一次文案, 让用户知道在下载
         let observation = downloadTask.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
@@ -876,14 +894,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 self.retryDownload(update: update, attempt: attempt + 1, lastError: "CDN 占位 (\(size) bytes)")
                 return
             }
-            let zipPath = "/tmp/TokenMonitor/update-\(update.version).zip"
+            let retryExtension = downloadURL.pathExtension.lowercased()
+            let retryPackagePath = "/tmp/TokenMonitor/update-\(update.version).\(retryExtension == "dmg" ? "dmg" : "zip")"
             do {
-                try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: zipPath))
+                try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: retryPackagePath))
             } catch {
                 self.failAutoUpdate(update: update, message: "暂存下载文件失败 (重试): \(error.localizedDescription)")
                 return
             }
-            self.continueAutoUpdateAfterDownload(update: update, zipPath: zipPath, updateDir: "/tmp/TokenMonitor/update-\(update.version)")
+            self.continueAutoUpdateAfterDownload(update: update, packagePath: retryPackagePath, updateDir: "/tmp/TokenMonitor/update-\(update.version)")
         }
         let observation = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
             guard let self = self else { return }
@@ -901,17 +920,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         task.resume()
     }
 
-    private func continueAutoUpdateAfterDownload(update: UpdateInfo, zipPath: String, updateDir: String) {
-        DispatchQueue.main.async { self.updateProgress(stage: "解压源码包") }
+    private func continueAutoUpdateAfterDownload(update: UpdateInfo, packagePath: String, updateDir: String) {
         let fm = FileManager.default
         do {
             try fm.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
+        } catch {
+            self.failAutoUpdate(update: update, message: "创建暂存目录失败: \(error.localizedDescription)")
+            return
+        }
+
+        // v1.5.15 起 macOS 主路径: DMG 挂载安装, 不再下载源码本地编译。
+        // 原因: GitCode 禁止同名分支+tag, releases/latest 里 type=source 的
+        // archive/refs/heads/<tag>.zip 对 tag 发布必然是 download-error 占位页。
+        if packagePath.hasSuffix(".dmg") {
+            installFromDMG(update: update, dmgPath: packagePath, updateDir: updateDir)
+            return
+        }
+
+        DispatchQueue.main.async { self.updateProgress(stage: "解压源码包") }
+        do {
             // 用 /usr/bin/ditto 解压: macOS 原生 zip 工具, 给 .app bundle 设计,
             // 对 UTF-8 文件名 (例如 '启动 Token Monitor.bat') 比 /usr/bin/unzip 友好。
             // 失败也不致命, 走 unzip 兜底 (但 unzip 可能因为中文文件名失败)。
             let ditto = Process()
             ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            ditto.arguments = ["-x", "-k", zipPath, updateDir]
+            ditto.arguments = ["-x", "-k", packagePath, updateDir]
             let pipe = Pipe()
             ditto.standardOutput = pipe
             ditto.standardError = pipe
@@ -990,6 +1023,91 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             self?.performAppReplacement(stagedApp: builtApp, update: update)
         }
+    }
+
+    // DMG 安装: 挂载只读镜像 → ditto 拷出 .app → 卸载 → update_helper 替换重启。
+    // 挂载的是我们自己发布的 UDZO 只读镜像 (无许可协议), 全程不需要管理员权限。
+    private func installFromDMG(update: UpdateInfo, dmgPath: String, updateDir: String) {
+        DispatchQueue.main.async { self.updateProgress(stage: "挂载安装镜像") }
+        let fm = FileManager.default
+
+        let attach = Process()
+        attach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+        attach.arguments = ["attach", dmgPath, "-nobrowse", "-readonly", "-noautoopen", "-plist"]
+        let attachPipe = Pipe()
+        attach.standardOutput = attachPipe
+        attach.standardError = attachPipe
+        do {
+            try attach.run()
+        } catch {
+            self.failAutoUpdate(update: update, message: "启动 hdiutil 失败: \(error.localizedDescription)")
+            return
+        }
+        let attachData = attachPipe.fileHandleForReading.readDataToEndOfFile()
+        attach.waitUntilExit()
+        guard attach.terminationStatus == 0,
+              let mountPoint = Self.mountPoint(fromAttachPlist: attachData) else {
+            let msg = String(data: attachData, encoding: .utf8) ?? ""
+            self.failAutoUpdate(update: update, message: "挂载 DMG 失败\n\(msg.prefix(300))")
+            return
+        }
+        defer {
+            let detach = Process()
+            detach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            detach.arguments = ["detach", mountPoint, "-force"]
+            try? detach.run()
+            detach.waitUntilExit()
+        }
+
+        // 镜像根目录里找 .app (我们发布的 DMG 固定叫 "Token Monitor.app")
+        guard let entries = try? fm.contentsOfDirectory(atPath: mountPoint),
+              let appName = entries.first(where: { $0.hasSuffix(".app") }) else {
+            self.failAutoUpdate(update: update, message: "DMG 里没有找到 .app")
+            return
+        }
+        let mountedApp = "\(mountPoint)/\(appName)"
+        let stagedApp = "\(updateDir)/\(appName)"
+
+        DispatchQueue.main.async { self.updateProgress(stage: "解压安装包") }
+        do {
+            try? fm.removeItem(atPath: stagedApp)
+            // ditto 保留权限/扩展属性/签名元数据, 拷 .app 的标准做法
+            let ditto = Process()
+            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            ditto.arguments = [mountedApp, stagedApp]
+            try ditto.run()
+            ditto.waitUntilExit()
+            guard ditto.terminationStatus == 0 else {
+                self.failAutoUpdate(update: update, message: "从 DMG 拷贝 .app 失败 (ditto exit \(ditto.terminationStatus))")
+                return
+            }
+        } catch {
+            self.failAutoUpdate(update: update, message: "从 DMG 拷贝 .app 异常: \(error.localizedDescription)")
+            return
+        }
+
+        guard fm.fileExists(atPath: "\(stagedApp)/Contents/MacOS/TokenMonitor") else {
+            self.failAutoUpdate(update: update, message: "暂存的 .app 不完整 (缺 Contents/MacOS/TokenMonitor)")
+            return
+        }
+
+        DispatchQueue.main.async { self.updateProgress(stage: "准备安装, 即将重启 app") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            self?.performAppReplacement(stagedApp: stagedApp, update: update)
+        }
+    }
+
+    // 解析 `hdiutil attach -plist` 输出, 取 /Volumes/... 挂载点
+    private static func mountPoint(fromAttachPlist data: Data) -> String? {
+        guard let entries = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]] else {
+            return nil
+        }
+        for entry in entries {
+            if let point = entry["mount-point"] as? String, !point.isEmpty {
+                return point
+            }
+        }
+        return nil
     }
 
     private func performAppReplacement(stagedApp: String, update: UpdateInfo) {
