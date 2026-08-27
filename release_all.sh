@@ -288,7 +288,8 @@ if preferred is None and installable:
     preferred = installable[0]
 print(preferred['browser_download_url'] if preferred else '')
 ")
-if [[ "$PICKED_URL" != *"/releases/download/$TAG/Token%20Monitor.dmg" ]]; then
+PICKED_BASENAME="${PICKED_URL##*/}"
+if [[ "$PICKED_BASENAME" != "Token Monitor.dmg" && "$PICKED_BASENAME" != "Token%20Monitor.dmg" ]]; then
     echo "[release] ✘ 客户端首选资产不是 DMG 附件: '$PICKED_URL'" >&2
     exit 1
 fi
