@@ -412,10 +412,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.15](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.15)
+最新版本：[v1.5.16](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.16)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.15/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.15/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.16/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.16/TokenMonitor-Setup.exe)
 
 > ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明），需手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。
 
@@ -435,6 +435,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.16
+- 兼容 macOS 11–13 旧 Foundation：GitCode 返回的 DMG 附件 URL 带空格字面量（`Token Monitor.dmg`），旧系统 `URL(string:)` 对未编码空格返回 nil 导致"更新信息格式不正确"；下载前统一把空格替换为 `%20`（新 Foundation 会自动编码，已编码 URL 不受影响）。v1.5.15 在本机 macOS 27 实测可用，但旧系统存在此风险，故按"附件不可删、发版用新 tag"惯例追加此版本。
+- `release_all.sh` 客户端模拟校验改为按文件名匹配（兼容空格与 `%20` 两种形式），修复 v1.5.15 发布时端到端校验误报。
 
 ### v1.5.15
 - 修复 macOS 自动更新永久失败（v1.5.14 事故）：`releases/latest` 的 assets 前部是 GitCode 自动生成的源码归档（`type=source`，URL 为 `archive/refs/heads/<tag>.zip`），而 GitCode 禁止分支与 tag 同名（push hook 与 API 三条路径均实测被拒），该归档对 tag 发布必然 302 到 `download-error` 占位页（3576 字节 HTML），旧版客户端"第一个 `.dmg`/`.zip`"的选择规则正中此坑。

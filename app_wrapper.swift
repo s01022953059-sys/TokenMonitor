@@ -646,6 +646,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 options: [.anchored]
             )
         }
+        // DMG 附件名带空格 ("Token Monitor.dmg"): macOS 11-13 的旧 Foundation
+        // 对未编码空格 URL(string:) 返回 nil (新 Foundation 会自动编码),
+        // 不预处理会导致老系统上"更新信息格式不正确"。已编码的 %20 不受影响。
+        rawDownloadURL = rawDownloadURL.replacingOccurrences(of: " ", with: "%20")
         guard let downloadURL = URL(string: rawDownloadURL, relativeTo: fallbackURL)?.absoluteURL else {
             return nil
         }
