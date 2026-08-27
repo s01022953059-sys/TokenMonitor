@@ -115,9 +115,10 @@
 
 - 用户可以创建或加入多个组队，在所有组里同时显示排名
 - 创建组队：自定义组名（中英文数字下划线 1-16 字），系统随机生成 5 位不重复数字码
-- 加入组队：输入 5 位组码加入，全社区大小写不敏感唯一
+- 加入组队：输入 5 位数字组码；macOS/Windows 都会先向中继确认组真实存在并缓存组名，不存在或暂时无法验证时不会写入虚假成员关系
 - 组码仅创建者可见，其他组员只能看到组名
 - 同一用户可同时属于多个组，Token 会在所有组里都计入
+- 创建、加入、退出或清空组队后立即上报最新成员关系；同步暂时失败时保留本地结果并明确提示稍后自动同步
 - 退出组队：`×` 按钮立即退出，随时可重新加入
 - 组队排行按组总 Token 排序，显示人数和头名
 - 存量用户零改动：默认在公共池，不强制加入任何组
@@ -149,12 +150,12 @@
 | `GET /api/session_detail` | 会话详情（按工具匹配 Codex rollout 或 WorkBuddy 项目 JSONL，返回对话内容） |
 | `GET /api/heatmap_detail` | 热力图详情（按日期或星期 + 小时返回调用列表；按日期请求直接限定到目标自然日） |
 | `GET /api/community` | 读取社区今日聚合、个人同步状态和排名 |
-| `GET /api/community/report` | 立即提交一次匿名社区统计，并返回真实成功/失败状态 |
+| `POST /api/community/report` | 立即提交一次匿名社区统计，并返回真实成功/失败状态 |
 | `GET /api/community/optin` | 旧版兼容接口；社区统计始终自动启用 |
 | `POST /api/community/profile` | 使用本机设备凭据修改公开社区昵称；请求体仅含 `display_name` |
 | `POST /api/community/groups/create` | 创建组队：输入组名，系统随机生成 5 位不重复码并返回 |
 | `GET /api/community/groups/:code` | 查询组码对应的组名 |
-| `POST /api/community/groups/join` | 加入组队（追加组码到本地列表，不去重） |
+| `POST /api/community/groups/join` | 校验真实 5 位组码后加入组队，缓存组名并返回明确错误状态 |
 | `POST /api/community/groups/leave` | 退出组队（从本地列表移除指定组码） |
 
 ## 平台实现
@@ -411,10 +412,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.88](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.88)
+最新版本：[v1.5.14](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.14)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.14/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.14/TokenMonitor-Setup.exe)
 
 ## 发布与验证规则
 
@@ -432,6 +433,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.14
+- 修复跨平台加入组：macOS 与 Windows 都会校验真实 5 位组码、缓存并显示组名；不存在的组码、格式错误和网络失败不再产生虚假成员关系。
+- Windows 补齐组队创建、加入、退出、清空、`group_codes` 上报、组内聚合和排名，与 macOS API 及页面行为一致。
+- 组队成员关系变更后立即触发社区同步；同步暂时失败时保留已确认的本地成员关系并显示“稍后自动同步”，不再卡在“加入中”。
+- macOS universal 构建兼容 Command Line Tools 27：x86_64 壳关闭项目未使用的 Swift runtime compatibility 自动链接，继续保持 macOS 11 最低部署目标和 Intel/Apple Silicon 双架构产物。
 
 ### v1.5.03
 - 组队 UI 状态说明升级：未加入时橙色边框卡片明示"公共池"状态 + 引导文案；已加入时绿色边框卡片，组标签按钮化，点击 × 退出。

@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.5.13"
+var appVersion = "1.5.14"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -3460,6 +3460,117 @@ func main() {
 		usage := getCachedUsage()
 		result := reportCommunityStats(&usage)
 		writeJSON(w, 200, result)
+	})
+	http.HandleFunc("/api/community/groups/create", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, CommunityGroupResult{Status: "method_not_allowed", Message: "仅支持 POST"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if json.NewDecoder(r.Body).Decode(&payload) != nil {
+			writeJSON(w, http.StatusBadRequest, CommunityGroupResult{Status: "invalid_json", Message: "请求格式不正确"})
+			return
+		}
+		result := createCommunityGroup(payload.Name)
+		status := http.StatusOK
+		if !result.OK {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, result)
+	})
+	http.HandleFunc("/api/community/groups/join", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, CommunityGroupResult{Status: "method_not_allowed", Message: "仅支持 POST"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		var payload struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(r.Body).Decode(&payload) != nil {
+			writeJSON(w, http.StatusBadRequest, CommunityGroupResult{Status: "invalid_json", Message: "请求格式不正确"})
+			return
+		}
+		result := addCommunityGroupCode(payload.Code)
+		status := http.StatusOK
+		if !result.OK {
+			status = http.StatusBadRequest
+			if result.Status == "network_error" || result.Status == "relay_unavailable" {
+				status = http.StatusServiceUnavailable
+			}
+			if result.Status == "group_not_found" {
+				status = http.StatusNotFound
+			}
+		}
+		writeJSON(w, status, result)
+	})
+	http.HandleFunc("/api/community/groups/leave", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, CommunityGroupResult{Status: "method_not_allowed", Message: "仅支持 POST"})
+			return
+		}
+		var payload struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload) != nil {
+			writeJSON(w, http.StatusBadRequest, CommunityGroupResult{Status: "invalid_json", Message: "请求格式不正确"})
+			return
+		}
+		result := removeCommunityGroupCode(payload.Code)
+		writeJSON(w, http.StatusOK, result)
+	})
+	http.HandleFunc("/api/community/groups/clear", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, CommunityGroupResult{Status: "method_not_allowed", Message: "仅支持 POST"})
+			return
+		}
+		writeJSON(w, http.StatusOK, clearCommunityGroupCodes())
+	})
+	http.HandleFunc("/api/community/groups/", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, CommunityGroupResult{Status: "method_not_allowed", Message: "仅支持 GET"})
+			return
+		}
+		result := getCommunityGroupInfo(strings.TrimPrefix(r.URL.Path, "/api/community/groups/"))
+		status := http.StatusOK
+		if !result.OK {
+			status = http.StatusNotFound
+			if result.Status == "invalid_code" {
+				status = http.StatusBadRequest
+			}
+			if result.Status == "network_error" || result.Status == "relay_unavailable" {
+				status = http.StatusServiceUnavailable
+			}
+		}
+		writeJSON(w, status, result)
 	})
 	http.HandleFunc("/api/community/profile", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)

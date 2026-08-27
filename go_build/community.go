@@ -142,6 +142,17 @@ type CommunityProfileResult struct {
 	Unchanged    bool   `json:"unchanged,omitempty"`
 }
 
+type CommunityGroupResult struct {
+	OK            bool     `json:"ok"`
+	Status        string   `json:"status,omitempty"`
+	Message       string   `json:"message,omitempty"`
+	Code          string   `json:"code,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	CreatedBy     string   `json:"created_by,omitempty"`
+	Codes         []string `json:"codes,omitempty"`
+	AlreadyMember bool     `json:"already_member,omitempty"`
+}
+
 type communityCredential struct {
 	ID           string `json:"id"`
 	DeviceSecret string `json:"device_secret"`
@@ -182,6 +193,8 @@ type communityReportData struct {
 	ReportDate    string           `json:"report_date"`
 	TodayTokens   int64            `json:"today_tokens"`
 	ByTool        map[string]int64 `json:"by_tool"`
+	GroupCodes    []string         `json:"group_codes"`
+	GroupCode     string           `json:"group_code"`
 }
 
 func communityReportFingerprint(report communityReportData) string {
@@ -255,6 +268,109 @@ func activeCommunityReports(reports []communityReportData) []communityReportData
 		}
 	}
 	return active
+}
+
+func communityReportGroupCodes(report communityReportData) []string {
+	if len(report.GroupCodes) > 0 {
+		return report.GroupCodes
+	}
+	if code := strings.TrimSpace(report.GroupCode); code != "" {
+		return []string{code}
+	}
+	return []string{}
+}
+
+type communityGroupSummary struct {
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	TotalTokens   int64  `json:"total_tokens"`
+	MemberCount   int    `json:"member_count"`
+	TopMember     string `json:"top_member"`
+	IsCreator     bool   `json:"is_creator,omitempty"`
+	PendingReport bool   `json:"pending_report,omitempty"`
+}
+
+func buildCommunityGroupViews(activeReports []communityReportData, myID string, myGroupCodes, createdGroupCodes []string, groupNames map[string]string) ([]communityGroupSummary, []communityGroupSummary, map[string]int) {
+	groupStats := map[string]*communityGroupSummary{}
+	for _, report := range activeReports {
+		for _, rawCode := range communityReportGroupCodes(report) {
+			code := strings.TrimSpace(rawCode)
+			if code == "" {
+				continue
+			}
+			group := groupStats[code]
+			if group == nil {
+				name := groupNames[code]
+				if name == "" {
+					name = code
+				}
+				group = &communityGroupSummary{Code: code, Name: name}
+				groupStats[code] = group
+			}
+			group.TotalTokens += report.TodayTokens
+			group.MemberCount++
+			if group.TopMember == "" && report.DisplayName != "" {
+				group.TopMember = report.DisplayName
+			}
+		}
+	}
+	groups := make([]communityGroupSummary, 0, len(groupStats))
+	for _, group := range groupStats {
+		groups = append(groups, *group)
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].TotalTokens > groups[j].TotalTokens })
+
+	createdCodes := map[string]bool{}
+	for _, code := range createdGroupCodes {
+		createdCodes[code] = true
+	}
+	myGroupsByCode := map[string]communityGroupSummary{}
+	for _, group := range groups {
+		for _, code := range myGroupCodes {
+			if group.Code == code {
+				group.IsCreator = createdCodes[code]
+				myGroupsByCode[code] = group
+			}
+		}
+	}
+	for _, code := range myGroupCodes {
+		if _, exists := myGroupsByCode[code]; exists {
+			continue
+		}
+		name := groupNames[code]
+		if name == "" {
+			name = "未知组队"
+		}
+		myGroupsByCode[code] = communityGroupSummary{Code: code, Name: name, IsCreator: createdCodes[code], PendingReport: true}
+	}
+	myGroups := make([]communityGroupSummary, 0, len(myGroupsByCode))
+	for _, group := range myGroupsByCode {
+		myGroups = append(myGroups, group)
+	}
+	sort.SliceStable(myGroups, func(i, j int) bool { return myGroups[i].TotalTokens > myGroups[j].TotalTokens })
+
+	myGroupRanks := map[string]int{}
+	for _, code := range myGroupCodes {
+		groupPosition := 0
+		for _, report := range activeReports {
+			belongsToGroup := false
+			for _, reportCode := range communityReportGroupCodes(report) {
+				if reportCode == code {
+					belongsToGroup = true
+					break
+				}
+			}
+			if !belongsToGroup {
+				continue
+			}
+			groupPosition++
+			if report.ID == myID {
+				myGroupRanks[code] = groupPosition
+				break
+			}
+		}
+	}
+	return groups, myGroups, myGroupRanks
 }
 
 // getUserID 获取或生成匿名用户 ID
@@ -335,6 +451,225 @@ func communityProfileURL() string {
 		return strings.TrimSuffix(value, "/v1/report") + "/v1/profile"
 	}
 	return strings.TrimRight(value, "/") + "/v1/profile"
+}
+
+func communityGroupsURL() string {
+	value := communityRelayURL()
+	if strings.HasSuffix(value, "/v1/report") {
+		return strings.TrimSuffix(value, "/v1/report") + "/v1/groups"
+	}
+	return strings.TrimRight(value, "/") + "/v1/groups"
+}
+
+func readCommunityCodeList(name string) []string {
+	body, err := os.ReadFile(filepath.Join(getCommunityDir(), name))
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]bool{}
+	result := []string{}
+	for _, raw := range strings.Split(string(body), ",") {
+		code := strings.TrimSpace(raw)
+		if code != "" && !seen[code] {
+			seen[code] = true
+			result = append(result, code)
+		}
+	}
+	return result
+}
+
+func writeCommunityCodeList(name string, codes []string) error {
+	if err := os.MkdirAll(getCommunityDir(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(getCommunityDir(), name), []byte(strings.Join(codes, ",")), 0o644)
+}
+
+func getCommunityGroupCodes() []string {
+	return readCommunityCodeList("group_code.txt")
+}
+
+func getCreatedCommunityGroupCodes() []string {
+	return readCommunityCodeList("created_groups.txt")
+}
+
+func readCommunityGroupNames() map[string]string {
+	result := map[string]string{}
+	body, err := os.ReadFile(filepath.Join(getCommunityDir(), "group_names.json"))
+	if err == nil {
+		_ = json.Unmarshal(body, &result)
+	}
+	return result
+}
+
+func writeCommunityGroupNames(names map[string]string) error {
+	if err := os.MkdirAll(getCommunityDir(), 0o755); err != nil {
+		return err
+	}
+	body, err := json.Marshal(names)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(getCommunityDir(), "group_names.json"), body, 0o644)
+}
+
+func validCommunityGroupCode(code string) bool {
+	if len(code) != 5 {
+		return false
+	}
+	for _, char := range code {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func getCommunityGroupInfo(code string) CommunityGroupResult {
+	code = strings.TrimSpace(code)
+	if !validCommunityGroupCode(code) {
+		return CommunityGroupResult{Status: "invalid_code", Message: "组码必须是 5 位数字"}
+	}
+	req, err := http.NewRequest(http.MethodGet, communityGroupsURL()+"/"+code, nil)
+	if err != nil {
+		return CommunityGroupResult{Status: "relay_unavailable", Message: "组队服务地址无效"}
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
+	resp, err := newProxyHTTPClient(5).Do(req)
+	if err != nil {
+		return CommunityGroupResult{Status: "network_error", Message: "组队服务暂时不可用：" + err.Error()}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	var result CommunityGroupResult
+	if json.Unmarshal(body, &result) != nil {
+		return CommunityGroupResult{Status: "relay_invalid_response", Message: "组队服务返回格式异常"}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.OK = false
+		if result.Status == "" {
+			result.Status = "relay_http_error"
+		}
+		if result.Message == "" {
+			result.Message = "组队服务请求失败"
+		}
+	}
+	return result
+}
+
+func addCommunityGroupCode(code string) CommunityGroupResult {
+	code = strings.TrimSpace(code)
+	if !validCommunityGroupCode(code) {
+		return CommunityGroupResult{Status: "invalid_code", Message: "组码必须是 5 位数字"}
+	}
+	codes := getCommunityGroupCodes()
+	alreadyMember := false
+	for _, existing := range codes {
+		if existing == code {
+			alreadyMember = true
+			if cachedName := readCommunityGroupNames()[code]; cachedName != "" {
+				return CommunityGroupResult{OK: true, Code: code, Name: cachedName, Codes: codes, AlreadyMember: true}
+			}
+		}
+	}
+	info := getCommunityGroupInfo(code)
+	if !info.OK {
+		if alreadyMember && info.Status == "group_not_found" {
+			_ = removeCommunityGroupCode(code)
+		}
+		return info
+	}
+	name := strings.TrimSpace(info.Name)
+	if name == "" {
+		return CommunityGroupResult{Status: "invalid_group", Message: "组队信息不完整，请稍后重试"}
+	}
+	names := readCommunityGroupNames()
+	names[code] = name
+	if err := writeCommunityGroupNames(names); err != nil {
+		return CommunityGroupResult{Status: "storage_error", Message: "无法保存组队信息"}
+	}
+	if !alreadyMember {
+		codes = append(codes, code)
+		if err := writeCommunityCodeList("group_code.txt", codes); err != nil {
+			return CommunityGroupResult{Status: "storage_error", Message: "无法保存组队信息"}
+		}
+	}
+	invalidateCommunityCache()
+	return CommunityGroupResult{OK: true, Code: code, Name: name, Codes: codes, AlreadyMember: alreadyMember}
+}
+
+func removeCommunityGroupCode(code string) CommunityGroupResult {
+	code = strings.TrimSpace(code)
+	remaining := []string{}
+	for _, existing := range getCommunityGroupCodes() {
+		if existing != code {
+			remaining = append(remaining, existing)
+		}
+	}
+	if err := writeCommunityCodeList("group_code.txt", remaining); err != nil {
+		return CommunityGroupResult{Status: "storage_error", Message: "无法保存组队信息"}
+	}
+	created := []string{}
+	for _, existing := range getCreatedCommunityGroupCodes() {
+		if existing != code {
+			created = append(created, existing)
+		}
+	}
+	_ = writeCommunityCodeList("created_groups.txt", created)
+	invalidateCommunityCache()
+	return CommunityGroupResult{OK: true, Codes: remaining}
+}
+
+func clearCommunityGroupCodes() CommunityGroupResult {
+	if err := writeCommunityCodeList("group_code.txt", []string{}); err != nil {
+		return CommunityGroupResult{Status: "storage_error", Message: "无法清空组队信息"}
+	}
+	_ = writeCommunityCodeList("created_groups.txt", []string{})
+	invalidateCommunityCache()
+	return CommunityGroupResult{OK: true, Codes: []string{}}
+}
+
+func createCommunityGroup(name string) CommunityGroupResult {
+	credential := getCommunityCredential()
+	payload, _ := json.Marshal(map[string]string{"name": strings.TrimSpace(name)})
+	req, err := http.NewRequest(http.MethodPost, communityGroupsURL(), bytes.NewReader(payload))
+	if err != nil {
+		return CommunityGroupResult{Status: "relay_unavailable", Message: "组队服务地址无效"}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "TokenMonitor/"+appVersion)
+	req.Header.Set("X-Device-ID", credential.ID)
+	req.Header.Set("X-Device-Secret", credential.DeviceSecret)
+	resp, err := newProxyHTTPClient(20).Do(req)
+	if err != nil {
+		return CommunityGroupResult{Status: "relay_unavailable", Message: "组队服务暂时不可用：" + err.Error()}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	var result CommunityGroupResult
+	if json.Unmarshal(body, &result) != nil {
+		return CommunityGroupResult{Status: "relay_invalid_response", Message: "组队服务返回格式异常"}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+		result.OK = false
+		return result
+	}
+	names := readCommunityGroupNames()
+	names[result.Code] = result.Name
+	if writeCommunityGroupNames(names) != nil {
+		return CommunityGroupResult{Status: "storage_error", Message: "无法保存组队信息"}
+	}
+	codes := append(getCommunityGroupCodes(), result.Code)
+	if writeCommunityCodeList("group_code.txt", codes) != nil {
+		return CommunityGroupResult{Status: "storage_error", Message: "无法保存组队信息"}
+	}
+	created := append(getCreatedCommunityGroupCodes(), result.Code)
+	_ = writeCommunityCodeList("created_groups.txt", created)
+	result.Codes = codes
+	invalidateCommunityCache()
+	return result
 }
 
 // isOptedIn 保留旧接口兼容；社区统计随安装自动启用。
@@ -429,6 +764,7 @@ func reportCommunityStats(usage *UsageResponse) CommunityReportResult {
 		"today_tokens":  totalTokens,
 		"by_tool":       byTool,
 		"version":       appVersion,
+		"group_codes":   getCommunityGroupCodes(),
 	}
 	result := sendCommunityRelay(report)
 	if result.Status == "identity_upgrade_required" {
@@ -637,9 +973,15 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 			"tokens":       r.TodayTokens,
 			"tool":         formatCommunityTools(r.ByTool),
 			"is_me":        r.ID == myID,
+			"group_codes":  communityReportGroupCodes(r),
 		}
 		leaderboard = append(leaderboard, entry)
 	}
+
+	myGroupCodes := getCommunityGroupCodes()
+	groups, myGroups, myGroupRanks := buildCommunityGroupViews(
+		activeReports, myID, myGroupCodes, getCreatedCommunityGroupCodes(), readCommunityGroupNames(),
+	)
 	// 工具占比
 	toolTotals := map[string]int64{}
 	for _, r := range activeReports {
@@ -715,6 +1057,10 @@ func getCommunityStats(forceRefresh bool) map[string]interface{} {
 		"my_last_synced_at":    myLastSyncedAt,
 		"my_display_name":      myDisplayName,
 		"my_name_changed_at":   myNameChangedAt,
+		"my_group_codes":       myGroupCodes,
+		"my_groups":            myGroups,
+		"my_group_ranks":       myGroupRanks,
+		"groups":               groups,
 		"rank_status":          rankStatus,
 		"rank_message":         rankMessage,
 		"rank_total":           len(activeReports),

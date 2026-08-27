@@ -450,23 +450,46 @@ def _lookup_group_name(code):
 
 
 def add_group_code(code):
-    """加入组队：直接保存组码到本地，完全不调网络。
-
-    v1.5.07: v1.5.06 虽然去掉了校验，但 _lookup_group_name 仍调中继 GET，
-    中国用户连不上 new.taqi.cc 时 10 秒阻塞导致前端请求超时。
-    现在完全不做网络请求，组名在 get_community_stats 聚合时延迟解析。
-    """
+    """校验真实组码后加入组队，并缓存组名。"""
     code = str(code or "").strip()
-    if not code:
-        return {"ok": False, "status": "empty_code", "message": "组码不能为空"}
+    if len(code) != 5 or not code.isdigit():
+        return {"ok": False, "status": "invalid_code", "message": "组码必须是 5 位数字"}
     codes = get_group_codes()
-    if code in codes:
-        return {"ok": True, "codes": codes, "already_member": True}
-    codes.append(code)
-    _save_group_codes(codes)
+    already_member = code in codes
+    cached_name = _load_group_name_cache().get(code, "")
+    if already_member and cached_name:
+        return {
+            "ok": True, "codes": codes, "already_member": True,
+            "code": code, "name": cached_name,
+        }
+
+    info = get_group_info(code)
+    if not info.get("ok"):
+        if already_member and info.get("status") == "group_not_found":
+            _save_group_codes([existing for existing in codes if existing != code])
+            _aggregate_cache["data"] = None
+            _aggregate_cache["ts"] = 0
+        return {
+            "ok": False,
+            "status": info.get("status", "group_lookup_failed"),
+            "message": info.get("message") or "无法确认组队信息，请稍后重试",
+        }
+
+    name = str(info.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "status": "invalid_group", "message": "组队信息不完整，请稍后重试"}
+    cache = _load_group_name_cache()
+    cache[code] = name
+    _save_group_name_cache(cache)
+    if not already_member:
+        codes.append(code)
+        _save_group_codes(codes)
     _aggregate_cache["data"] = None
     _aggregate_cache["ts"] = 0
-    return {"ok": True, "codes": codes}
+    return {
+        "ok": True, "codes": codes, "code": code, "name": name,
+        "already_member": already_member,
+    }
 
 
 def remove_group_code(code):
@@ -533,7 +556,7 @@ def get_group_info(code):
     request = urllib.request.Request(url, method="GET",
         headers={"Accept": "application/json", "User-Agent": "TokenMonitor/" + (_read_app_version() or "unknown")})
     try:
-        with _open_external_request(request, timeout=10) as response:
+        with _open_external_request(request, timeout=5) as response:
             return json.loads(response.read())
     except urllib.error.HTTPError as exc:
         try:

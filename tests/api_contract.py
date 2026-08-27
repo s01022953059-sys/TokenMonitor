@@ -29,6 +29,22 @@ def unused_port():
 
 class ReleaseFixture(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.endswith("/community-report/v1/groups/12345"):
+            body = json.dumps({"ok": True, "code": "12345", "name": "跨平台测试组", "created_by": "User_FIXTURE"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if "/community-report/v1/groups/" in self.path:
+            body = json.dumps({"ok": False, "status": "group_not_found", "message": "组队不存在"}).encode()
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         base = f"http://127.0.0.1:{self.server.server_port}"
         payload = {
             "tag_name": "v99.0.0",
@@ -272,6 +288,59 @@ class APIContractTests(unittest.TestCase):
         self.assertEqual(status, 200, report)
         self.assertTrue(report.get("ok"), report)
         self.assertEqual(report.get("status"), "synced")
+
+    def test_group_join_contract_validates_and_persists_real_groups(self):
+        headers = {"Content-Type": "application/json"}
+        status, invalid = request_json(
+            self.backend.base + "/api/community/groups/join",
+            method="POST", payload={"code": "123"}, headers=headers,
+        )
+        self.assertEqual(status, 400, invalid)
+        self.assertEqual(invalid.get("status"), "invalid_code")
+
+        status, missing = request_json(
+            self.backend.base + "/api/community/groups/join",
+            method="POST", payload={"code": "00000"}, headers=headers,
+        )
+        self.assertEqual(status, 404, missing)
+        self.assertEqual(missing.get("status"), "group_not_found")
+
+        status, joined = request_json(
+            self.backend.base + "/api/community/groups/join",
+            method="POST", payload={"code": "12345"}, headers=headers,
+        )
+        self.assertEqual(status, 200, joined)
+        self.assertTrue(joined.get("ok"), joined)
+        self.assertEqual(joined.get("name"), "跨平台测试组")
+
+        group_file = self.backend.tempdir / "home" / ".token_monitor" / "group_code.txt"
+        names_file = self.backend.tempdir / "home" / ".token_monitor" / "group_names.json"
+        self.assertEqual(group_file.read_text().strip(), "12345")
+        self.assertEqual(json.loads(names_file.read_text()).get("12345"), "跨平台测试组")
+
+        status, info = request_json(self.backend.base + "/api/community/groups/12345")
+        self.assertEqual(status, 200, info)
+        self.assertEqual(info.get("name"), "跨平台测试组")
+
+        status, left = request_json(
+            self.backend.base + "/api/community/groups/leave",
+            method="POST", payload={"code": "12345"}, headers=headers,
+        )
+        self.assertEqual(status, 200, left)
+        self.assertTrue(left.get("ok"), left)
+        self.assertEqual(group_file.read_text().strip(), "")
+
+        status, joined = request_json(
+            self.backend.base + "/api/community/groups/join",
+            method="POST", payload={"code": "12345"}, headers=headers,
+        )
+        self.assertEqual(status, 200, joined)
+        status, cleared = request_json(
+            self.backend.base + "/api/community/groups/clear", method="POST", payload={}, headers=headers,
+        )
+        self.assertEqual(status, 200, cleared)
+        self.assertTrue(cleared.get("ok"), cleared)
+        self.assertEqual(group_file.read_text().strip(), "")
 
 
 def run_backend(kind, tempdir, feed_url):

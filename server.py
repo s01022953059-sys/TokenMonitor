@@ -946,7 +946,12 @@ class TokenMonitorHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
                 result = add_group_code(payload.get("code", ""))
-                self._write_json(200, result)
+                status = 200
+                if not result.get("ok"):
+                    status = 404 if result.get("status") == "group_not_found" else 400
+                    if result.get("status") in {"network_error", "relay_unavailable"}:
+                        status = 503
+                self._write_json(status, result)
             except Exception as exc:
                 self._write_json(500, {"ok": False, "status": "error", "message": str(exc)})
             return

@@ -392,7 +392,7 @@ class CommunityTests(unittest.TestCase):
         self.assertEqual(len(result["groups"]), 2)
 
     def test_add_remove_group_codes_manages_local_list(self):
-        """v1.5.06 测试：add_group_code 直接保存本地，不要求服务端校验。"""
+        """加入真实组码后保存组码和组名，重复加入去重。"""
         # 清空环境
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
@@ -400,20 +400,24 @@ class CommunityTests(unittest.TestCase):
         # 初始状态：未加入任何组
         self.assertEqual(community.get_group_codes(), [])
 
-        # 添加组码（不调中继，直接保存）
-        result = community.add_group_code("12345")
-        self.assertTrue(result["ok"])
-        self.assertEqual(community.get_group_codes(), ["12345"])
+        with mock.patch.object(community, "get_group_info", side_effect=lambda code: {
+            "ok": True, "code": code, "name": "测试组" + code,
+        }):
+            result = community.add_group_code("12345")
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["name"], "测试组12345")
+            self.assertEqual(community.get_group_codes(), ["12345"])
+            self.assertEqual(community._load_group_name_cache()["12345"], "测试组12345")
 
-        # 重复添加应该去重
-        result = community.add_group_code("12345")
-        self.assertTrue(result["ok"])
-        self.assertTrue(result.get("already_member"))
-        self.assertEqual(community.get_group_codes(), ["12345"])
+            # 重复添加应该去重
+            result = community.add_group_code("12345")
+            self.assertTrue(result["ok"])
+            self.assertTrue(result.get("already_member"))
+            self.assertEqual(community.get_group_codes(), ["12345"])
 
-        # 添加第二个
-        community.add_group_code("67890")
-        self.assertEqual(community.get_group_codes(), ["12345", "67890"])
+            # 添加第二个
+            community.add_group_code("67890")
+            self.assertEqual(community.get_group_codes(), ["12345", "67890"])
 
         # 移除一个
         community.remove_group_code("12345")
@@ -423,21 +427,38 @@ class CommunityTests(unittest.TestCase):
         community.remove_group_code("99999")
         self.assertEqual(community.get_group_codes(), ["67890"])
 
-    def test_add_group_code_works_without_relay(self):
-        """v1.5.07 测试：add_group_code 完全不调网络，即使中继不可达也能加入。"""
+    def test_add_group_code_rejects_unverified_group(self):
+        """网络不可达或组不存在时不能产生虚假本地成员关系。"""
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        # mock get_group_info 抛异常（模拟网络不可达）
-        with mock.patch.object(community, "get_group_info",
-                               side_effect=Exception("connection refused")):
-            with mock.patch.object(community, "_load_group_name_cache",
-                               side_effect=Exception("connection refused")):
+        for response in (
+            {"ok": False, "status": "network_error", "message": "connection refused"},
+            {"ok": False, "status": "group_not_found", "message": "组队不存在"},
+        ):
+            with self.subTest(status=response["status"]), \
+                 mock.patch.object(community, "get_group_info", return_value=response):
                 result = community.add_group_code("90245")
-        # 关键断言：即使网络完全不可达，加入仍然成功
-        self.assertTrue(result["ok"])
-        self.assertIn("90245", result["codes"])
-        self.assertEqual(community.get_group_codes(), ["90245"])
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["status"], response["status"])
+                self.assertEqual(community.get_group_codes(), [])
+
+        community._save_group_codes(["90245"])
+        with mock.patch.object(community, "get_group_info", return_value={
+            "ok": False, "status": "group_not_found", "message": "组队不存在",
+        }):
+            result = community.add_group_code("90245")
+        self.assertFalse(result["ok"])
+        self.assertEqual(community.get_group_codes(), [])
+
+    def test_add_group_code_rejects_invalid_format_without_network(self):
+        with mock.patch.object(community, "get_group_info") as lookup:
+            for code in ("", "123", "ABCDE", "123456"):
+                with self.subTest(code=code):
+                    result = community.add_group_code(code)
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["status"], "invalid_code")
+        lookup.assert_not_called()
 
     def test_leaderboard_includes_group_codes(self):
         """v1.5.07 测试：leaderboard 条目带 group_codes，前端按 Tab 筛选。"""
@@ -479,8 +500,7 @@ class CommunityTests(unittest.TestCase):
         by_url = {item["download_url"]: report for item, report in zip(files, reports)}
 
         # 本地加入两个组
-        community.add_group_code("11111")
-        community.add_group_code("22222")
+        community._save_group_codes(["11111", "22222"])
 
         with mock.patch.object(community, "_load_group_name_cache", return_value={}), \
              mock.patch.object(community, "_gitcode_api", return_value=files), \
@@ -499,8 +519,7 @@ class CommunityTests(unittest.TestCase):
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        community.add_group_code("11111")
-        community.add_group_code("22222")
+        community._save_group_codes(["11111", "22222"])
 
         self.assertEqual(len(community.get_group_codes()), 2)
         community._record_created_code("11111")
@@ -516,8 +535,7 @@ class CommunityTests(unittest.TestCase):
         if os.path.exists(self.credential_file):
             os.remove(self.credential_file)
 
-        community.add_group_code("11111")
-        community.add_group_code("22222")
+        community._save_group_codes(["11111", "22222"])
 
         captured = {}
         def fake_relay(report):
@@ -543,7 +561,7 @@ class CommunityTests(unittest.TestCase):
         by_url = {item["download_url"]: report for item, report in zip(files, reports)}
 
         # 本地加入了一个服务端没有的组（v1.5.06: 不需要中继校验）
-        community.add_group_code("LOCAL1")
+        community._save_group_codes(["LOCAL1"])
 
         with mock.patch.object(community, "_load_group_name_cache", return_value={"LOCAL1": "本地新建组"}), \
              mock.patch.object(community, "_gitcode_api", return_value=files), \
@@ -574,7 +592,7 @@ class CommunityTests(unittest.TestCase):
         # 标记 11111 是我创建的，22222 不是
         community._record_created_code("11111")
         # v1.5.06: add_group_code 不需要中继校验
-        community.add_group_code("11111")
+        community._save_group_codes(["11111"])
         # 把本地列表设为只包含 11111（我创建的）
         with mock.patch.object(community, "_load_group_name_cache",
                                return_value={"11111": "我创建的组", "22222": "别人的组"}):

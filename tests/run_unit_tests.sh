@@ -110,12 +110,20 @@ for (const file of ['index.html', 'go_build/static/index.html']) {
       !html.includes('🏆 组队排行')) {
     throw new Error(`${file}: 组队功能核心 UI 元素缺失 (v1.5.0+)`);
   }
+  if (!html.includes('async function syncCommunityGroupMembership') ||
+      !html.includes('已加入，稍后自动同步') ||
+      !html.includes("API_BASE + '/api/community/groups/join'")) {
+    throw new Error(`${file}: 组队加入缺少真实校验后的同步与失败反馈`);
+  }
   }
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
   scripts.forEach((match) => new Function(match[1]));
 }
 const swift = fs.readFileSync('app_wrapper.swift', 'utf8');
 const windowsGUI = fs.readFileSync('go_build/gui_windows.go', 'utf8');
+const windowsMain = fs.readFileSync('go_build/main.go', 'utf8');
+const windowsCommunity = fs.readFileSync('go_build/community.go', 'utf8');
+const macBuild = fs.readFileSync('build_macos.sh', 'utf8');
 if (!swift.includes('window.__TOKEN_MONITOR_DESKTOP__ = true') ||
     !swift.includes('webView.topAnchor.constraint(equalTo: window.contentView!.topAnchor)')) {
   throw new Error('macOS: 单一内容面宿主约束缺失');
@@ -129,6 +137,17 @@ if (!windowsGUI.includes('/?desktop=1') ||
     !windowsGUI.includes('func startTrayUsageLoop') ||
     !windowsGUI.includes('systray.SetTitle("🔥" + formatTrayTokens')) {
   throw new Error('Windows: 单一内容面或实时托盘标题缺失');
+}
+if (!windowsMain.includes('"/api/community/groups/join"') ||
+    !windowsMain.includes('"/api/community/groups/create"') ||
+    !windowsCommunity.includes('"group_codes":   getCommunityGroupCodes()') ||
+    !windowsCommunity.includes('func buildCommunityGroupViews')) {
+  throw new Error('Windows: 组队 API、上报字段或组内聚合未与 macOS 对齐');
+}
+if (!macBuild.includes('-target x86_64-apple-macos11.0') ||
+    !macBuild.includes('-disable-autolinking-runtime-compatibility') ||
+    !macBuild.includes('-disable-autolinking-runtime-compatibility-concurrency')) {
+  throw new Error('macOS: CLT 27 universal x86_64 构建兼容参数缺失');
 }
 NODE
 cmp -s index.html go_build/static/index.html

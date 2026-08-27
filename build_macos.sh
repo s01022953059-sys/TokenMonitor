@@ -67,9 +67,13 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 	    }
 	
 	echo "[build_macos] [*] 编译 app_wrapper.swift (x86_64) ..."
+	# CLT 27 beta 的 macOS Swift 兼容静态库只带 arm64；本壳不使用 Swift
+	# Concurrency/actor，关闭未使用的兼容库自动链接，仍保留 macOS 11 部署目标。
 	swiftc \
 	    -O \
 	    -target x86_64-apple-macos11.0 \
+	    -disable-autolinking-runtime-compatibility \
+	    -disable-autolinking-runtime-compatibility-concurrency \
 	    -o "$APP_BUNDLE/Contents/MacOS/TokenMonitor_x86_64" \
 	    "$SOURCE_ROOT/app_wrapper.swift" || {
 	        echo "[build_macos] ✘ Swift x86_64 编译失败, build 中止" >&2

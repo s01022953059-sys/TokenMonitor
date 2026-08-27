@@ -238,6 +238,9 @@ func testCommunityUsage() *UsageResponse {
 func TestCommunityReportUsesRelayWithoutGit(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	if err := writeCommunityCodeList("group_code.txt", []string{"12345", "67890"}); err != nil {
+		t.Fatal(err)
+	}
 	var received map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -255,8 +258,113 @@ func TestCommunityReportUsesRelayWithoutGit(t *testing.T) {
 	if received["id"] == "" || received["device_secret"] == "" || communityInt64(received["today_tokens"]) != 123 {
 		t.Fatalf("unexpected relay payload: %#v", received)
 	}
+	groupCodes, ok := received["group_codes"].([]interface{})
+	if !ok || len(groupCodes) != 2 || groupCodes[0] != "12345" || groupCodes[1] != "67890" {
+		t.Fatalf("group codes missing from relay payload: %#v", received)
+	}
 	if _, err := os.Stat(filepath.Join(home, ".token_monitor", "community_credential.json")); err != nil {
 		t.Fatalf("credential was not persisted: %v", err)
+	}
+}
+
+func TestCommunityGroupJoinValidatesAndCachesRealGroup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/groups/12345" {
+			_, _ = w.Write([]byte(`{"ok":true,"code":"12345","name":"跨平台组","created_by":"User_OWNER"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"ok":false,"status":"group_not_found","message":"组队不存在"}`))
+	}))
+	defer server.Close()
+	t.Setenv("TOKEN_MONITOR_COMMUNITY_RELAY_URL", server.URL+"/v1/report")
+
+	missing := addCommunityGroupCode("00000")
+	if missing.OK || missing.Status != "group_not_found" || len(getCommunityGroupCodes()) != 0 {
+		t.Fatalf("missing group was persisted: result=%+v codes=%v", missing, getCommunityGroupCodes())
+	}
+	if err := writeCommunityCodeList("group_code.txt", []string{"00000"}); err != nil {
+		t.Fatal(err)
+	}
+	missing = addCommunityGroupCode("00000")
+	if missing.OK || len(getCommunityGroupCodes()) != 0 {
+		t.Fatalf("stale missing group was not cleaned: result=%+v codes=%v", missing, getCommunityGroupCodes())
+	}
+	joined := addCommunityGroupCode("12345")
+	if !joined.OK || joined.Name != "跨平台组" || !reflect.DeepEqual(getCommunityGroupCodes(), []string{"12345"}) {
+		t.Fatalf("valid group was not persisted: result=%+v codes=%v", joined, getCommunityGroupCodes())
+	}
+	if got := readCommunityGroupNames()["12345"]; got != "跨平台组" {
+		t.Fatalf("group name cache = %q", got)
+	}
+	repeated := addCommunityGroupCode("12345")
+	if !repeated.OK || !repeated.AlreadyMember {
+		t.Fatalf("repeat join should be idempotent: %+v", repeated)
+	}
+}
+
+func TestCommunityGroupJoinRejectsInvalidCodeWithoutNetwork(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("TOKEN_MONITOR_COMMUNITY_RELAY_URL", "http://127.0.0.1:1/v1/report")
+	for _, code := range []string{"", "123", "ABCDE", "123456"} {
+		result := addCommunityGroupCode(code)
+		if result.OK || result.Status != "invalid_code" {
+			t.Fatalf("code %q unexpectedly accepted: %+v", code, result)
+		}
+	}
+	if len(getCommunityGroupCodes()) != 0 {
+		t.Fatalf("invalid codes were persisted: %v", getCommunityGroupCodes())
+	}
+}
+
+func TestCommunityGroupCreatePersistsCreatorMembership(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/groups" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("X-Device-ID") == "" || r.Header.Get("X-Device-Secret") == "" {
+			t.Fatal("missing device credential headers")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"code":"54321","name":"我创建的组"}`))
+	}))
+	defer server.Close()
+	t.Setenv("TOKEN_MONITOR_COMMUNITY_RELAY_URL", server.URL+"/v1/report")
+
+	result := createCommunityGroup("我创建的组")
+	if !result.OK || result.Code != "54321" || !reflect.DeepEqual(getCommunityGroupCodes(), []string{"54321"}) || !reflect.DeepEqual(getCreatedCommunityGroupCodes(), []string{"54321"}) {
+		t.Fatalf("created group was not persisted: result=%+v groups=%v created=%v", result, getCommunityGroupCodes(), getCreatedCommunityGroupCodes())
+	}
+}
+
+func TestBuildCommunityGroupViewsMatchesMacGroupSemantics(t *testing.T) {
+	reports := []communityReportData{
+		{ID: "User_OTHER", DisplayName: "领先者", TodayTokens: 500, GroupCodes: []string{"11111"}},
+		{ID: "User_ME", DisplayName: "我", TodayTokens: 300, GroupCodes: []string{"11111", "22222"}},
+		{ID: "User_B", DisplayName: "B", TodayTokens: 100, GroupCodes: []string{"22222"}},
+	}
+	groups, mine, ranks := buildCommunityGroupViews(
+		reports, "User_ME", []string{"11111", "22222", "33333"}, []string{"33333"},
+		map[string]string{"11111": "一组", "22222": "二组", "33333": "待同步组"},
+	)
+	if len(groups) != 2 || groups[0].Code != "11111" || groups[0].TotalTokens != 800 || groups[0].MemberCount != 2 {
+		t.Fatalf("unexpected groups: %#v", groups)
+	}
+	if len(mine) != 3 || ranks["11111"] != 2 || ranks["22222"] != 1 {
+		t.Fatalf("unexpected my groups/ranks: mine=%#v ranks=%#v", mine, ranks)
+	}
+	pendingFound := false
+	for _, group := range mine {
+		if group.Code == "33333" {
+			pendingFound = group.PendingReport && group.IsCreator && group.Name == "待同步组"
+		}
+	}
+	if !pendingFound {
+		t.Fatalf("pending local group missing: %#v", mine)
 	}
 }
 

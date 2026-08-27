@@ -3598,6 +3598,10 @@
             ],
             '1.5.13': [
                 'Windows 端同步：MiniMax Code 数据源升级到 SQLite 主源（~/.minimax/v2/sqlite/runtime-state.sqlite 的 local_runtime_token_usage，mvs_ 前缀过滤）+ JSONL 兜底 + 同步剥 custom_provider: 前缀。修复 Windows 用户 3.x 桌面端用量未统计的问题。'
+            ],
+            '1.5.14': [
+                '修复跨平台加入组：macOS 与 Windows 都会校验真实 5 位组码、缓存并显示组名，不存在的组码不再产生虚假成员关系。',
+                'Windows 补齐组队创建、加入、退出、清空、上报和组内排名；成员关系变更后立即同步，网络异常显示明确反馈。'
             ]
         });
 
@@ -4454,12 +4458,37 @@
         }
 
         async function joinGroup(code) {
-            const resp = await fetch('/api/community/groups/join', {
+            const resp = await fetch(API_BASE + '/api/community/groups/join', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({code: String(code || '').trim()})
             });
-            return resp.json();
+            let result;
+            try {
+                result = await resp.json();
+            } catch (_) {
+                throw new Error('加入接口返回异常，请稍后重试');
+            }
+            if (!resp.ok && result.ok !== true) {
+                throw new Error(result.message || '加入失败');
+            }
+            return result;
+        }
+
+        async function syncCommunityGroupMembership() {
+            try {
+                const resp = await fetch(API_BASE + '/api/community/report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}'
+                });
+                const result = await resp.json();
+                if (resp.ok && result.ok === true) {
+                    markCommunitySync();
+                    return true;
+                }
+            } catch (_) {}
+            return false;
         }
 
         async function fetchGroupInfo(code) {
@@ -4541,6 +4570,8 @@
                 feedback.textContent = '创建中...';
                 const result = await createGroup(value);
                 if (result.ok) {
+                    await syncCommunityGroupMembership();
+                    localStorage.removeItem(COMMUNITY_CACHE_KEY);
                     feedback.textContent = '✅ 码: ' + result.code;
                     setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 800);
                 } else {
@@ -4549,12 +4580,21 @@
             } else if (_groupInlineMode === 'join') {
                 if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
                 feedback.textContent = '加入中...';
-                const result = await joinGroup(value);
-                if (result.ok) {
-                    feedback.textContent = '✅ 已加入';
-                    setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 500);
-                } else {
-                    feedback.textContent = '❌ ' + (result.message || '加入失败');
+                try {
+                    const result = await joinGroup(value);
+                    if (!result.ok) {
+                        feedback.textContent = '❌ ' + (result.message || '加入失败');
+                        return;
+                    }
+                    feedback.textContent = '正在同步...';
+                    const synced = await syncCommunityGroupMembership();
+                    localStorage.removeItem(COMMUNITY_CACHE_KEY);
+                    feedback.textContent = synced
+                        ? '✅ 已加入 ' + (result.name || '')
+                        : '✅ 已加入，稍后自动同步';
+                    setTimeout(() => { _groupInlineMode = ''; loadCommunity({forceRefresh: true}); }, 700);
+                } catch (error) {
+                    feedback.textContent = '❌ ' + (error.message || '加入失败，请稍后重试');
                 }
             }
         }
@@ -4620,6 +4660,8 @@
                     feedback.textContent = '创建中...';
                     const result = await createGroup(value);
                     if (result.ok) {
+                        await syncCommunityGroupMembership();
+                        localStorage.removeItem(COMMUNITY_CACHE_KEY);
                         feedback.textContent = '✅ 创建成功！码: ' + result.code;
                         setTimeout(() => { closeGroupDialog(); loadCommunity({forceRefresh: true}); }, 800);
                     } else {
@@ -4628,12 +4670,21 @@
                 } else {
                     if (!/^[0-9]{5}$/.test(value)) { feedback.textContent = '组码为5位数字'; return; }
                     feedback.textContent = '加入中...';
-                    const result = await joinGroup(value);
-                    if (result.ok) {
-                        feedback.textContent = '✅ 已加入！';
-                        setTimeout(() => { closeGroupDialog(); loadCommunity({forceRefresh: true}); }, 500);
-                    } else {
-                        feedback.textContent = '❌ ' + (result.message || '加入失败');
+                    try {
+                        const result = await joinGroup(value);
+                        if (!result.ok) {
+                            feedback.textContent = '❌ ' + (result.message || '加入失败');
+                            return;
+                        }
+                        feedback.textContent = '正在同步...';
+                        const synced = await syncCommunityGroupMembership();
+                        localStorage.removeItem(COMMUNITY_CACHE_KEY);
+                        feedback.textContent = synced
+                            ? '✅ 已加入 ' + (result.name || '')
+                            : '✅ 已加入，稍后自动同步';
+                        setTimeout(() => { closeGroupDialog(); loadCommunity({forceRefresh: true}); }, 700);
+                    } catch (error) {
+                        feedback.textContent = '❌ ' + (error.message || '加入失败，请稍后重试');
                     }
                 }
             };
@@ -4646,22 +4697,26 @@
         }
 
         async function leaveGroup(code) {
-            const resp = await fetch('/api/community/groups/leave', {
+            const resp = await fetch(API_BASE + '/api/community/groups/leave', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({code: String(code || '').trim()})
             });
             const result = await resp.json();
             if (result.ok) {
+                await syncCommunityGroupMembership();
+                localStorage.removeItem(COMMUNITY_CACHE_KEY);
                 await loadCommunity({forceRefresh: true});
             }
         }
 
         async function clearAllGroups() {
             if (!confirm('清空所有已加入/已创建的组队记录？\n（不会影响服务端，只是清理本机的测试残留）')) return;
-            const resp = await fetch('/api/community/groups/clear', {method: 'POST'});
+            const resp = await fetch(API_BASE + '/api/community/groups/clear', {method: 'POST'});
             const result = await resp.json();
             if (result.ok) {
+                await syncCommunityGroupMembership();
+                localStorage.removeItem(COMMUNITY_CACHE_KEY);
                 await loadCommunity({forceRefresh: true});
             }
         }
