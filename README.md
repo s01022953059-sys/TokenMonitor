@@ -413,12 +413,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.17](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.17)
+最新版本：[v1.5.18](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.18)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.17/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.17/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.18/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.18/TokenMonitor-Setup.exe)
 
-> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明），需手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
+> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
 ## 发布与验证规则
 
@@ -437,8 +437,8 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
-### 未发布（已进 main，随下次发版带出）
-- 修复 macOS 27 上点击"立即更新"必崩（EXC_BREAKPOINT，启动后约 10 秒）：下载进度的 NSProgress KVO 回调在后台队列触发，`updateProgress` 直接调用 `WKWebView.evaluateJavaScript`（主线程专属 API），WebKit 主动 trap（`crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread`）。现在 `updateProgress` 统一切回主线程，`performAutoUpdate` 的后台入口（前端点"立即更新"但 Swift 无缓存时的直查路径）也已切主线程。v1.5.15 起 DMG 下载真实工作 + macOS 27 WebKit 增加硬检查，该潜伏问题首次显形。
+### v1.5.18
+- 修复 macOS 27 上点击"立即更新"必崩（EXC_BREAKPOINT，启动后约 10 秒）：下载进度的 NSProgress KVO 回调在后台队列触发，`updateProgress` 直接调用 `WKWebView.evaluateJavaScript`（主线程专属 API），WebKit 主动 trap（`crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread`）。现在 `updateProgress` 统一切回主线程，`performAutoUpdate` 的后台入口（前端点"立即更新"但 Swift 无缓存时的直查路径）也已切主线程。v1.5.15 起 DMG 下载真实工作 + macOS 27 WebKit 增加硬检查，该潜伏问题首次显形。v1.5.16/1.5.17 用户需手动下载 DMG 安装本次修复。
 
 ### v1.5.17
 - 修复"徽章显示 v1.5.16 实际跑的是旧版本"：server.py 读版本号的第一个候选路径（`Resources/Info.plist`）在真实 bundle 里不存在，导致从 `~/Applications` 启动的旧副本会误读 `/Applications` 新副本的版本号——About 显示"已是最新"，Swift 更新器却按自己 bundle 的旧版本不断点亮红点，两者互相矛盾。现在优先读自己 bundle 的 `Contents/Info.plist`。
