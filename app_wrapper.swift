@@ -469,6 +469,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
             let currentVersion = self.currentAppVersion()
             let isNewer = self.compareVersions(update.version, currentVersion) == .orderedDescending
+            debugLog("check-update: latest=\(update.version) current=\(currentVersion) isNewer=\(isNewer) silent=\(silent)")
 
             DispatchQueue.main.async {
                 if isNewer {
@@ -480,10 +481,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                     if !silent {
                         self.openAboutForUpdate(recheck: false)
                     }
-                } else if !silent {
+                } else {
                     self.pendingUpdate = nil
+                    // 静默检查也要推送"无更新": 前端据此清掉首页徽章红点。
+                    // 之前 !silent 门控导致后台检查永远清不了点 (2026-08-28
+                    // 鹏帅双副本事故: 旧副本驻留时红点反复点亮)。
                     self.notifyFrontendNoUpdate(currentVersion: currentVersion)
-                    self.notifyFrontendUpdateStatus("已是最新", kind: "success")
+                    if !silent {
+                        self.notifyFrontendUpdateStatus("已是最新", kind: "success")
+                    }
                 }
             }
         }.resume()

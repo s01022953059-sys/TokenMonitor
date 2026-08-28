@@ -46,10 +46,17 @@ except ImportError:
 # 直接执行 server.py 做调试 (不在 .app bundle 内) 时回退到 "0.0-dev",
 # 这种情况下前端 About 弹窗会显示 dev 版本, 不会触发误升级提示。
 def _read_app_version() -> str:
+    own_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "Info.plist"),
+        # 1.5.17: server.py 在 <bundle>/Contents/Resources/ 下, 真实 plist 在
+        # <bundle>/Contents/Info.plist。旧列表第一个候选 Resources/Info.plist
+        # 在真实 bundle 里不存在, 导致 ~/Applications 的旧版本误读 /Applications
+        # 新副本的版本号 (2026-08-28: 徽章显示 1.5.16 实际跑的是 1.5.13,
+        # About "已是最新" 与 Swift 红点互相矛盾)。
+        os.path.join(os.path.dirname(own_dir), "Info.plist"),
+        # 开发态平铺布局 (server.py 与 Info.plist 同目录)
+        os.path.join(own_dir, "Info.plist"),
         "/Applications/Token Monitor.app/Contents/Info.plist",
-        # 1.3.28 起 silent update 路径, server.py 必须能识别 ~/Applications/ 安装。
         os.path.expanduser("~/Applications/Token Monitor.app/Contents/Info.plist"),
     ]
 

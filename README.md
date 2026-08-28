@@ -127,6 +127,7 @@
 ### 应用内自更新
 
 - macOS：下载 Release 的 `Token Monitor.dmg` 附件，挂载后拷贝替换 `.app`，然后自动重启；不再下载源码本地编译（GitCode 禁止同名分支+tag，`releases/latest` 里 `type=source` 的 `archive/refs/heads/<tag>.zip` 对 tag 发布必然 404/download-error 占位页，v1.5.14 因此全员更新失败；源码编译路径仅保留给 `.zip` 附件兜底）
+- ⚠️ 手动安装到 `/Applications` 时，若 `~/Applications` 还残留旧的自动更新副本，**两份会并存**：从旧副本启动会出现"徽章版本与实际运行版本不一致、红点反复点亮"的怪象。请删除旧副本（`~/Applications/Token Monitor.app`），只保留一份，并从保留的那份启动
 - macOS 更新不再请求管理员密码：目标目录可写时原地替换，不可写时自动迁移到 `~/Applications`，并按新路径重启
 - 发布前验证会覆盖 macOS 原地更新与无权限迁移两条路径，并检查更新脚本不含管理员提权调用
 - Windows：下载并校验 Release 中的 `TokenMonitor-Setup.exe`，由安装程序完成升级并重启
@@ -437,6 +438,8 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 ## 最近更新
 
 ### 未发布（已进 main，随下次发版带出）
+- 修复"徽章显示 v1.5.16 实际跑的是旧版本"：server.py 读版本号的第一个候选路径（`Resources/Info.plist`）在真实 bundle 里不存在，导致从 `~/Applications` 启动的旧副本会误读 `/Applications` 新副本的版本号——About 显示"已是最新"，Swift 更新器却按自己 bundle 的旧版本不断点亮红点，两者互相矛盾。现在优先读自己 bundle 的 `Contents/Info.plist`。
+- Swift 后台静默检查更新后也会推送"无更新"状态，首页徽章红点能在 30 分钟内自愈，不再只靠打开 About 手动清除；每次检查决策写入 `/tmp/tm_debug.log` 便于排查。
 - 修复"创建组后自己不在组里"：组成员统计改用今日全部报告（含 0 Token）——成员资格不等于贡献，新装用户/当天还没用量的创建者也算成员；排行榜与组内排名仍只用有用量成员（macOS Python 与 Windows Go 双端对齐）。
 - 创建/加入/退出组后的立即同步失败（中继/网络抖动）时，清掉 5 分钟补报节流，下一拍立即重试，不再干等一个节流周期才显示已加入。
 
