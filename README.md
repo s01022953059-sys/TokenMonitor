@@ -413,12 +413,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.16](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.16)
+最新版本：[v1.5.17](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.17)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.16/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.16/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.17/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.17/TokenMonitor-Setup.exe)
 
-> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明），需手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。
+> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明），需手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
 ## 发布与验证规则
 
@@ -437,7 +437,7 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
-### 未发布（已进 main，随下次发版带出）
+### v1.5.17
 - 修复"徽章显示 v1.5.16 实际跑的是旧版本"：server.py 读版本号的第一个候选路径（`Resources/Info.plist`）在真实 bundle 里不存在，导致从 `~/Applications` 启动的旧副本会误读 `/Applications` 新副本的版本号——About 显示"已是最新"，Swift 更新器却按自己 bundle 的旧版本不断点亮红点，两者互相矛盾。现在优先读自己 bundle 的 `Contents/Info.plist`。
 - Swift 后台静默检查更新后也会推送"无更新"状态，首页徽章红点能在 30 分钟内自愈，不再只靠打开 About 手动清除；每次检查决策写入 `/tmp/tm_debug.log` 便于排查。
 - 修复"创建组后自己不在组里"：组成员统计改用今日全部报告（含 0 Token）——成员资格不等于贡献，新装用户/当天还没用量的创建者也算成员；排行榜与组内排名仍只用有用量成员（macOS Python 与 Windows Go 双端对齐）。
