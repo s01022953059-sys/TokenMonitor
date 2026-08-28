@@ -566,6 +566,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 if isNewer {
                     self.pendingUpdate = update
                     self.pendingCurrentVersion = currentVersion
+                    // performAutoUpdate 会触碰 WKWebView (openAboutForUpdate /
+                    // updateProgress) 与 NSApplication 状态, 本回调原本在
+                    // URLSession 完成队列上, 已切回主线程再启动。
                     self.performAutoUpdate(update: update)
                 } else {
                     self.notifyFrontendUpdateStatus("已是最新", kind: "success")
@@ -1177,6 +1180,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     }
 
     private func updateProgress(stage: String) {
+        // WKWebView 是主线程专属 API: 下载进度的 NSProgress KVO 回调在
+        // URLSession/NSProgress 后台队列触发, 直接 evaluateJavaScript 会被
+        // WebKit 主动 trap (crashDueToApplicationCallingMainThreadOnlyWebKit
+        // APIFromBackgroundThread, 2026-08-28 macOS 27 连续双崩)。
+        // 统一在这里 hop 回主线程, 覆盖所有调用点。
+        DispatchQueue.main.async { self.doUpdateProgress(stage: stage) }
+    }
+
+    private func doUpdateProgress(stage: String) {
         // 更新进度只展示在 About 页面的 WebView 进度条。
         // 从 stage 里提取百分比 (如 "下载更新包 (45%, 2300KB / 5100KB)" → 45)
         var pct = -1

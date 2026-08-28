@@ -437,6 +437,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
+### 未发布（已进 main，随下次发版带出）
+- 修复 macOS 27 上点击"立即更新"必崩（EXC_BREAKPOINT，启动后约 10 秒）：下载进度的 NSProgress KVO 回调在后台队列触发，`updateProgress` 直接调用 `WKWebView.evaluateJavaScript`（主线程专属 API），WebKit 主动 trap（`crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread`）。现在 `updateProgress` 统一切回主线程，`performAutoUpdate` 的后台入口（前端点"立即更新"但 Swift 无缓存时的直查路径）也已切主线程。v1.5.15 起 DMG 下载真实工作 + macOS 27 WebKit 增加硬检查，该潜伏问题首次显形。
+
 ### v1.5.17
 - 修复"徽章显示 v1.5.16 实际跑的是旧版本"：server.py 读版本号的第一个候选路径（`Resources/Info.plist`）在真实 bundle 里不存在，导致从 `~/Applications` 启动的旧副本会误读 `/Applications` 新副本的版本号——About 显示"已是最新"，Swift 更新器却按自己 bundle 的旧版本不断点亮红点，两者互相矛盾。现在优先读自己 bundle 的 `Contents/Info.plist`。
 - Swift 后台静默检查更新后也会推送"无更新"状态，首页徽章红点能在 30 分钟内自愈，不再只靠打开 About 手动清除；每次检查决策写入 `/tmp/tm_debug.log` 便于排查。
