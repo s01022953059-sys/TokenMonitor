@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.88**。
+当前发布版本：**v1.5.19**。
 
 ## 功能
 
@@ -40,7 +40,7 @@
 - 工具与模型图例统一按今日 Token 用量降序排列；同量时按名称稳定排序，圆环颜色与列表顺序一致
 - 工具与模型图例默认折叠：点击 Agent 可查看其使用的模型及内部占比，点击模型可查看使用它的 Agent 及内部占比；展开状态在首页自动刷新时保持不变
 - 图例二级指标：每个工具行标注「调用次数」，每个模型行标注「缓存命中率」与「平均上下文长度」（= 该模型平均每次请求的输入 Token 数），便于一眼看出各工具/模型的调用强度与缓存效果
-- 工具占比保留所有有实际用量的工具，即使低于 1% 也不会合并到 Other，避免 Claude 等低用量应用被隐藏；模型占比仍按 1% 规则合并
+- 工具与模型占比统一规则：占比 < 0.1% 的长尾条目自动合并到 Other（阈值足够低，Claude 等低用量真实应用不会被隐藏）；被合并工具的模型明细与命中/上下文指标一并归入 Other 的展开子项
 - 首页使用紧凑双栏数据面板：标题分割线、工具/模型竖向分隔和等高图例行让少量数据也保持完整布局
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
 - 历史趋势弹窗：7/14/30 天，工具和模型两个维度
@@ -413,10 +413,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.18](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.18)
+最新版本：[v1.5.19](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.19)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.18/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.18/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.19/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.19/TokenMonitor-Setup.exe)
 
 > ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
@@ -436,6 +436,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.19
+- 工具/模型双圆环的 Other 合并规则统一为「占比 < 0.1% 归入 Other」：模型维度阈值从 1% 收紧到 0.1%，0.1%–1% 之间的模型不再被隐藏；工具维度从"保留所有非零"改为同样按 0.1% 合并，只折叠长尾噪声（如当日仅 14 token 的 hy3），Claude 等低用量真实应用不受影响。被合并工具的模型明细、命中率与上下文指标一并归入 Other 的展开子项，About 说明文案同步更新。新增 `tests/test_usage_merge_threshold.py`（源代码契约 + node 行为验证）。
 
 ### v1.5.18
 - 修复 macOS 27 上点击"立即更新"必崩（EXC_BREAKPOINT，启动后约 10 秒）：下载进度的 NSProgress KVO 回调在后台队列触发，`updateProgress` 直接调用 `WKWebView.evaluateJavaScript`（主线程专属 API），WebKit 主动 trap（`crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread`）。现在 `updateProgress` 统一切回主线程，`performAutoUpdate` 的后台入口（前端点"立即更新"但 Swift 无缓存时的直查路径）也已切主线程。v1.5.15 起 DMG 下载真实工作 + macOS 27 WebKit 增加硬检查，该潜伏问题首次显形。v1.5.16/1.5.17 用户需手动下载 DMG 安装本次修复。

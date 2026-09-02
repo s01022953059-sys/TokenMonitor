@@ -2382,7 +2382,7 @@
                     <li><b>代理</b>：OpenCode — 通过 CC-Switch 代理发请求，scanner 从 <code>~/.cc-switch/cc-switch.db</code> 读取 Token 数</li>
                     <li><b>直连 (scanner 读工具原生日志)</b>：Codex (<code>~/.codex/logs_2.sqlite</code>)、Hermes (<code>~/.hermes/state.db</code>)、ZCode (<code>~/.zcode/cli/db/db.sqlite</code>)、MiniMax Code (<code>~/.pi/agent/sessions/**/*.jsonl</code>) — 工具自己有本地日志文件，scanner 不经 cc-switch</li>
                     <li>部分工具 (Codex / Hermes) 走直连+代理两路, scanner 跨源去重合并</li>
-                    <li>占比 &lt; 1% 自动归入 Other · 余额每 60s 异步刷新</li>
+                    <li>工具/模型占比 &lt; 0.1% 自动归入 Other · 余额每 60s 异步刷新</li>
                     <li style="opacity:0.5;">VS Code Copilot：token 统计走 GitHub 后端, 本地不落盘, 暂无法支持</li>
                 </ul>
             </div>
@@ -2914,14 +2914,22 @@
                 const toolLegendContainer = document.getElementById('toolLegendContainer');
                 toolLegendContainer.innerHTML = '';
 
-                const onePercent = data.summary.total_tokens * 0.01;
+                // 工具/模型两维度统一规则: 占比 < 0.1% 合并到 Other。
+                // 阈值足够低, 只折叠长尾噪声, 低用量的真实应用 (如 Claude) 不会被隐藏。
+                const mergeThreshold = data.summary.total_tokens * 0.001;
 
-                // 工具维度保留所有非零工具，避免低用量的 Claude 等真实应用被隐藏到 Other。
                 const toolMajor = {};
+                let toolOtherTotal = 0;
                 for (const t of Object.keys(data.by_tool)) {
-                    if (data.by_tool[t].total_tokens > 0) {
-                        toolMajor[t] = data.by_tool[t].total_tokens;
+                    const toolTokens = data.by_tool[t].total_tokens || 0;
+                    if (toolTokens > 0 && toolTokens >= mergeThreshold) {
+                        toolMajor[t] = toolTokens;
+                    } else {
+                        toolOtherTotal += toolTokens;
                     }
+                }
+                if (toolOtherTotal > 0) {
+                    toolMajor['Other'] = (toolMajor['Other'] || 0) + toolOtherTotal;
                 }
 
                 const tools = Object.keys(toolMajor).sort((a, b) =>
@@ -2932,7 +2940,22 @@
                 const toolValues = tools.map(t => toolMajor[t]);
                 // 按排名取色: top1 永远蓝, top2 永远绿, ... 不按工具名字映射
                 const toolColorArr = tools.map((t, idx) => getRankColor(idx));
-                const toolModelUsage = data.by_tool_model || {};
+                // 被 0.1% 规则合并的工具, 其模型明细与命中/上下文指标一并归入 Other
+                const remapToolMatrix = (matrix) => {
+                    const out = {};
+                    for (const [tool, modelUsage] of Object.entries(matrix || {})) {
+                        const target = Object.prototype.hasOwnProperty.call(toolMajor, tool) ? tool : 'Other';
+                        for (const [m, v] of Object.entries(modelUsage || {})) {
+                            out[target] = out[target] || {};
+                            out[target][m] = (out[target][m] || 0) + (Number(v) || 0);
+                        }
+                    }
+                    return out;
+                };
+                const toolModelUsage = remapToolMatrix(data.by_tool_model);
+                const toolModelInput = remapToolMatrix(data.by_tool_model_input);
+                const toolModelCached = remapToolMatrix(data.by_tool_model_cached);
+                const toolModelRequests = remapToolMatrix(data.by_tool_model_requests);
 
                 tools.forEach((tool, idx) => {
                     const toolVal = toolMajor[tool];
@@ -2940,9 +2963,9 @@
                     const color = toolColorArr[idx];
 
                     // 工具行展开后, 子项是模型: 每个子项显示自己的 "命中% · 上下文K"
-                    const tmi = ((data.by_tool_model_input || {})[tool]) || {};
-                    const tmc = ((data.by_tool_model_cached || {})[tool]) || {};
-                    const tmr = ((data.by_tool_model_requests || {})[tool]) || {};
+                    const tmi = toolModelInput[tool] || {};
+                    const tmc = toolModelCached[tool] || {};
+                    const tmr = toolModelRequests[tool] || {};
                     const childrenWithMetrics = sortedUsageEntries(toolModelUsage[tool]).map(([childName, childValue]) => {
                         const cIn = tmi[childName] || 0;
                         const cCh = tmc[childName] || 0;
@@ -2976,13 +2999,13 @@
                 const modelLegendContainer = document.getElementById('modelLegendContainer');
                 modelLegendContainer.innerHTML = '';
 
-                // 模型维度：< 1% 合并到 Other
+                // 模型维度: 与工具维度统一, < 0.1% 合并到 Other
                 const modelMajor = {};
                 const modelMajorRequests = {};
                 let modelOtherTotal = 0;
                 let modelOtherRequests = 0;
                 for (const m of Object.keys(data.by_model)) {
-                    if (data.by_model[m] >= onePercent) {
+                    if (data.by_model[m] > 0 && data.by_model[m] >= mergeThreshold) {
                         modelMajor[m] = data.by_model[m];
                         modelMajorRequests[m] = (data.by_model_requests || {})[m] || 0;
                     } else {
@@ -2995,7 +3018,7 @@
                     modelMajorRequests['Other'] = (modelMajorRequests['Other'] || 0) + modelOtherRequests;
                 }
 
-                // 将工具→模型矩阵转置为模型→Agent；被 1% 规则合并的模型统一归入 Other。
+                // 将工具→模型矩阵转置为模型→Agent；被 0.1% 规则合并的模型统一归入 Other。
                 const modelAgentUsage = {};
                 for (const [tool, modelUsage] of Object.entries(toolModelUsage)) {
                     for (const [model, rawValue] of Object.entries(modelUsage || {})) {
@@ -3616,6 +3639,9 @@
             ],
             '1.5.18': [
                 '修复 macOS 27 点击"立即更新"必崩：下载进度回调在后台线程调用 WKWebView，现统一切回主线程。v1.5.16/1.5.17 用户需手动下载 DMG 安装本次修复。'
+            ],
+            '1.5.19': [
+                '工具/模型双圆环合并规则统一：占比 < 0.1% 的长尾条目才归入 Other（模型维度阈值从 1% 收紧到 0.1%），低用量模型不再被藏进 Other。'
             ]
         });
 
