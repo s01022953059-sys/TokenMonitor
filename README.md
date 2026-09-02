@@ -437,6 +437,9 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
+### 未发布（已进 main，随下次发版带出）
+- 修复 macOS 应用内自动更新全量失败：v1.3.25 起更新器给下载地址追加 `?_tm=` cache buster，而 GitCode 下载端点现对带任意查询串的 URL 一律返回 404（curl 实证：无参数 206 正常，带参数 404），v1.5.19 发布当日 macOS 更新全部"下载失败, HTTP 404"。现在下载地址保持 feed 原样，防缓存由 `urlCache=nil` + `reloadIgnoringLocalCacheData` + `Cache-Control/Pragma: no-cache` header 保证。注意：v1.5.18 / v1.5.19 客户端仍带此 bug（无法自愈），发布修复版后这两版用户需手动下载 DMG 安装一次。
+
 ### v1.5.19
 - 工具/模型双圆环的 Other 合并规则统一为「占比 < 0.1% 归入 Other」：模型维度阈值从 1% 收紧到 0.1%，0.1%–1% 之间的模型不再被隐藏；工具维度从"保留所有非零"改为同样按 0.1% 合并，只折叠长尾噪声（如当日仅 14 token 的 hy3），Claude 等低用量真实应用不受影响。被合并工具的模型明细、命中率与上下文指标一并归入 Other 的展开子项，About 说明文案同步更新。新增 `tests/test_usage_merge_threshold.py`（源代码契约 + node 行为验证）。
 

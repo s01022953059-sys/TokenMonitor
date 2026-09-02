@@ -762,20 +762,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // progress 观察 (用 KVO observation 关联到 task 防止 ARC 释放)
         var lastReportedBytes: Int64 = 0
 
-        // 给 download URL 加一个 cache buster query 参数, 强制 URLSession 不
-        // 命中任何 path-based 缓存 (NSURLCache 也会按 path 匹配, 即使
-        // requestCachePolicy=reloadIgnoringLocalData 也可能命中 path 缓存)。
-        // 双重保险: 同时设 If-None-Match header, 因为某些中间层 (公司代理 / VPN)
-        // 会 strip query 参数, 但不会改 header。
-        var downloadURL = update.downloadURL
-        if var comps = URLComponents(url: update.downloadURL, resolvingAgainstBaseURL: false) {
-            comps.queryItems = (comps.queryItems ?? []) + [
-                URLQueryItem(name: "_tm", value: "\(Int(Date().timeIntervalSince1970))")
-            ]
-            if let newURL = comps.url {
-                downloadURL = newURL
-            }
-        }
+        // 下载地址必须保持原样, 禁止追加 cache buster query 参数:
+        // GitCode 下载端点对带任意查询串的 URL 一律返回 404 (v1.5.19 事故:
+        // v1.3.25 加的 ?_tm= 使 macOS 自动更新全量 404)。防缓存由上面的
+        // urlCache=nil + reloadIgnoringLocalCacheData + 下面的
+        // Cache-Control/Pragma no-cache header 保证, 不需要改 URL。
+        let downloadURL = update.downloadURL
         debugLog("download URL: \(downloadURL.absoluteString)")
 
         // 只吃安装包地址。资产里全是源码归档时 parseUpdateInfo 会兜底到
@@ -851,7 +843,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         downloadTask.resume()
     }
 
-    // 重试下载: 给下载 URL 加一个新的 cache buster 重新下载, 最多 2 次。
+    // 重试下载: 用原始下载 URL 重新下载, 最多 2 次。
     // gitcode CDN 节点会返回 download-error 占位 (3.6 KB), retry 一次通常
     // 能命中另一个 CDN 节点拿真 zip。
     private func retryDownload(update: UpdateInfo, attempt: Int, lastError: String) {
@@ -867,15 +859,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         config.urlCache = nil
         let session = URLSession(configuration: config)
 
-        var downloadURL = update.downloadURL
-        if var comps = URLComponents(url: update.downloadURL, resolvingAgainstBaseURL: false) {
-            comps.queryItems = (comps.queryItems ?? []) + [
-                URLQueryItem(name: "_tm", value: "\(Int(Date().timeIntervalSince1970))_retry\(attempt)")
-            ]
-            if let newURL = comps.url {
-                downloadURL = newURL
-            }
-        }
+        // 与首次下载一致: 不追加 cache buster query (GitCode 对查询串 404), 直接用原始地址
+        let downloadURL = update.downloadURL
         debugLog("retry \(attempt) URL: \(downloadURL.absoluteString)")
 
         var request = URLRequest(url: downloadURL)
