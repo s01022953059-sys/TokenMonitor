@@ -4,13 +4,13 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.4.88**。
+当前发布版本：**v1.5.20**。
 
 ## 功能
 
 ### 数据采集
 
-只读扫描四类数据源，不修改任何原始数据：
+只读扫描七类数据源，不修改任何原始数据：
 
 - Token Monitor 展示本机日志中已记录的请求，不等同于供应商账号“全部 API Key、全部设备”的账户总量；模型条目悬停可查看本机请求次数
 
@@ -20,8 +20,9 @@
 | Codex 官方日志 | `~/.codex/logs_2.sqlite` + `~/.codex/sessions/` | SQLite 与 rollout JSONL 始终合并，覆盖 Codex 重启前后的完整记录 |
 | Hermes | `~/.hermes/state.db` | SQLite，会话级记录；输入包含 cache read/write，用量日期优先按会话结束时间归属 |
 | ZCode | `~/.zcode/cli/db/db.sqlite` | SQLite，逐模型请求记录 `model_usage` 表，含 input/output/reasoning/cache 拆分；时间戳为毫秒级，scanner 转秒后参与跨源去重 |
-| MiniMax Code | `~/.pi/agent/sessions/**/*.jsonl` | 基于 Pi Agent 框架，逐请求读取 assistant message 的 `usage` 字段（input/output/cacheRead/cacheWrite）；ISO 时间戳转秒后参与跨源去重 |
+| MiniMax Code | `~/.minimax/v2/sqlite/runtime-state.sqlite` (主) + `~/.pi/agent/sessions/**/*.jsonl` (兼容) | **v2**：SQLite `local_runtime_token_usage` 表逐请求记录 `input_tokens / output_tokens / reasoning_tokens / cache_read_tokens / cache_write_tokens / ts(ms)`；仅取 `session_id` 以 `mvs_` 开头的行（mavis runtime 桌面端）；毫秒时间戳转秒后参与跨源去重。**v1 兜底**：旧版 Pi Agent 框架写入的 JSONL，事件无 turn_id 时按 `session_id + timestamp` 兜底去重。SQLite 与 JSONL 同 turn 重复时 SQLite 优先。**v1.5.13** Windows Go 端同步此行为（之前只有 macOS Python 端实现）。 |
 | WorkBuddy (腾讯 CodeBuddy) | `~/.workbuddy/projects/**/*.jsonl` | 逐请求读取 `providerData.usage`；旧版没有项目日志时才回退 SQLite 会话占用近似值 |
+| Antigravity (Google agentic IDE) | `~/.antigravity_tools/token_stats.db` | **v1.5.20 新增**。Antigravity IDE 本体不在本地落 token 用量（配额在服务端），数据源是 antigravity-tools 本地代理（`com.lbjlaq.antigravity-tools`）的 SQLite `token_usage` 表（`timestamp` 为 unix 秒，零换算参与跨源去重）；`cached_tokens` 按 Gemini 风格视为输入子集并 clamp；warmup/0-token 保活记录已过滤，产生真实用量后才显示。库为 WAL 格式，代理未运行时 `-shm` 缺失，Python 端只读打开失败会回退 `immutable=1`。注意：cc-switch 里 `app_type=antigravity` 的流量归「冰茶 AI」（另一个代理入口），与本源并存不冲突；两者链式串联的极端场景由跨源去重兜底。Windows 路径 `%USERPROFILE%\.antigravity_tools\token_stats.db`，Go 端同步实现。 |
 
 所有数据源合并后做**跨源去重**：相差不超过 2 秒且 Token 总量相同的记录视为同一请求，只计一次。cc-switch 记录优先于 Codex 官方日志，以保留第三方 Provider 的真实模型名；Codex rollout 还会按累计 usage 过滤重复事件。没有安装或没有同步 cc-switch 的用户仍可直接统计官方 Codex App。
 
@@ -29,7 +30,7 @@
 
 本地 SQLite 全部以只读方式打开；Agent 正在写入或原子替换数据库时会短暂重试，避免一次瞬时读取失败让整个工具当天显示为 0。
 
-**模型名归一化**：自动折叠 cc-switch 写入的噪声变体（如 `qwen3.6-Plus` / `qwen3.6-plus-2026-04-02` 统一为 `qwen3.6-plus`）。
+**模型名归一化**：自动折叠 cc-switch 写入的噪声变体（如 `qwen3.6-Plus` / `qwen3.6-plus-2026-04-02` 统一为 `qwen3.6-plus`）；MiniMax Code v2 在 SQLite 里写的是 `custom_provider:<provider>/<model>`，剥掉 provider 前缀只显示 `<model>`（如 `custom_provider:zhipu-maas/glm-5.2 → glm-5.2`）。
 
 **DeepSeek 余额查询**：从 cc-switch 数据库中按语义匹配（provider_type / name / app_type 含 deepseek）提取 API Key，请求 DeepSeek 官方余额接口，每 60 秒刷新一次。
 
@@ -40,7 +41,7 @@
 - 工具与模型图例统一按今日 Token 用量降序排列；同量时按名称稳定排序，圆环颜色与列表顺序一致
 - 工具与模型图例默认折叠：点击 Agent 可查看其使用的模型及内部占比，点击模型可查看使用它的 Agent 及内部占比；展开状态在首页自动刷新时保持不变
 - 图例二级指标：每个工具行标注「调用次数」，每个模型行标注「缓存命中率」与「平均上下文长度」（= 该模型平均每次请求的输入 Token 数），便于一眼看出各工具/模型的调用强度与缓存效果
-- 工具占比保留所有有实际用量的工具，即使低于 1% 也不会合并到 Other，避免 Claude 等低用量应用被隐藏；模型占比仍按 1% 规则合并
+- 工具与模型占比统一规则：占比 < 0.1% 的长尾条目自动合并到 Other（阈值足够低，Claude 等低用量真实应用不会被隐藏）；被合并工具的模型明细与命中/上下文指标一并归入 Other 的展开子项
 - 首页使用紧凑双栏数据面板：标题分割线、工具/模型竖向分隔和等高图例行让少量数据也保持完整布局
 - 总量级别灯：内圈背景按用量变色（<20M 蓝 / 20-100M 绿 / 100-300M 黄 / >300M 红）
 - 历史趋势弹窗：7/14/30 天，工具和模型两个维度
@@ -115,9 +116,10 @@
 
 - 用户可以创建或加入多个组队，在所有组里同时显示排名
 - 创建组队：自定义组名（中英文数字下划线 1-16 字），系统随机生成 5 位不重复数字码
-- 加入组队：输入 5 位组码加入，全社区大小写不敏感唯一
+- 加入组队：输入 5 位数字组码；macOS/Windows 都会先向中继确认组真实存在并缓存组名，不存在或暂时无法验证时不会写入虚假成员关系
 - 组码仅创建者可见，其他组员只能看到组名
 - 同一用户可同时属于多个组，Token 会在所有组里都计入
+- 创建、加入、退出或清空组队后立即上报最新成员关系；同步暂时失败时保留本地结果并明确提示稍后自动同步
 - 退出组队：`×` 按钮立即退出，随时可重新加入
 - 组队排行按组总 Token 排序，显示人数和头名
 - 存量用户零改动：默认在公共池，不强制加入任何组
@@ -125,7 +127,8 @@
 
 ### 应用内自更新
 
-- macOS：下载发布包、构建并替换 `.app`，然后自动重启
+- macOS：下载 Release 的 `Token Monitor.dmg` 附件，挂载后拷贝替换 `.app`，然后自动重启；不再下载源码本地编译（GitCode 禁止同名分支+tag，`releases/latest` 里 `type=source` 的 `archive/refs/heads/<tag>.zip` 对 tag 发布必然 404/download-error 占位页，v1.5.14 因此全员更新失败；源码编译路径仅保留给 `.zip` 附件兜底）
+- ⚠️ 手动安装到 `/Applications` 时，若 `~/Applications` 还残留旧的自动更新副本，**两份会并存**：从旧副本启动会出现"徽章版本与实际运行版本不一致、红点反复点亮"的怪象。请删除旧副本（`~/Applications/Token Monitor.app`），只保留一份，并从保留的那份启动
 - macOS 更新不再请求管理员密码：目标目录可写时原地替换，不可写时自动迁移到 `~/Applications`，并按新路径重启
 - 发布前验证会覆盖 macOS 原地更新与无权限迁移两条路径，并检查更新脚本不含管理员提权调用
 - Windows：下载并校验 Release 中的 `TokenMonitor-Setup.exe`，由安装程序完成升级并重启
@@ -149,12 +152,12 @@
 | `GET /api/session_detail` | 会话详情（按工具匹配 Codex rollout 或 WorkBuddy 项目 JSONL，返回对话内容） |
 | `GET /api/heatmap_detail` | 热力图详情（按日期或星期 + 小时返回调用列表；按日期请求直接限定到目标自然日） |
 | `GET /api/community` | 读取社区今日聚合、个人同步状态和排名 |
-| `GET /api/community/report` | 立即提交一次匿名社区统计，并返回真实成功/失败状态 |
+| `POST /api/community/report` | 立即提交一次匿名社区统计，并返回真实成功/失败状态 |
 | `GET /api/community/optin` | 旧版兼容接口；社区统计始终自动启用 |
 | `POST /api/community/profile` | 使用本机设备凭据修改公开社区昵称；请求体仅含 `display_name` |
 | `POST /api/community/groups/create` | 创建组队：输入组名，系统随机生成 5 位不重复码并返回 |
 | `GET /api/community/groups/:code` | 查询组码对应的组名 |
-| `POST /api/community/groups/join` | 加入组队（追加组码到本地列表，不去重） |
+| `POST /api/community/groups/join` | 校验真实 5 位组码后加入组队，缓存组名并返回明确错误状态 |
 | `POST /api/community/groups/leave` | 退出组队（从本地列表移除指定组码） |
 
 ## 平台实现
@@ -411,10 +414,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.4.88](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.4.88)
+最新版本：[v1.5.20](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.20)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.4.88/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/TokenMonitor-Setup.exe)
+
+> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）；v1.5.18/1.5.19 点击"立即更新"会报"下载失败, HTTP 404"（更新器给下载地址追加 `?_tm=` 查询参数被 GitCode 拒绝，修复版发布后需手动装一次，见"最近更新→未发布"）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
 ## 发布与验证规则
 
@@ -423,7 +428,7 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 启动本地服务验证今日总数、90 天热力图、会话分页、`/api/check-update` 的平台资产选择
 - 使用浏览器实际打开 About 页，验证更新检查、进度、错误状态以及桌面/移动端布局
 - Windows 注册表自启、退出替换和重启属于系统行为，正式发布前仍需在真实 Windows 机器完成一次验收
-- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，任一项失败就终止发布
+- `bash verify_release.sh` 封装上述自动化基础检查，并验证社区中继公网健康状态和公开榜单读取；`release_all.sh` 会在创建 tag 或 Release 前强制执行，并在上传后重新下载校验 DMG 和 Windows 安装程序，同时模拟客户端资产选择规则（跳过 GitCode `type=source` 源码归档）确认首选资产是 DMG 附件并真实挂载校验 `.app` 版本号，任一项失败就终止发布
 - 热力图发布前必须验证默认选中范围与请求参数一致、近一年返回 365 个日格、四个范围切换后的起止日期正确，以及缓存命中低于 500ms
 - 发布验证采用三层门禁：充分的单元测试、Python/macOS 与 Go/Windows 双后端 API 契约测试、少量关键用户路径 E2E；详见 [`tests/README.md`](tests/README.md)
 - 单条调用详情 E2E 使用带大体积无关事件的 Codex 会话夹具，必须验证首次打开低于 1 秒、再次打开低于 300ms，并确认真实消息已完成渲染
@@ -432,6 +437,40 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.20
+- 修复 macOS 应用内自动更新全量失败：v1.3.25 起更新器给下载地址追加 `?_tm=` cache buster，而 GitCode 下载端点现对带任意查询串的 URL 一律返回 404（curl 实证：无参数 206 正常，带参数 404），v1.5.19 发布当日 macOS 更新全部"下载失败, HTTP 404"。现在下载地址保持 feed 原样，防缓存由 `urlCache=nil` + `reloadIgnoringLocalCacheData` + `Cache-Control/Pragma: no-cache` header 保证。注意：v1.5.18 / v1.5.19 客户端仍带此 bug（无法自愈），这两版用户需手动下载 DMG 安装一次。
+- 更新下载失败兜底（macOS）：下载阶段失败（404/403/410 地址失效、网络错误、重试耗尽、release 无安装包）时自动用系统浏览器打开无查询串的原始下载地址，About 弹窗失败态同时显示「手动下载新版本」链接（直链来自 Swift 推送或 `/api/check-update`），并修正引用不存在按钮的 stale 文案与"502/504 稍后再试"的误导性提示（404 是确定性失败，重试无意义）。404/403/410 不再消耗重试次数直接终局。Windows 更新链路无查询参数问题，不受影响；前端桥接（`openExternalURL`）双端已对齐，链接白名单仅 https + gitcode.com。
+- 新增 Antigravity（Google agentic IDE）数据源：读取 antigravity-tools 本地代理的 `~/.antigravity_tools/token_stats.db` `token_usage` 表（unix 秒时间戳、warmup/0-token 过滤、cached⊆input 口径、WAL 无 `-shm` 时只读回退 `immutable=1`），工具显示名 "Antigravity"（紫色），首页/历史/会话列表/热力图/热力图详情五处聚合点全部接入，Mac (Python) 与 Win (Go) 双端对齐；About「已支持平台」表、社区页工具色盘、数据源文档同步更新。cc-switch 的 `app_type=antigravity` 流量维持归「冰茶 AI」不变，两源并存。
+
+### v1.5.19
+- 工具/模型双圆环的 Other 合并规则统一为「占比 < 0.1% 归入 Other」：模型维度阈值从 1% 收紧到 0.1%，0.1%–1% 之间的模型不再被隐藏；工具维度从"保留所有非零"改为同样按 0.1% 合并，只折叠长尾噪声（如当日仅 14 token 的 hy3），Claude 等低用量真实应用不受影响。被合并工具的模型明细、命中率与上下文指标一并归入 Other 的展开子项，About 说明文案同步更新。新增 `tests/test_usage_merge_threshold.py`（源代码契约 + node 行为验证）。
+
+### v1.5.18
+- 修复 macOS 27 上点击"立即更新"必崩（EXC_BREAKPOINT，启动后约 10 秒）：下载进度的 NSProgress KVO 回调在后台队列触发，`updateProgress` 直接调用 `WKWebView.evaluateJavaScript`（主线程专属 API），WebKit 主动 trap（`crashDueToApplicationCallingMainThreadOnlyWebKitAPIFromBackgroundThread`）。现在 `updateProgress` 统一切回主线程，`performAutoUpdate` 的后台入口（前端点"立即更新"但 Swift 无缓存时的直查路径）也已切主线程。v1.5.15 起 DMG 下载真实工作 + macOS 27 WebKit 增加硬检查，该潜伏问题首次显形。v1.5.16/1.5.17 用户需手动下载 DMG 安装本次修复。
+
+### v1.5.17
+- 修复"徽章显示 v1.5.16 实际跑的是旧版本"：server.py 读版本号的第一个候选路径（`Resources/Info.plist`）在真实 bundle 里不存在，导致从 `~/Applications` 启动的旧副本会误读 `/Applications` 新副本的版本号——About 显示"已是最新"，Swift 更新器却按自己 bundle 的旧版本不断点亮红点，两者互相矛盾。现在优先读自己 bundle 的 `Contents/Info.plist`。
+- Swift 后台静默检查更新后也会推送"无更新"状态，首页徽章红点能在 30 分钟内自愈，不再只靠打开 About 手动清除；每次检查决策写入 `/tmp/tm_debug.log` 便于排查。
+- 修复"创建组后自己不在组里"：组成员统计改用今日全部报告（含 0 Token）——成员资格不等于贡献，新装用户/当天还没用量的创建者也算成员；排行榜与组内排名仍只用有用量成员（macOS Python 与 Windows Go 双端对齐）。
+- 创建/加入/退出组后的立即同步失败（中继/网络抖动）时，清掉 5 分钟补报节流，下一拍立即重试，不再干等一个节流周期才显示已加入。
+
+### v1.5.16
+- 兼容 macOS 11–13 旧 Foundation：GitCode 返回的 DMG 附件 URL 带空格字面量（`Token Monitor.dmg`），旧系统 `URL(string:)` 对未编码空格返回 nil 导致"更新信息格式不正确"；下载前统一把空格替换为 `%20`（新 Foundation 会自动编码，已编码 URL 不受影响）。v1.5.15 在本机 macOS 27 实测可用，但旧系统存在此风险，故按"附件不可删、发版用新 tag"惯例追加此版本。
+- `release_all.sh` 客户端模拟校验改为按文件名匹配（兼容空格与 `%20` 两种形式），修复 v1.5.15 发布时端到端校验误报。
+
+### v1.5.15
+- 修复 macOS 自动更新永久失败（v1.5.14 事故）：`releases/latest` 的 assets 前部是 GitCode 自动生成的源码归档（`type=source`，URL 为 `archive/refs/heads/<tag>.zip`），而 GitCode 禁止分支与 tag 同名（push hook 与 API 三条路径均实测被拒），该归档对 tag 发布必然 302 到 `download-error` 占位页（3576 字节 HTML），旧版客户端"第一个 `.dmg`/`.zip`"的选择规则正中此坑。
+- macOS 自更新改为优先下载 Release 的 `Token Monitor.dmg` 附件：挂载只读镜像 → `ditto` 拷出 `.app` → 卸载 → `update_helper.sh` 静默替换重启，全程无需管理员权限，也不再依赖本机 Swift 编译；资产选择跳过 `type=source`，`.zip` 附件仍走源码编译兜底路径。
+- server.py 与 Windows Go 端的资产选择同步排除 `type=source` 归档，`/api/check-update` 的下载地址始终是真实附件。
+- `release_all.sh` 上传后新增端到端校验：按客户端选择规则确认首选资产是 DMG，并真实挂载 DMG 校验内含 `.app` 的版本号与发布版本一致。
+- Windows 端不受此事故影响（选择器只匹配 `TokenMonitor-Setup.exe` 附件）；macOS v1.5.13 及更早客户端需手动下载 DMG 升级一次。
+
+### v1.5.14
+- 修复跨平台加入组：macOS 与 Windows 都会校验真实 5 位组码、缓存并显示组名；不存在的组码、格式错误和网络失败不再产生虚假成员关系。
+- Windows 补齐组队创建、加入、退出、清空、`group_codes` 上报、组内聚合和排名，与 macOS API 及页面行为一致。
+- 组队成员关系变更后立即触发社区同步；同步暂时失败时保留已确认的本地成员关系并显示“稍后自动同步”，不再卡在“加入中”。
+- macOS universal 构建兼容 Command Line Tools 27：x86_64 壳关闭项目未使用的 Swift runtime compatibility 自动链接，继续保持 macOS 11 最低部署目标和 Intel/Apple Silicon 双架构产物。
 
 ### v1.5.03
 - 组队 UI 状态说明升级：未加入时橙色边框卡片明示"公共池"状态 + 引导文案；已加入时绿色边框卡片，组标签按钮化，点击 × 退出。
