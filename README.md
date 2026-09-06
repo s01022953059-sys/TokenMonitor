@@ -4,7 +4,7 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.5.20**。
+当前发布版本：**v1.5.21**。
 
 ## 功能
 
@@ -414,10 +414,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.20](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.20)
+最新版本：[v1.5.21](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.21)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.21/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.21/TokenMonitor-Setup.exe)
 
 > ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）；v1.5.18/1.5.19 点击"立即更新"会报"下载失败, HTTP 404"（更新器给下载地址追加 `?_tm=` 查询参数被 GitCode 拒绝，修复版发布后需手动装一次，见"最近更新→未发布"）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
@@ -437,6 +437,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 - 昵称功能变更必须额外验证并发重名、NFKC/大小写冲突、风险名称、24 小时 3 次限额、30 天旧名保护、GitCode 失败回滚，以及桌面/390px 编辑布局
 
 ## 最近更新
+
+### v1.5.21
+- 修复 DMG 自动更新永久卡在「挂载安装镜像」的两个叠加断点（v1.5.15~v1.5.20 全中招，2026-09-06 隔离预演实证）：① `installFromDMG` 用 Pipe 读 hdiutil 输出，diskimages-helper 继承 pipe 写端常驻导致 EOF 永不到来、下载线程死锁——改为 stdout 写暂存文件、先 waitUntilExit 再读（并修正 macOS 27 上 standardOutput 传 URL 直接 trap 的问题）；② macOS 26/27 的 `hdiutil -plist` 顶层改为 `system-entities` 字典，旧解析器只认顶层数组永远失败——现兼容两代格式。修复后全链路预演验证通过（检查→下载→挂载→替换→重启）。新增 `DmgMountNoPipeDeadlockTest` 契约测试防回归。
+- ⚠️ v1.5.18~v1.5.20 客户端的自动更新仍无法自愈（404 或挂载死锁），请手动下载本版本 DMG 安装一次；自 v1.5.21 起应用内更新恢复平滑。
 
 ### v1.5.20
 - 修复 macOS 应用内自动更新全量失败：v1.3.25 起更新器给下载地址追加 `?_tm=` cache buster，而 GitCode 下载端点现对带任意查询串的 URL 一律返回 404（curl 实证：无参数 206 正常，带参数 404），v1.5.19 发布当日 macOS 更新全部"下载失败, HTTP 404"。现在下载地址保持 feed 原样，防缓存由 `urlCache=nil` + `reloadIgnoringLocalCacheData` + `Cache-Control/Pragma: no-cache` header 保证。注意：v1.5.18 / v1.5.19 客户端仍带此 bug（无法自愈），这两版用户需手动下载 DMG 安装一次。
