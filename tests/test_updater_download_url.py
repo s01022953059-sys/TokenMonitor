@@ -112,5 +112,37 @@ class UpdaterDownloadFailureFallbackTest(unittest.TestCase):
         self.assertEqual(self.frontends["macOS"], self.frontends["Windows"])
 
 
+class DmgMountNoPipeDeadlockTest(unittest.TestCase):
+    """v1.5.21: DMG 挂载不得用 Pipe + readDataToEndOfFile (永久死锁事故)。
+
+    v1.5.15~v1.5.20 的 installFromDMG 用 Pipe 读 hdiutil -plist 输出;
+    hdiutil fork 的 diskimages-helper 继承 pipe 写端并常驻维持挂载,
+    EOF 永不到来, 下载线程死锁在"挂载安装镜像" (2026-09-06 预演实证)。
+    契约: stdout 重定向到暂存文件 + 先 waitUntilExit 再读文件。
+    """
+
+    def setUp(self):
+        self.source = SWIFT.read_text(encoding="utf-8")
+
+    def test_no_pipe_read_for_hdiutil_attach(self):
+        self.assertNotIn("attachPipe.fileHandleForReading.readDataToEndOfFile", self.source)
+        self.assertNotIn("let attachPipe = Pipe()", self.source)
+
+    def test_mount_plist_parser_supports_both_formats(self):
+        # macOS 26/27 的 hdiutil -plist 顶层是 {"system-entities": [...]},
+        # 旧 macOS 是顶层数组; 解析器必须两者都认 (v1.5.21 修复)
+        self.assertIn('"system-entities"', self.source)
+        self.assertIn("mountPoint(fromAttachPlist", self.source)
+
+    def test_attach_stdout_goes_to_file_and_wait_first(self):
+        # stdout 必须是可写 FileHandle (macOS 27 传 URL 给 standardOutput 会 trap)
+        self.assertIn("attach.standardOutput = attachOutHandle", self.source)
+        self.assertIn("FileHandle(forWritingTo: attachOutURL)", self.source)
+        idx_wait = self.source.find("attach.waitUntilExit()")
+        idx_read = self.source.find("Data(contentsOf: attachOutURL)")
+        self.assertGreater(idx_wait, 0)
+        self.assertGreater(idx_read, idx_wait, "必须先 waitUntilExit 再读暂存文件")
+
+
 if __name__ == "__main__":
     unittest.main()

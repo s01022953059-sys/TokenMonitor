@@ -1066,21 +1066,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         let attach = Process()
         attach.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
         attach.arguments = ["attach", dmgPath, "-nobrowse", "-readonly", "-noautoopen", "-plist"]
-        let attachPipe = Pipe()
-        attach.standardOutput = attachPipe
-        attach.standardError = attachPipe
+        // v1.5.21 修复: 禁止用 Pipe + readDataToEndOfFile 读 hdiutil 输出。
+        // hdiutil fork 出的 diskimages-helper 子进程会继承 pipe 写端并常驻
+        // (维持挂载), EOF 永远不来, 下载线程永久死锁 —— v1.5.15~v1.5.20 的
+        // DMG 自动更新全部卡在"挂载安装镜像" (2026-09-06 预演实证: hdiutil
+        // 正常退出、挂载成功, 主 app 死等 pipe, ditto/helper 永不执行)。
+        // 改法: stdout 重定向到暂存文件, 先 waitUntilExit 再读文件, 不依赖 EOF。
+        let attachOutURL = URL(fileURLWithPath: "\(updateDir)/attach-\(ProcessInfo.processInfo.processIdentifier).plist")
+        try? fm.removeItem(at: attachOutURL)
+        fm.createFile(atPath: attachOutURL.path, contents: nil)
+        // standardOutput 只接受 NSFileHandle/NSPipe (macOS 27 传 URL 直接
+        // trap: "Standard output can only be an NSFileHandle or NSPipe"),
+        // 用指向暂存文件的可写 FileHandle。
+        guard let attachOutHandle = try? FileHandle(forWritingTo: attachOutURL) else {
+            self.failAutoUpdate(update: update, message: "无法创建挂载输出暂存文件")
+            return
+        }
+        attach.standardOutput = attachOutHandle
+        attach.standardError = FileHandle.nullDevice
         do {
             try attach.run()
         } catch {
+            try? attachOutHandle.close()
             self.failAutoUpdate(update: update, message: "启动 hdiutil 失败: \(error.localizedDescription)")
             return
         }
-        let attachData = attachPipe.fileHandleForReading.readDataToEndOfFile()
         attach.waitUntilExit()
+        try? attachOutHandle.close()
+        let attachData = (try? Data(contentsOf: attachOutURL)) ?? Data()
+        try? fm.removeItem(at: attachOutURL)
         guard attach.terminationStatus == 0,
               let mountPoint = Self.mountPoint(fromAttachPlist: attachData) else {
             let msg = String(data: attachData, encoding: .utf8) ?? ""
-            self.failAutoUpdate(update: update, message: "挂载 DMG 失败\n\(msg.prefix(300))")
+            self.failAutoUpdate(update: update, message: "挂载 DMG 失败 (exit \(attach.terminationStatus))\n\(msg.prefix(300))")
             return
         }
         defer {
@@ -1129,10 +1147,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         }
     }
 
-    // 解析 `hdiutil attach -plist` 输出, 取 /Volumes/... 挂载点
+    // 解析 `hdiutil attach -plist` 输出, 取 /Volumes/... 挂载点。
+    // 兼容两代格式: 旧 macOS 顶层是实体数组; macOS 26/27 起是
+    // {"system-entities": [...]} 字典 (mount-point 在数组元素里)。
+    // 只认旧格式会让挂载永远"解析失败" (v1.5.15~v1.5.20 DMG 自动更新
+    // 坏链路的第二环, 2026-09-06 预演实证)。
     private static func mountPoint(fromAttachPlist data: Data) -> String? {
-        guard let entries = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]] else {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) else {
             return nil
+        }
+        var entries: [[String: Any]] = []
+        if let arr = plist as? [[String: Any]] {
+            entries = arr
+        } else if let dict = plist as? [String: Any],
+                  let sys = dict["system-entities"] as? [[String: Any]] {
+            entries = sys
         }
         for entry in entries {
             if let point = entry["mount-point"] as? String, !point.isEmpty {
