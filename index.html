@@ -527,6 +527,28 @@
             font-weight: 700;
         }
 
+        /* v1.5.22: 数字+百分比中轴对齐。旧版整串右对齐导致数字列参差;
+           现在数字右对齐到中轴、百分比左对齐离开中轴, 固定列宽 (monospace ch)
+           保证跨行垂直对齐, 整组在行内居中。主图例行与二级子行共用。 */
+        .metric-pair {
+            display: inline-flex;
+            justify-content: center;
+            gap: 6px;
+        }
+        .metric-num {
+            text-align: right;
+            width: 9ch;
+            white-space: nowrap;
+        }
+        .metric-pct {
+            text-align: left;
+            width: 8ch;
+            white-space: nowrap;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
 
 
         /* 移动端自适应 */
@@ -2827,8 +2849,8 @@
                     <span>${escapeHtml(label)}</span>
                 </span>
                 <span class="legend-item-trailing">
-                    <span class="tool-value" style="color: ${color};">
-                        ${formatTokens(value)} <span style="font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 4px;">(${percent}%)</span>
+                    <span class="tool-value metric-pair" style="color: ${color};">
+                        <span class="metric-num">${formatTokens(value)}</span><span class="metric-pct">(${percent}%)</span>
                     </span>
                     ${hasChildren ? '<span class="legend-chevron" aria-hidden="true">›</span>' : ''}
                 </span>
@@ -2850,7 +2872,7 @@
                 row.innerHTML = `
                     <div class="legend-detail-line">
                         <span class="legend-detail-name">${escapeHtml(childName)}</span>
-                        <span class="legend-detail-value">${formatTokens(childValue)} (${childPercent}%)</span>
+                        <span class="legend-detail-value metric-pair"><span class="metric-num">${formatTokens(childValue)}</span><span class="metric-pct">(${childPercent}%)</span></span>
                     </div>
                     ${childMetrics ? `<div class="legend-detail-metrics">${escapeHtml(childMetrics)}</div>` : ''}
                 `;
@@ -3658,6 +3680,10 @@
             '1.5.21': [
                 '修复 DMG 自动更新卡在「挂载安装镜像」：hdiutil 输出管道死锁 + macOS 27 新 plist 格式解析失败，双断点均已修复并全链路预演验证。',
                 'v1.5.18~v1.5.20 客户端仍无法自愈，请手动下载本版本 DMG 安装一次，之后应用内更新恢复平滑。'
+            ],
+            '1.5.22': [
+                '图例对齐优化：数字右对齐到中轴、百分比左对齐离开中轴，跨行垂直对齐（浏览器实测单一右边缘/左边缘/中轴）。',
+                'v1.5.18~v1.5.20 客户端仍无法自愈，请手动下载本版本 DMG 安装一次。'
             ]
         });
 

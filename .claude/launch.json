@@ -4,7 +4,11 @@
     {
       "name": "heatmap-preview",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8723"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8723"
+      ],
       "port": 8723
     }
   ]

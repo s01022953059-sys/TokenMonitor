@@ -4,7 +4,7 @@
 
 ## 2026-09-06 最新补充
 
-- 当前已发布版本: v1.5.21（DMG 自动更新双断点修复：pipe 死锁 + hdiutil -plist 新格式；v1.5.18~v1.5.20 存量用户需手动装一次 DMG）
+- 当前已发布版本: v1.5.22（图例数字/百分比中轴对齐；v1.5.18~v1.5.20 存量用户需手动装一次 DMG）
 - **Antigravity 数据源重新接入 (语义已变)**: 历史上 "Antigravity" 指冰茶 AI 客户端 (BingchaAI usage_stats.json)，v1.3.90 因与 cc-switch 双计降级为空实现。现在 "Antigravity" 指 Google agentic IDE 生态的 antigravity-tools 本地代理库 `~/.antigravity_tools/token_stats.db` (`token_usage` 表, unix 秒时间戳, warmup/0-token 过滤, cached⊆input 口径, WAL 缺 `-shm` 时 Python 端只读回退 `immutable=1`)，Windows 路径 `%USERPROFILE%\.antigravity_tools\token_stats.db`，双端五处聚合点 (今日/历史/会话列表/热力图/热力图详情) 全部接入。cc-switch `app_type=antigravity` 流量仍归「冰茶 AI」，两源并存
 - **macOS 更新下载失败兜底**: v1.5.18/1.5.19 客户端因 `?_tm=` 查询参数被 GitCode 404 拒绝而无法自动更新（修复已在 main, 未发版）；新增下载失败自动开浏览器下载 + About 失败态「手动下载新版本」链接 (前端桥 `openExternalURL`, 白名单 https + gitcode.com, Mac/Win 双端) + 404/403/410 不再重试直接终局。存量 v1.5.18/1.5.19 用户需在修复版发布后手动装一次 DMG
 

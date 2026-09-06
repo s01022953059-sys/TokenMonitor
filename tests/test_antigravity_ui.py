@@ -76,5 +76,37 @@ class AntigravityWiringContractTest(unittest.TestCase):
                 self.assertNotIn("'gemini 3.5 flash'", html)
 
 
+class LegendAlignmentContractTest(unittest.TestCase):
+    """v1.5.22: 图例数字+百分比中轴对齐契约。
+
+    旧版整串右对齐导致数字列跨行参差; 现数字右对齐到中轴、百分比左对齐
+    离开中轴 (固定 ch 列宽保证跨行垂直对齐), 主图例行与二级子行共用
+    .metric-pair/.metric-num/.metric-pct。浏览器实测: 可见行数字右边缘、
+    百分比左边缘、整组中心各为单一值。
+    """
+
+    def setUp(self):
+        self.frontends = {
+            "macOS": (ROOT / "index.html").read_text(encoding="utf-8"),
+            "Windows": (ROOT / "go_build" / "static" / "index.html").read_text(
+                encoding="utf-8"
+            ),
+        }
+
+    def test_metric_pair_classes_present(self):
+        for name, html in self.frontends.items():
+            with self.subTest(frontend=name):
+                for needle in ('tool-value metric-pair', 'legend-detail-value metric-pair',
+                               'class="metric-num"', 'class="metric-pct"',
+                               '.metric-pair {', '.metric-num {', '.metric-pct {'):
+                    self.assertIn(needle, html)
+
+    def test_old_inline_percent_span_removed(self):
+        # 旧的整串右对齐写法 (margin-left: 4px 的内联百分比 span) 必须消失
+        for name, html in self.frontends.items():
+            with self.subTest(frontend=name):
+                self.assertNotIn('margin-left: 4px;">(${percent}%)', html)
+
+
 if __name__ == "__main__":
     unittest.main()
