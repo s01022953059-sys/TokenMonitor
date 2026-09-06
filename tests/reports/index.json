@@ -2562,5 +2562,56 @@
    }
   ],
   "port": 15723
+ },
+ {
+  "label": "v1.5.21-pre-release",
+  "timestamp": "2026-09-06T11-17-04Z",
+  "server": "python+go",
+  "port": 15723,
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "results": [
+   {
+    "name": "单元测试门禁 run_unit_tests.sh (Python 238 用例 + Go + 社区中继 + 前端契约 + 双端一致)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "新增 DmgMountNoPipeDeadlockTest 契约测试 (pipe 死锁/stdout 类型/plist 双格式)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "API 契约 python + go 双后端 (smoke.sh / --go)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "verify_release 三层门禁 (E2E + Win PE32+ + Mac universal)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "release_all 产物校验 (DMG checksum + 首选资产=DMG + DMG 内 .app=1.5.21)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "隔离预演全链路: 检查→下载(无?_tm)→挂载→ditto→helper 替换→1.5.21 (修复后)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "预演实证修复前双断点: pipe 死锁(hdiutil 退出后主 app 死等) + system-entities 解析失败",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "真实 app 恢复验证 (1.5.20 + 15723 LISTEN + /api/app-info)",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
  }
 ]
