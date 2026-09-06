@@ -1,2510 +1,2566 @@
 [
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T03-40-00Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 8,
-    "failed": 1,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "FAIL",
-        "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
-      },
-      {
-        "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "<html>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "    <head>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        ",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T03-44-43Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 8,
-    "failed": 1,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "FAIL",
-        "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
-      },
-      {
-        "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "<html>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "    <head>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        ",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T03-46-34Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 8,
-    "failed": 1,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "FAIL",
-        "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
-      },
-      {
-        "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "<html>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "    <head>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        ",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T03-49-33Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 8,
-    "failed": 1,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "FAIL",
-        "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
-      },
-      {
-        "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "<html>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "    <head>",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "        ",
-        "status": "FAIL",
-        "message": "malformed result line"
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T03-54-49Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 8,
-    "failed": 1,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "FAIL",
-        "message": "validation failed: {\"labels\": [\"2026-06-03\", \"2026-06-04\", \"2026-06-05\", \"2026-06-06\", \"2026-06-07\", \"2026-06-08\", \"2026-06-09\", \"2026-06-10\", \"2026-06-11\", \"2026-06-12\", \"2026-06-13\", \"2026-06-14\", \"2026-06-15\", \"2026-"
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T04-02-19Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.92",
-    "timestamp": "2026-07-02T04-05-03Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.93",
-    "timestamp": "2026-07-02T04-05-03Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.94",
-    "timestamp": "2026-07-05T13-17-02Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.95-step1",
-    "timestamp": "2026-07-07T08-25-28Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.95",
-    "timestamp": "2026-07-07T08-32-16Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.95-ci",
-    "timestamp": "2026-07-07T08-40-18Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.95-postmerge",
-    "timestamp": "2026-07-07T08-51-39Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.95",
-    "timestamp": "2026-07-07T09-21-01Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.96",
-    "timestamp": "2026-07-08T02-38-14Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.97",
-    "timestamp": "2026-07-08T03-22-18Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.97-tray",
-    "timestamp": "2026-07-08T03-45-20Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.98",
-    "timestamp": "2026-07-08T09-20-55Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.99",
-    "timestamp": "2026-07-08T09-45-30Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.3.100",
-    "timestamp": "2026-07-08T10-13-23Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.01",
-    "timestamp": "2026-07-08T10-21-08Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.02",
-    "timestamp": "2026-07-08T13-18-55Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.03",
-    "timestamp": "2026-07-08T13-41-35Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.03-final",
-    "timestamp": "2026-07-08T13-51-17Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.04",
-    "timestamp": "2026-07-08T13-57-51Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.05",
-    "timestamp": "2026-07-08T14-02-28Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.06",
-    "timestamp": "2026-07-08T14-22-08Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.07",
-    "timestamp": "2026-07-09T03-10-18Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.08",
-    "timestamp": "2026-07-09T03-33-03Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.09",
-    "timestamp": "2026-07-09T03-49-38Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.10",
-    "timestamp": "2026-07-09T06-25-07Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.11",
-    "timestamp": "2026-07-09T06-49-24Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.11-community",
-    "timestamp": "2026-07-09T08-14-28Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.12",
-    "timestamp": "2026-07-09T08-35-51Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.12-final",
-    "timestamp": "2026-07-09T09-04-29Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.13",
-    "timestamp": "2026-07-09T09-23-12Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.14-workbuddy",
-    "timestamp": "2026-07-09T09-46-28Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.14",
-    "timestamp": "2026-07-09T09-56-47Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "v1.4.14-final",
-    "timestamp": "2026-07-09T14-21-13Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "dev",
-    "timestamp": "2026-07-10T02-43-38Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "1.4.15",
-    "timestamp": "2026-07-10T07-54-00Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "1.4.16",
-    "timestamp": "2026-07-10T08-06-14Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  },
-  {
-    "label": "1.4.17",
-    "timestamp": "2026-07-10T08-24-12Z",
-    "server": "python",
-    "port": 15723,
-    "total": 9,
-    "passed": 9,
-    "failed": 0,
-    "results": [
-      {
-        "name": "/api/app-info 返 200",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history by_model Other < 5% (防累加 bug)",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/history labels = 30",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap days=30 返 days 数组",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/check-update 返 ok+version",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/sessions 返 sessions + total",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "/api/heatmap_detail date=今天 返 sessions + summary",
-        "status": "PASS",
-        "message": ""
-      },
-      {
-        "name": "server 监听 0.0.0.0:15723",
-        "status": "PASS",
-        "message": ""
-      }
-    ]
-  }
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-40-00Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "FAIL",
+    "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
+   },
+   {
+    "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "<html>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "    <head>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        ",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-44-43Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "FAIL",
+    "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
+   },
+   {
+    "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "<html>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "    <head>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        ",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-46-34Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "FAIL",
+    "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
+   },
+   {
+    "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "<html>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "    <head>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        ",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-49-33Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "FAIL",
+    "message": "validation failed: <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\""
+   },
+   {
+    "name": "        \"http://www.w3.org/TR/html4/strict.dtd\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "<html>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "    <head>",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "        ",
+    "status": "FAIL",
+    "message": "malformed result line"
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T03-54-49Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 8,
+  "failed": 1,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "FAIL",
+    "message": "validation failed: {\"labels\": [\"2026-06-03\", \"2026-06-04\", \"2026-06-05\", \"2026-06-06\", \"2026-06-07\", \"2026-06-08\", \"2026-06-09\", \"2026-06-10\", \"2026-06-11\", \"2026-06-12\", \"2026-06-13\", \"2026-06-14\", \"2026-06-15\", \"2026-"
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T04-02-19Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.92",
+  "timestamp": "2026-07-02T04-05-03Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.93",
+  "timestamp": "2026-07-02T04-05-03Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.94",
+  "timestamp": "2026-07-05T13-17-02Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.95-step1",
+  "timestamp": "2026-07-07T08-25-28Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.95",
+  "timestamp": "2026-07-07T08-32-16Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.95-ci",
+  "timestamp": "2026-07-07T08-40-18Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.95-postmerge",
+  "timestamp": "2026-07-07T08-51-39Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.95",
+  "timestamp": "2026-07-07T09-21-01Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.96",
+  "timestamp": "2026-07-08T02-38-14Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.97",
+  "timestamp": "2026-07-08T03-22-18Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.97-tray",
+  "timestamp": "2026-07-08T03-45-20Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.98",
+  "timestamp": "2026-07-08T09-20-55Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.99",
+  "timestamp": "2026-07-08T09-45-30Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.3.100",
+  "timestamp": "2026-07-08T10-13-23Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.01",
+  "timestamp": "2026-07-08T10-21-08Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.02",
+  "timestamp": "2026-07-08T13-18-55Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.03",
+  "timestamp": "2026-07-08T13-41-35Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.03-final",
+  "timestamp": "2026-07-08T13-51-17Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.04",
+  "timestamp": "2026-07-08T13-57-51Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.05",
+  "timestamp": "2026-07-08T14-02-28Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.06",
+  "timestamp": "2026-07-08T14-22-08Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.07",
+  "timestamp": "2026-07-09T03-10-18Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.08",
+  "timestamp": "2026-07-09T03-33-03Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.09",
+  "timestamp": "2026-07-09T03-49-38Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.10",
+  "timestamp": "2026-07-09T06-25-07Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.11",
+  "timestamp": "2026-07-09T06-49-24Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.11-community",
+  "timestamp": "2026-07-09T08-14-28Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.12",
+  "timestamp": "2026-07-09T08-35-51Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.12-final",
+  "timestamp": "2026-07-09T09-04-29Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.13",
+  "timestamp": "2026-07-09T09-23-12Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.14-workbuddy",
+  "timestamp": "2026-07-09T09-46-28Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.14",
+  "timestamp": "2026-07-09T09-56-47Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.4.14-final",
+  "timestamp": "2026-07-09T14-21-13Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "dev",
+  "timestamp": "2026-07-10T02-43-38Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "1.4.15",
+  "timestamp": "2026-07-10T07-54-00Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "1.4.16",
+  "timestamp": "2026-07-10T08-06-14Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "1.4.17",
+  "timestamp": "2026-07-10T08-24-12Z",
+  "server": "python",
+  "port": 15723,
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "/api/app-info 返 200",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/usage by_tool 含 Codex/Claude/Hermes/OpenCode",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history by_model Other < 5% (防累加 bug)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/history labels = 30",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap days=30 返 days 数组",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/check-update 返 ok+version",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/sessions 返 sessions + total",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "/api/heatmap_detail date=今天 返 sessions + summary",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "server 监听 0.0.0.0:15723",
+    "status": "PASS",
+    "message": ""
+   }
+  ]
+ },
+ {
+  "label": "v1.5.20-pre-release",
+  "timestamp": "2026-09-06T09-35-39Z",
+  "server": "python+go",
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+   {
+    "name": "单元测试门禁 run_unit_tests.sh (Python 235 用例 + Go + 社区中继 + 前端契约 + 双端 html 一致)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "macOS 无密码更新辅助器 test_update_helper.sh",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "Go 单测含新增 Antigravity 7 用例 (antigravity_sqlite_test.go)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "API 契约 python 后端 (tests/smoke.sh)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "API 契约 go 后端 (tests/smoke.sh --go)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "verify_release 门禁 (E2E + Windows PE32+ + macOS universal 双架构)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "release_all 产物校验 (DMG checksum VALID + 客户端首选资产=DMG + DMG 内 .app=1.5.20)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "Antigravity 五聚合点 E2E (隔离 fixture HOME: usage/history/sessions/heatmap/heatmap_detail, warmup 过滤+模型归一化)",
+    "status": "PASS",
+    "message": ""
+   },
+   {
+    "name": "浏览器 UI 验证 (首页紫色 Antigravity 圆环 / About 平台表 / 失败态手动下载链接显示与点击 / 控制台零报错)",
+    "status": "PASS",
+    "message": ""
+   }
+  ],
+  "port": 15723
+ }
 ]

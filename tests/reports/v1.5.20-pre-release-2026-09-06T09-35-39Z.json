@@ -1,0 +1,56 @@
+{
+ "label": "v1.5.20-pre-release",
+ "timestamp": "2026-09-06T09-35-39Z",
+ "server": "python+go",
+ "port": 15723,
+ "total": 9,
+ "passed": 9,
+ "failed": 0,
+ "results": [
+  {
+   "name": "单元测试门禁 run_unit_tests.sh (Python 235 用例 + Go + 社区中继 + 前端契约 + 双端 html 一致)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "macOS 无密码更新辅助器 test_update_helper.sh",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "Go 单测含新增 Antigravity 7 用例 (antigravity_sqlite_test.go)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "API 契约 python 后端 (tests/smoke.sh)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "API 契约 go 后端 (tests/smoke.sh --go)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "verify_release 门禁 (E2E + Windows PE32+ + macOS universal 双架构)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "release_all 产物校验 (DMG checksum VALID + 客户端首选资产=DMG + DMG 内 .app=1.5.20)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "Antigravity 五聚合点 E2E (隔离 fixture HOME: usage/history/sessions/heatmap/heatmap_detail, warmup 过滤+模型归一化)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "浏览器 UI 验证 (首页紫色 Antigravity 圆环 / About 平台表 / 失败态手动下载链接显示与点击 / 控制台零报错)",
+   "status": "PASS",
+   "message": ""
+  }
+ ]
+}
