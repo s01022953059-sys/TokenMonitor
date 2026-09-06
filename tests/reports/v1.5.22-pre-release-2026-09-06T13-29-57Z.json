@@ -1,0 +1,46 @@
+{
+ "label": "v1.5.22-pre-release",
+ "timestamp": "2026-09-06T13-29-57Z",
+ "server": "python+go",
+ "port": 15723,
+ "total": 7,
+ "passed": 7,
+ "failed": 0,
+ "results": [
+  {
+   "name": "单元测试门禁 run_unit_tests.sh (Python 240 用例 + Go + 中继 + 前端契约 + 双端一致)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "新增 LegendAlignmentContractTest 契约测试 (metric-pair 双端 + 旧写法消失)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "浏览器实测对齐: 可见行数字右边缘/百分比左边缘/整组中心各为单一值 (103.2/109.2/97.5)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "浏览器截图视觉确认 + 控制台零报错 (fixture 四量级数据)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "API 契约 python + go 双后端 (smoke.sh / --go)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "verify_release 三层门禁 (E2E + Win PE32+ + Mac universal)",
+   "status": "PASS",
+   "message": ""
+  },
+  {
+   "name": "release_all 产物校验 (DMG checksum + 首选资产=DMG + DMG 内 .app=1.5.22)",
+   "status": "PASS",
+   "message": ""
+  }
+ ]
+}
