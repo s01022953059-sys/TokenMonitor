@@ -477,7 +477,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                     self.pendingUpdate = update
                     self.pendingCurrentVersion = currentVersion
                     // 通知前端"有新版本", 让 About 弹窗和首页徽章反映状态
-                    self.notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion)
+                    self.notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion, downloadURL: update.downloadURL.absoluteString)
                     if !silent {
                         self.openAboutForUpdate(recheck: false)
                     }
@@ -515,6 +515,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 // checkForUpdates 可能还没跑过 (或跑过但没缓存)。
                 // 先主动检查一次, 拿到结果后再执行自动更新。
                 checkForUpdatesAndAutoUpdate()
+            }
+        case "openExternalURL":
+            // About 弹窗"手动下载"链接: WKWebView 没有设 navigation delegate,
+            // 普通 <a> 点击会把整个 dashboard 导航去外站, 必须走这个桥接在
+            // 系统浏览器打开。白名单: 仅 https + gitcode.com 域名。
+            // userContentController 回调本身在主线程, NSWorkspace.open 可直接调。
+            if let s = body["url"] as? String, let u = URL(string: s),
+               u.scheme == "https", let host = u.host?.lowercased(),
+               host == "gitcode.com" || host.hasSuffix(".gitcode.com") {
+                debugLog("openExternalURL → \(u.absoluteString)")
+                NSWorkspace.shared.open(u)
             }
         default:
             break
@@ -579,8 +590,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
 
     // 前端调用: window.webkit.messageHandlers.tokenMonitor.postMessage({...})
     // 反向通道: Swift 主动 push 状态给前端, 通过 evaluateJavaScript 注入 JS 调用。
-    private func notifyFrontendUpdateAvailable(version: String, currentVersion: String) {
-        let js = "window.__tokenMonitorOnUpdateAvailable && window.__tokenMonitorOnUpdateAvailable({version: '\(version)', currentVersion: '\(currentVersion)'});"
+    private func notifyFrontendUpdateAvailable(version: String, currentVersion: String, downloadURL: String = "") {
+        let escapedURL = downloadURL
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let js = "window.__tokenMonitorOnUpdateAvailable && window.__tokenMonitorOnUpdateAvailable({version: '\(version)', currentVersion: '\(currentVersion)', downloadUrl: '\(escapedURL)'});"
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
@@ -589,12 +603,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
-    private func notifyFrontendUpdateStatus(_ text: String, kind: String) {
+    private func notifyFrontendUpdateStatus(_ text: String, kind: String, downloadURL: String? = nil) {
         let escaped = text
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: " ")
-        let js = "window.__tmSetUpdateStatus && window.__tmSetUpdateStatus('\(escaped)', '\(kind)');"
+        var js = "window.__tmSetUpdateStatus && window.__tmSetUpdateStatus('\(escaped)', '\(kind)'"
+        if let url = downloadURL {
+            // 第三参: 无查询串的原始下载地址, 前端失败态渲染"手动下载"链接
+            let escapedURL = url
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            js += ", '\(escapedURL)'"
+        }
+        js += ");"
         webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 
@@ -690,7 +712,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     func showUpdateAvailable(update: UpdateInfo, currentVersion: String) {
         pendingUpdate = update
         pendingCurrentVersion = currentVersion
-        notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion)
+        notifyFrontendUpdateAvailable(version: update.version, currentVersion: currentVersion, downloadURL: update.downloadURL.absoluteString)
         openAboutForUpdate(recheck: false)
     }
 
@@ -774,7 +796,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         // release 页面 (html_url), 这里拦住, 别把 HTML 当安装包下载。
         let packageExtension = downloadURL.pathExtension.lowercased()
         guard packageExtension == "dmg" || packageExtension == "zip" else {
-            failAutoUpdate(update: update, message: "更新源没有 macOS 安装包 (DMG/ZIP), 请到发布页手动下载")
+            // 兜底打开 release 页 (此时 downloadURL 是 html_url), 让用户手动挑安装包
+            failAutoUpdate(update: update, message: "更新源没有 macOS 安装包 (DMG/ZIP)\n\n已在浏览器打开发布页, 请手动下载。", openBrowserFallback: true)
             return
         }
         // dmg → 挂载安装; zip → 解压编译 (v1.5.15 起主路径是 DMG)
@@ -794,7 +817,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             session.finishTasksAndInvalidate()
             guard let self = self else { return }
             if let error = error {
-                self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)\n\n请检查网络连接, 或点 NSAlert 的'下载 zip'手动下载。")
+                self.failAutoUpdate(update: update, message: "下载失败: \(error.localizedDescription)\n\n请检查网络连接。已在浏览器打开下载地址, 可手动下载 DMG 后双击安装。", openBrowserFallback: true)
                 return
             }
             // 调试用: 检查 HTTP body 大小和 content-type
@@ -803,7 +826,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
             }
             guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)\n\n可能是 release 源 502/504, 稍后再试。")
+                if code == 404 || code == 403 || code == 410 {
+                    // 确定性失败 (地址失效/被撤下), 重试无意义 → 直接终局 + 浏览器兜底
+                    self.failAutoUpdate(update: update, message: "下载地址返回 HTTP \(code), 该版本安装包地址已失效。\n\n已在浏览器打开下载地址, 请手动下载 DMG 后双击安装; 也可到发布页选择其他版本。", openBrowserFallback: true)
+                } else {
+                    self.failAutoUpdate(update: update, message: "下载失败, HTTP \(code)\n\nrelease 源暂时不可用。已在浏览器打开下载地址, 可手动下载 DMG 后双击安装, 或稍后重试。", openBrowserFallback: true)
+                }
                 return
             }
             // gitcode CDN 在某些节点会返回 download-error 占位页 (3606 字节 HTML),
@@ -848,8 +876,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
     // 能命中另一个 CDN 节点拿真 zip。
     private func retryDownload(update: UpdateInfo, attempt: Int, lastError: String) {
         if attempt > 1 {
-            // 2 次都失败, 报失败
-            self.failAutoUpdate(update: update, message: "下载失败: \(lastError)\n\nCDN 节点异常, 稍后再试或手动下载。")
+            // 2 次都失败, 报失败 + 浏览器兜底 (确定性 404 重试无意义, CDN 抖动也已耗尽重试)
+            self.failAutoUpdate(update: update, message: "下载失败: \(lastError)\n\n多次重试仍未成功。已在浏览器打开下载地址, 请手动下载 DMG 后双击安装。", openBrowserFallback: true)
             return
         }
         // 用新的 cache buster 重试
@@ -878,11 +906,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
                 debugLog("retry \(attempt) HTTP \(http.statusCode), content-length=\(http.expectedContentLength)")
             }
             if let error = error {
-                self.failAutoUpdate(update: update, message: "下载失败 (重试): \(error.localizedDescription)")
+                self.failAutoUpdate(update: update, message: "下载失败 (重试): \(error.localizedDescription)\n\n已在浏览器打开下载地址, 可手动下载 DMG 后双击安装。", openBrowserFallback: true)
                 return
             }
             guard let tempURL = tempURL, let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-                self.retryDownload(update: update, attempt: attempt + 1, lastError: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if code == 404 || code == 403 || code == 410 {
+                    // 确定性失败, 不再消耗重试次数
+                    self.failAutoUpdate(update: update, message: "下载地址返回 HTTP \(code), 该版本安装包地址已失效。\n\n已在浏览器打开下载地址, 请手动下载 DMG 后双击安装; 也可到发布页选择其他版本。", openBrowserFallback: true)
+                    return
+                }
+                self.retryDownload(update: update, attempt: attempt + 1, lastError: "HTTP \(code)")
                 return
             }
             if let attr = try? FileManager.default.attributesOfItem(atPath: tempURL.path),
@@ -1157,10 +1191,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMe
         return nil
     }
 
-    private func failAutoUpdate(update: UpdateInfo, message: String) {
+    // openBrowserFallback: 下载阶段失败时置 true — 在主线程用系统浏览器打开
+    // 原始下载地址 (无查询串, 浏览器直接访问实测 302→200 正常)。这是 v1.5.19
+    // 事故 (旧客户端拼 ?_tm 导致下载全量 404, 且无任何人工出口) 之后补的兜底:
+    // 无论 CDN 抖动还是地址失效, 用户总能手动拿到安装包。
+    // NSWorkspace.open 与 WKWebView 一样必须主线程调用 (6d7dd889 教训)。
+    private func failAutoUpdate(update: UpdateInfo, message: String, openBrowserFallback: Bool = false) {
         DispatchQueue.main.async {
             self.updateCheckInProgress = false
-            self.notifyFrontendUpdateStatus("自动更新失败: \(message)", kind: "error")
+            if openBrowserFallback {
+                self.debugLog("browser fallback → \(update.downloadURL.absoluteString)")
+                NSWorkspace.shared.open(update.downloadURL)
+            }
+            self.notifyFrontendUpdateStatus("自动更新失败: \(message)", kind: "error", downloadURL: update.downloadURL.absoluteString)
         }
     }
 

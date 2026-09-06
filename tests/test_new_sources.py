@@ -1,10 +1,12 @@
-"""ZCode 与 MiniMax Code 数据源回归测试。
+"""ZCode、MiniMax Code 与 Antigravity 数据源回归测试。
 
 覆盖维度:
 1. ZCode: 毫秒时间戳转秒、Anthropic 式缓存口径、status 过滤
 2. MiniMax Code: ISO 时间戳转秒、message.usage 字段、只取 assistant message
-3. 跨源去重: 新工具与 cc-switch 不产生误合并
-4. 社区上报: by_tool 动态包含新工具, today_tokens 含新工具用量
+3. Antigravity: antigravity-tools 代理库 unix 秒时间戳、warmup/0-token 过滤、
+   cached⊆input 口径 (clamp)、WAL 缺 -shm 只读回退、五处聚合点接线
+4. 跨源去重: 新工具与 cc-switch 不产生误合并
+5. 社区上报: by_tool 动态包含新工具, today_tokens 含新工具用量
 """
 import datetime
 import json
@@ -817,6 +819,183 @@ class SortOrderConsistencyTests(unittest.TestCase):
         by_tool = {"Hermes": 500, "Codex": 100, "ZCode": 1000}
         result = community._format_report_tools(by_tool)
         self.assertEqual(result, "ZCode + Hermes + Codex")
+
+
+def _make_antigravity_db(path, rows, wal=False):
+    """在 path 创建一个只含 token_usage 表的 Antigravity 代理 SQLite。
+
+    rows 每行: (timestamp, account_email, model, input, output, total, cached)
+    wal=True 时建库后切 WAL 并删除 -shm/-wal 伴生文件, 复现"代理未运行"场景。
+    """
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        CREATE TABLE token_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            account_email TEXT NOT NULL,
+            model TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0,
+            cached_tokens INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.executemany(
+        "INSERT INTO token_usage (timestamp, account_email, model,"
+        " input_tokens, output_tokens, total_tokens, cached_tokens)"
+        " VALUES (?,?,?,?,?,?,?)", rows
+    )
+    if wal:
+        conn.execute("PRAGMA journal_mode=WAL")
+    conn.commit()
+    conn.close()
+    if wal:
+        for ext in ("-shm", "-wal"):
+            try:
+                os.remove(path + ext)
+            except OSError:
+                pass
+
+
+class AntigravityScannerTests(unittest.TestCase):
+    """Antigravity (antigravity-tools 代理库) 数据源。
+
+    与 go_build/antigravity_sqlite_test.go 是同口径的双端回归。
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.db_path = os.path.join(self.temp_dir.name, "token_stats.db")
+        self.patcher = mock.patch.object(scanner, "ANTIGRAVITY_DB_PATH", self.db_path)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def test_warmup_zero_token_rows_skipped(self):
+        """warmup 保活记录 (全 0 token) 不产出事件。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "gemini-3-pro-high", 1000, 200, 1200, 300),
+            (now - 200, "a@b.c", "gemini-3.6-flash-medium", 0, 0, 0, 0),
+            (now - 100, "a@b.c", "gemini-pro-agent", 0, 0, 0, 0),
+        ])
+        events = scanner.scan_antigravity_tokens(now - 3600)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["tool"], "Antigravity")
+        self.assertEqual(events[0]["total_tokens"], 1200)
+
+    def test_unix_second_timestamp_and_start_window(self):
+        """timestamp 是 unix 秒原样透传; start 窗口过滤生效。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 7200, "a@b.c", "gemini-3-pro-high", 10, 5, 15, 0),  # 窗口外
+            (now - 3600, "a@b.c", "gemini-3-pro-high", 20, 5, 25, 0),  # 窗口内
+        ])
+        events = scanner.scan_antigravity_tokens(now - 5400)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["timestamp"], now - 3600)
+        self.assertLess(events[0]["timestamp"], 2_000_000_000)
+
+    def test_end_timestamp_window(self):
+        """end_timestamp 半开区间 (< end) 过滤生效, 供热力图详情使用。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "gemini-3-pro-high", 10, 5, 15, 0),
+            (now - 100, "a@b.c", "gemini-3-pro-high", 20, 5, 25, 0),
+        ])
+        events = scanner.scan_antigravity_tokens(now - 3600, end_timestamp=now - 200)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["timestamp"], now - 300)
+
+    def test_cached_clamped_to_input(self):
+        """cached⊆input (Gemini 风格): cached>input 时 clamp, uncached 不为负。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "claude-opus-4-6-thinking", 500, 100, 600, 900),
+            (now - 200, "a@b.c", "gemini-3-pro-high", 1000, 200, 1200, 300),
+        ])
+        events = scanner.scan_antigravity_tokens(now - 3600)
+        self.assertEqual(len(events), 2)
+        clamped = events[0]
+        self.assertEqual(clamped["input_cached"], 500)
+        self.assertEqual(clamped["input_uncached"], 0)
+        normal = events[1]
+        self.assertEqual(normal["input_cached"], 300)
+        self.assertEqual(normal["input_uncached"], 700)
+        self.assertEqual(normal["input_tokens"], 1000)
+
+    def test_model_normalized(self):
+        """模型名小写化 + 日期后缀剥掉 (与 normalize_model_name 对齐)。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "Gemini-3-Pro-High-2026-01-01", 100, 10, 110, 0),
+            (now - 200, "a@b.c", "CLAUDE-SONNET-4-6", 100, 10, 110, 0),
+        ])
+        events = scanner.scan_antigravity_tokens(now - 3600)
+        self.assertEqual({e["model"] for e in events},
+                         {"gemini-3-pro-high", "claude-sonnet-4-6"})
+
+    def test_missing_db_returns_empty(self):
+        """代理未安装 (DB 不存在) 时静默返回 []。"""
+        events = scanner.scan_antigravity_tokens(1_700_000_000)
+        self.assertEqual(events, [])
+
+    def test_missing_table_returns_empty(self):
+        """旧版 schema 缺 token_usage 表时静默返回 [], 不抛异常。"""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        events = scanner.scan_antigravity_tokens(1_700_000_000)
+        self.assertEqual(events, [])
+
+    def test_wal_without_shm_still_readable(self):
+        """WAL 库在代理未运行 (-shm 缺失) 时经 immutable 回退仍可读。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "gemini-3-pro-high", 1000, 200, 1200, 300),
+        ], wal=True)
+        self.assertFalse(os.path.exists(self.db_path + "-shm"))
+        events = scanner.scan_antigravity_tokens(now - 3600)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["total_tokens"], 1200)
+        # 只读原则: 扫描不得在用户目录留下 -shm/-wal 副产物
+        self.assertFalse(os.path.exists(self.db_path + "-shm"))
+        self.assertFalse(os.path.exists(self.db_path + "-wal"))
+
+    def test_aggregations_include_antigravity(self):
+        """五处聚合点接线: 今日/历史/会话列表/热力图都包含 Antigravity 事件。"""
+        now = int(datetime.datetime.now().timestamp())
+        _make_antigravity_db(self.db_path, [
+            (now - 300, "a@b.c", "gemini-3-pro-high", 1000, 200, 1200, 300),
+            (now - 200, "a@b.c", "gemini-3.6-flash-medium", 0, 0, 0, 0),
+        ])
+        missing = os.path.join(self.temp_dir.name, "missing")
+        path_consts = [
+            "CC_SWITCH_DB_PATH", "CODEX_LOG_DB_PATH", "CODEX_SESSIONS_DIR",
+            "CODEX_ARCHIVED_SESSIONS_DIR", "HERMES_DB_PATH", "ZCODE_DB_PATH",
+            "MINIMAX_DB_PATH", "MINIMAX_SESSIONS_DIR", "WORKBUDDY_DB_PATH",
+            "WORKBUDDY_PROJECTS_DIR", "CLAUDE_PROJECTS_DIR",
+        ]
+        with mock.patch.multiple(scanner, **{name: missing for name in path_consts}), \
+             mock.patch.object(scanner, "get_deepseek_balance",
+                               return_value={"balance": "0.00", "currency": "CNY", "status": "Offline"}):
+            today = scanner.get_today_usage()
+            self.assertIn("Antigravity", today["by_tool"])
+            self.assertEqual(today["by_tool"]["Antigravity"]["total_tokens"], 1200)
+
+            history = scanner.get_historical_usage(1)
+            self.assertIn("Antigravity", history["by_tool"])
+            self.assertEqual(history["by_tool"]["Antigravity"][-1], 1200)
+
+            sessions = scanner.get_session_list(days=1)
+            self.assertTrue(any(s["tool"] == "Antigravity" and s["total_tokens"] == 1200
+                                for s in sessions["sessions"]))
+
+            heatmap = scanner.get_heatmap_data(1)
+            today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            day = next(d for d in heatmap["days"] if d["date"] == today_str)
+            self.assertEqual(day["tokens"], 1200)
 
 
 if __name__ == "__main__":

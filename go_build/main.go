@@ -33,7 +33,7 @@ const updateFeedURL = "https://api.gitcode.com/api/v5/repos/baggiopeng/TokenMoni
 
 // 版本号: 优先从同目录 version.txt 读取 (打包时写入), 回退到编译时注入的常量。
 // 这和 Python 版从 Info.plist 读版本号的思路一致: 让运行时能拿到真实版本。
-var appVersion = "1.5.19"
+var appVersion = "1.5.20"
 
 // feedURL 在 main() 里从命令行参数解析, 默认用 updateFeedURL。
 // 提升为包级变量让 checkUpdateRemote 能访问 (对齐 Python 版的全局 UPDATE_FEED_URL)。
@@ -287,16 +287,10 @@ func codexLogDBPath() string {
 	return filepath.Join(homeDir(), ".codex", "logs_2.sqlite")
 }
 
-func antigravityStatsPath() string {
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(homeDir(), "Library", "Application Support", "BingchaAI", "usage_stats.json")
-	}
-	// Windows: Antigravity 可能不存在, 但路径留着以防万一
-	appData := os.Getenv("APPDATA")
-	if appData == "" {
-		appData = filepath.Join(homeDir(), "AppData", "Roaming")
-	}
-	return filepath.Join(appData, "BingchaAI", "usage_stats.json")
+func antigravityDBPath() string {
+	// antigravity-tools 本地代理的 token 统计库, macOS / Windows 都在用户主目录下
+	// (Windows 的 homeDir() = %USERPROFILE%)。
+	return filepath.Join(homeDir(), ".antigravity_tools", "token_stats.db")
 }
 
 func todayMidnight() int64 {
@@ -764,47 +758,93 @@ func scanCodexTokens(startTimestamp int64) []LogEntry {
 	return dedupEvents(append(events, scanCodexRollouts(startTimestamp)...))
 }
 
-//  2. 冰茶 AI 客户端 (Antigravity 旧名, 用户反馈"我应该没有使用 Antigravity" 因为
-//     不认识 Antigravity 跟冰茶 AI 是同一客户端. 改工具名让统计更直观)
-//     v1.3.90 降级为纯数据源: 冰茶 AI 是 IDE/代理配置入口, 调 LLM 都经 cc-switch
-//     Codex 代理. usage_stats.json 是 BingchaAI 客户端本地累计, 跟 cc-switch
-//     代理记录**同一批请求** (双计). scanner 不再产出 events, 流量归到真实
-//     调用工具 (Codex / Claude / Other). 用户完全没装 cc-switch 时冰茶 AI
-//     流量丢失, 但这种情况极罕见, 用户可在 BingchaAI 客户端配 cc-switch provider.
-func scanAntigravityTokens() []LogEntry {
-	return nil
-}
-
-// ccswitchTodayModels 拿今天 cc-switch.db 里出现过的 model 集合 (归一化后),
-// 给 Antigravity 去重判断用
-func ccswitchTodayModels() map[string]struct{} {
-	result := map[string]struct{}{}
-	dbPath := ccSwitchDBPath()
+//  2. Antigravity (antigravity-tools 本地代理库)
+//
+// Antigravity (Google 的 agentic IDE) 本体不在本地落 token 用量 (配额在
+// Google 服务端), 数据源是 antigravity-tools 本地代理
+// (com.lbjlaq.antigravity-tools) 写的 ~/.antigravity_tools/token_stats.db
+// (Windows: %USERPROFILE%\.antigravity_tools\token_stats.db) token_usage 表。
+//
+// 口径与 scanner.py scan_antigravity_tokens 完全对齐:
+//   - timestamp 是 unix 秒, 零换算 (跨源去重 ≤2s 窗口直接生效)。
+//   - cached_tokens 视为 input_tokens 子集 (Gemini 风格), clamp 到 input。
+//   - warmup / 0-token 保活记录跳过。
+//   - total_tokens = input + output (项目规范口径, DB 的 total_tokens 列仅
+//     参与 0-token 过滤判断)。
+//
+// 历史注: v1.3.90-v1.5.19 期间本函数是空实现 (return nil) —— 当时
+// "Antigravity" 指冰茶 AI 客户端 (BingchaAI usage_stats.json), 与 cc-switch
+// 双计所以降级。cc-switch 里 app_type=antigravity 的流量仍归 "冰茶 AI"
+// (getNormalizedTool), 与本数据源并存不冲突。
+func scanAntigravityTokens(startTimestamp int64) []LogEntry {
+	dbPath := antigravityDBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return result
+		return nil
 	}
-	todayStart := todayMidnight()
+	// modernc.org/sqlite 普通打开即可读 WAL 库 (代理未运行、-shm 缺失时也能读,
+	// 行为与现有 Go scanner 一致); 只发 SELECT, 不写库。
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return result
+		fmt.Printf("[-] 扫描 Antigravity 代理库出错: %v\n", err)
+		return nil
 	}
 	defer db.Close()
+
 	rows, err := db.Query(`
-		SELECT DISTINCT model FROM proxy_request_logs
-		WHERE created_at >= ? AND status_code = 200
-	`, todayStart)
+		SELECT id, timestamp, model, input_tokens, output_tokens,
+		       total_tokens, cached_tokens
+		FROM token_usage
+		WHERE timestamp >= ?
+		ORDER BY timestamp ASC
+	`, startTimestamp)
 	if err != nil {
-		return result
+		fmt.Printf("[-] 扫描 Antigravity 代理库出错: %v\n", err)
+		return nil
 	}
 	defer rows.Close()
+
+	var logs []LogEntry
 	for rows.Next() {
-		var m string
-		if err := rows.Scan(&m); err != nil || m == "" {
+		var id, occurredAt int64
+		var model sql.NullString
+		var inputT, outputT, totalT, cachedT sql.NullInt64
+		if err := rows.Scan(&id, &occurredAt, &model, &inputT, &outputT, &totalT, &cachedT); err != nil {
 			continue
 		}
-		result[normalizeModelName(m)] = struct{}{}
+		if occurredAt <= 0 {
+			continue
+		}
+		in := inputT.Int64
+		out := outputT.Int64
+		// warmup / 0-token 保活记录跳过
+		if totalT.Int64 <= 0 && in+out <= 0 {
+			continue
+		}
+		iCached := cachedT.Int64
+		if iCached > in {
+			iCached = in
+		}
+		iUncached := in - iCached
+
+		m := "Unknown"
+		if model.Valid && model.String != "" {
+			m = normalizeModelName(model.String)
+		}
+
+		logs = append(logs, LogEntry{
+			Time:          time.Unix(occurredAt, 0).Format("15:04:05"),
+			Timestamp:     occurredAt,
+			Tool:          "Antigravity",
+			Model:         m,
+			InputTokens:   in,
+			OutputTokens:  out,
+			TotalTokens:   in + out,
+			InputCached:   iCached,
+			InputUncached: iUncached,
+			SessionID:     strconv.FormatInt(id, 10),
+		})
 	}
-	return result
+	return logs
 }
 
 // 3. Hermes
@@ -1508,7 +1548,7 @@ func getTodayUsage() UsageResponse {
 	wg.Add(7)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(todayStart) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(todayStart) }()
-	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens() }()
+	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens(todayStart) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(todayStart) }()
 	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(todayStart) }()
 	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(todayStart) }()
@@ -1690,14 +1730,15 @@ func getHistoricalUsage(days int) HistoryResponse {
 		dateList[i] = d.Format("2006-01-02")
 	}
 
-	events := dedupEvents(append(append(append(append(append(
+	events := dedupEvents(append(append(append(append(append(append(
 		scanCCSwitchLogs(startTimestamp),
 		scanCodexTokens(startTimestamp)...),
+		scanAntigravityTokens(startTimestamp)...),
 		scanHermesTokens(startTimestamp)...),
 		scanZCodeTokens(startTimestamp)...),
 		scanMiniMaxTokens(startTimestamp)...),
 		scanWorkBuddyTokens(startTimestamp)...))
-	tools := []string{"Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Other"}
+	tools := []string{"Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Antigravity", "Other"}
 	knownTools := map[string]bool{}
 	for _, tool := range tools {
 		knownTools[tool] = true
@@ -2170,11 +2211,12 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, codexLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
+	var ccLogs, codexLogs, antigravityLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(7)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
+	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
 	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(startTimestamp) }()
 	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(startTimestamp) }()
@@ -2182,7 +2224,7 @@ func getSessionList(days, page, pageSize int) SessionListResponse {
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(append(append(append(ccLogs, codexLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
+	allLogs := append(append(append(append(append(append(ccLogs, codexLogs...), antigravityLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	sort.SliceStable(allLogs, func(i, j int) bool {
@@ -2889,9 +2931,10 @@ func getHeatmapData(days int) HeatmapResponse {
 
 	// daily tokens map
 	dailyTokens := map[string]int64{}
-	events := dedupEvents(append(append(append(append(append(
+	events := dedupEvents(append(append(append(append(append(append(
 		scanCCSwitchLogs(startTimestamp),
 		scanCodexTokens(startTimestamp)...),
+		scanAntigravityTokens(startTimestamp)...),
 		scanHermesTokens(startTimestamp)...),
 		scanZCodeTokens(startTimestamp)...),
 		scanMiniMaxTokens(startTimestamp)...),
@@ -3145,11 +3188,12 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, mo
 	startMidnight := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	startTimestamp := startMidnight.Unix()
 
-	var ccLogs, codexLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
+	var ccLogs, codexLogs, antigravityLogs, hermesLogs, zcodeLogs, minimaxLogs []LogEntry
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(7)
 	go func() { defer wg.Done(); ccLogs = scanCCSwitchLogs(startTimestamp) }()
 	go func() { defer wg.Done(); codexLogs = scanCodexTokens(startTimestamp) }()
+	go func() { defer wg.Done(); antigravityLogs = scanAntigravityTokens(startTimestamp) }()
 	go func() { defer wg.Done(); hermesLogs = scanHermesTokens(startTimestamp) }()
 	go func() { defer wg.Done(); zcodeLogs = scanZCodeTokens(startTimestamp) }()
 	go func() { defer wg.Done(); minimaxLogs = scanMiniMaxTokens(startTimestamp) }()
@@ -3157,7 +3201,7 @@ func getHeatmapDetail(weekday, hour, days, page, pageSize int, dateStr, tool, mo
 	go func() { defer wg.Done(); wbLogs = scanWorkBuddyTokens(startTimestamp) }()
 	wg.Wait()
 
-	allLogs := append(append(append(append(append(ccLogs, codexLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
+	allLogs := append(append(append(append(append(append(ccLogs, codexLogs...), antigravityLogs...), hermesLogs...), zcodeLogs...), minimaxLogs...), wbLogs...)
 	allLogs = dedupEvents(allLogs)
 
 	var filtered []LogEntry

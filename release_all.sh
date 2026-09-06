@@ -78,8 +78,10 @@ RELEASE_HTTP=$(curl -sS -o /dev/null -w '%{http_code}' \
 
 if [[ "$RELEASE_HTTP" != "200" ]]; then
     echo "[release] Release $TAG 不存在, 正在创建 (target_commitish=refs/tags/$TAG)..."
-    # 取最新 commit 的 subject 作为 body (避免 fallback 占位文案)
-    BODY="$(git log -1 --format=%s $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")"
+    # 取最新 commit 的完整 message 作为 body (%B 而非 %s): release notes 的
+    # 前两行非空内容会显示在所有客户端 About 弹窗 (parseReleaseHighlights),
+    # v1.5.20 起第二行固定写 v1.5.18/1.5.19 存量用户的手动下载直链。
+    BODY="$(git log -1 --format=%B $TAG 2>/dev/null || echo "$TAG - Mac + Windows 统一发布")"
     # 写响应到临时文件, 读 HTTP 状态码; 失败时 cat 响应体便于排查, exit 1 阻断后续
     # 重试 3 次: GitCode 的 tag 跟 release API 有最终一致性, 偶尔 POST 时 tag 还没同步,
     # 等几秒重试就好

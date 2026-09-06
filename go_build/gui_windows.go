@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -121,6 +122,22 @@ func onTrayReady(port int, feedURL string, autoStarted bool) {
 		w.Bind("setSnoozedVersion", func(version string) string {
 			guiLog("JS bridge: setSnoozedVersion=%s", version)
 			snoozedVersion = version
+			return "ok"
+		})
+		// v1.5.20: JS 桥 — About 弹窗"手动下载"链接。WebView2 里普通 <a> 会把
+		// 整个 dashboard 导航去外站, 前端拦截后走这里用系统浏览器打开。
+		// 白名单: 仅 https + gitcode.com 域名 (与 macOS openExternalURL 桥一致)。
+		w.Bind("openExternalURL", func(rawURL string) string {
+			u, err := url.Parse(rawURL)
+			if err != nil || u.Scheme != "https" {
+				return "rejected"
+			}
+			host := strings.ToLower(u.Hostname())
+			if host != "gitcode.com" && !strings.HasSuffix(host, ".gitcode.com") {
+				return "rejected"
+			}
+			guiLog("JS bridge: openExternalURL=%s", rawURL)
+			openBrowser(rawURL)
 			return "ok"
 		})
 

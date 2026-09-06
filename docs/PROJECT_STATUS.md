@@ -2,6 +2,12 @@
 
 > 本文档的主体保留 2026-06-23 的历史说明；以下补充记录 2026-07-10 的最新状态，供后续接手的人快速了解现状。
 
+## 2026-09-06 最新补充
+
+- 当前已发布版本: v1.5.20（更新下载兜底 + Antigravity 数据源；v1.5.18/1.5.19 存量用户需手动装一次 DMG）
+- **Antigravity 数据源重新接入 (语义已变)**: 历史上 "Antigravity" 指冰茶 AI 客户端 (BingchaAI usage_stats.json)，v1.3.90 因与 cc-switch 双计降级为空实现。现在 "Antigravity" 指 Google agentic IDE 生态的 antigravity-tools 本地代理库 `~/.antigravity_tools/token_stats.db` (`token_usage` 表, unix 秒时间戳, warmup/0-token 过滤, cached⊆input 口径, WAL 缺 `-shm` 时 Python 端只读回退 `immutable=1`)，Windows 路径 `%USERPROFILE%\.antigravity_tools\token_stats.db`，双端五处聚合点 (今日/历史/会话列表/热力图/热力图详情) 全部接入。cc-switch `app_type=antigravity` 流量仍归「冰茶 AI」，两源并存
+- **macOS 更新下载失败兜底**: v1.5.18/1.5.19 客户端因 `?_tm=` 查询参数被 GitCode 404 拒绝而无法自动更新（修复已在 main, 未发版）；新增下载失败自动开浏览器下载 + About 失败态「手动下载新版本」链接 (前端桥 `openExternalURL`, 白名单 https + gitcode.com, Mac/Win 双端) + 404/403/410 不再重试直接终局。存量 v1.5.18/1.5.19 用户需在修复版发布后手动装一次 DMG
+
 ## 2026-07-10 最新补充
 
 - 当前已发布版本: v1.4.31
@@ -36,7 +42,7 @@ Token Monitor 是跨平台本地仪表盘，macOS 使用 Swift + Python，Window
 ## 已完成的功能
 
 ### 数据层 (scanner.py / server.py)
-- 多源数据采集: Codex rollout/SQLite、cc-switch、Hermes state.db、WorkBuddy projects JSONL；Antigravity 汇总文件仅识别不重复累加
+- 多源数据采集: Codex rollout/SQLite、cc-switch、Hermes state.db、WorkBuddy projects JSONL；Antigravity 走 antigravity-tools 代理库 `token_usage` 表 (2026-09-06 起, 见顶部最新补充; 旧的 BingchaAI 汇总文件路径已删除)
 - 三源去重: 按 `timestamp ± 2s + 同模型 + 同 token 量` 近似匹配, 避免同一笔请求被多源重复计入
 - DeepSeek provider 语义查询: 从硬编码 `id='ddsds'` 改成按 `provider_type / name / app_type LIKE '%deepseek%'` 匹配
 - 成本估算**删除** (用户明确不需要, 只关注 token 量)
@@ -216,7 +222,7 @@ GitCode 不支持删除 release 附件, 所以每次发新版本用新 tag。
 ### Windows 数据源路径
 
 - cc-switch: `%USERPROFILE%\.cc-switch\cc-switch.db` (Go `os.UserHomeDir()` 自动适配)
-- Antigravity: macOS 专属路径, Windows 上自动跳过 (文件不存在)
+- Antigravity: `%USERPROFILE%\.antigravity_tools\token_stats.db` (antigravity-tools 代理库, 双平台有效; 未安装时文件不存在自动跳过)
 - Hermes: `%USERPROFILE%\.hermes\state.db`
 
 ### 已废弃的文件

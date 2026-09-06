@@ -4,13 +4,13 @@
 
 支持 **macOS** 和 **Windows** 双平台。
 
-当前发布版本：**v1.5.19**。
+当前发布版本：**v1.5.20**。
 
 ## 功能
 
 ### 数据采集
 
-只读扫描四类数据源，不修改任何原始数据：
+只读扫描七类数据源，不修改任何原始数据：
 
 - Token Monitor 展示本机日志中已记录的请求，不等同于供应商账号“全部 API Key、全部设备”的账户总量；模型条目悬停可查看本机请求次数
 
@@ -22,6 +22,7 @@
 | ZCode | `~/.zcode/cli/db/db.sqlite` | SQLite，逐模型请求记录 `model_usage` 表，含 input/output/reasoning/cache 拆分；时间戳为毫秒级，scanner 转秒后参与跨源去重 |
 | MiniMax Code | `~/.minimax/v2/sqlite/runtime-state.sqlite` (主) + `~/.pi/agent/sessions/**/*.jsonl` (兼容) | **v2**：SQLite `local_runtime_token_usage` 表逐请求记录 `input_tokens / output_tokens / reasoning_tokens / cache_read_tokens / cache_write_tokens / ts(ms)`；仅取 `session_id` 以 `mvs_` 开头的行（mavis runtime 桌面端）；毫秒时间戳转秒后参与跨源去重。**v1 兜底**：旧版 Pi Agent 框架写入的 JSONL，事件无 turn_id 时按 `session_id + timestamp` 兜底去重。SQLite 与 JSONL 同 turn 重复时 SQLite 优先。**v1.5.13** Windows Go 端同步此行为（之前只有 macOS Python 端实现）。 |
 | WorkBuddy (腾讯 CodeBuddy) | `~/.workbuddy/projects/**/*.jsonl` | 逐请求读取 `providerData.usage`；旧版没有项目日志时才回退 SQLite 会话占用近似值 |
+| Antigravity (Google agentic IDE) | `~/.antigravity_tools/token_stats.db` | **v1.5.20 新增**。Antigravity IDE 本体不在本地落 token 用量（配额在服务端），数据源是 antigravity-tools 本地代理（`com.lbjlaq.antigravity-tools`）的 SQLite `token_usage` 表（`timestamp` 为 unix 秒，零换算参与跨源去重）；`cached_tokens` 按 Gemini 风格视为输入子集并 clamp；warmup/0-token 保活记录已过滤，产生真实用量后才显示。库为 WAL 格式，代理未运行时 `-shm` 缺失，Python 端只读打开失败会回退 `immutable=1`。注意：cc-switch 里 `app_type=antigravity` 的流量归「冰茶 AI」（另一个代理入口），与本源并存不冲突；两者链式串联的极端场景由跨源去重兜底。Windows 路径 `%USERPROFILE%\.antigravity_tools\token_stats.db`，Go 端同步实现。 |
 
 所有数据源合并后做**跨源去重**：相差不超过 2 秒且 Token 总量相同的记录视为同一请求，只计一次。cc-switch 记录优先于 Codex 官方日志，以保留第三方 Provider 的真实模型名；Codex rollout 还会按累计 usage 过滤重复事件。没有安装或没有同步 cc-switch 的用户仍可直接统计官方 Codex App。
 
@@ -413,12 +414,12 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 下载
 
-最新版本：[v1.5.19](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.19)
+最新版本：[v1.5.20](https://gitcode.com/baggiopeng/TokenMonitor/releases/v1.5.20)
 
-- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.19/Token%20Monitor.dmg)
-- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.19/TokenMonitor-Setup.exe)
+- macOS: [Token Monitor.dmg](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/Token%20Monitor.dmg)
+- Windows 安装与自动更新: [TokenMonitor-Setup.exe](https://gitcode.com/baggiopeng/TokenMonitor/releases/download/v1.5.20/TokenMonitor-Setup.exe)
 
-> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
+> ⚠️ macOS 用户注意：v1.5.13 及更早版本的应用内自动更新已失效（GitCode 源码归档损坏，见 v1.5.15 更新说明）；v1.5.16/1.5.17 在 macOS 27 上点击"立即更新"会崩溃（见 v1.5.18 更新说明）；v1.5.18/1.5.19 点击"立即更新"会报"下载失败, HTTP 404"（更新器给下载地址追加 `?_tm=` 查询参数被 GitCode 拒绝，修复版发布后需手动装一次，见"最近更新→未发布"）。这些版本都需要手动下载上面的 DMG 安装一次，之后应用内更新恢复正常。安装后如被 Gatekeeper 拦截，右键"打开"一次即可。若 `~/Applications` 下还有旧副本，请删除，只保留一份。
 
 ## 发布与验证规则
 
@@ -437,8 +438,10 @@ GitCode 不支持通过 API 删除 release 附件，因此每次发版使用新 
 
 ## 最近更新
 
-### 未发布（已进 main，随下次发版带出）
-- 修复 macOS 应用内自动更新全量失败：v1.3.25 起更新器给下载地址追加 `?_tm=` cache buster，而 GitCode 下载端点现对带任意查询串的 URL 一律返回 404（curl 实证：无参数 206 正常，带参数 404），v1.5.19 发布当日 macOS 更新全部"下载失败, HTTP 404"。现在下载地址保持 feed 原样，防缓存由 `urlCache=nil` + `reloadIgnoringLocalCacheData` + `Cache-Control/Pragma: no-cache` header 保证。注意：v1.5.18 / v1.5.19 客户端仍带此 bug（无法自愈），发布修复版后这两版用户需手动下载 DMG 安装一次。
+### v1.5.20
+- 修复 macOS 应用内自动更新全量失败：v1.3.25 起更新器给下载地址追加 `?_tm=` cache buster，而 GitCode 下载端点现对带任意查询串的 URL 一律返回 404（curl 实证：无参数 206 正常，带参数 404），v1.5.19 发布当日 macOS 更新全部"下载失败, HTTP 404"。现在下载地址保持 feed 原样，防缓存由 `urlCache=nil` + `reloadIgnoringLocalCacheData` + `Cache-Control/Pragma: no-cache` header 保证。注意：v1.5.18 / v1.5.19 客户端仍带此 bug（无法自愈），这两版用户需手动下载 DMG 安装一次。
+- 更新下载失败兜底（macOS）：下载阶段失败（404/403/410 地址失效、网络错误、重试耗尽、release 无安装包）时自动用系统浏览器打开无查询串的原始下载地址，About 弹窗失败态同时显示「手动下载新版本」链接（直链来自 Swift 推送或 `/api/check-update`），并修正引用不存在按钮的 stale 文案与"502/504 稍后再试"的误导性提示（404 是确定性失败，重试无意义）。404/403/410 不再消耗重试次数直接终局。Windows 更新链路无查询参数问题，不受影响；前端桥接（`openExternalURL`）双端已对齐，链接白名单仅 https + gitcode.com。
+- 新增 Antigravity（Google agentic IDE）数据源：读取 antigravity-tools 本地代理的 `~/.antigravity_tools/token_stats.db` `token_usage` 表（unix 秒时间戳、warmup/0-token 过滤、cached⊆input 口径、WAL 无 `-shm` 时只读回退 `immutable=1`），工具显示名 "Antigravity"（紫色），首页/历史/会话列表/热力图/热力图详情五处聚合点全部接入，Mac (Python) 与 Win (Go) 双端对齐；About「已支持平台」表、社区页工具色盘、数据源文档同步更新。cc-switch 的 `app_type=antigravity` 流量维持归「冰茶 AI」不变，两源并存。
 
 ### v1.5.19
 - 工具/模型双圆环的 Other 合并规则统一为「占比 < 0.1% 归入 Other」：模型维度阈值从 1% 收紧到 0.1%，0.1%–1% 之间的模型不再被隐藏；工具维度从"保留所有非零"改为同样按 0.1% 合并，只折叠长尾噪声（如当日仅 14 token 的 hy3），Claude 等低用量真实应用不受影响。被合并工具的模型明细、命中率与上下文指标一并归入 Other 的展开子项，About 说明文案同步更新。新增 `tests/test_usage_merge_threshold.py`（源代码契约 + node 行为验证）。

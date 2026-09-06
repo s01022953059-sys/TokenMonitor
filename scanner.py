@@ -11,13 +11,14 @@ import threading
 from collections import OrderedDict
 
 # 数据源路径
-# 注: 历史上还设过 ANTIGRAVITY_BRAIN_DIR = ~/.gemini/antigravity/brain,
-# 实际冰茶 (Antigravity) 的官方统计走的是下面的 BingchaAI 路径, 那个常量早已
-# 没有任何引用, 这里不再保留以免误导。
+# 注: 历史上 "Antigravity" 曾指冰茶 AI 客户端 (BingchaAI usage_stats.json),
+# v1.3.90 因与 cc-switch 双计被降级为空实现, 旧常量 ANTIGRAVITY_STATS_PATH 已删除。
+# v1.5.20 起接入真正的 Antigravity (Google agentic IDE) 生态数据源:
+# antigravity-tools 本地代理 (com.lbjlaq.antigravity-tools) 的 token_stats.db。
+# cc-switch 里 app_type=antigravity 的流量仍归 "冰茶 AI" (_normalize_app_type),
+# 与本数据源是两个独立代理, 互不冲突。
 CC_SWITCH_DB_PATH = os.path.expanduser("~/.cc-switch/cc-switch.db")
-ANTIGRAVITY_STATS_PATH = os.path.expanduser(
-    "~/Library/Application Support/BingchaAI/usage_stats.json"
-)
+ANTIGRAVITY_DB_PATH = os.path.expanduser("~/.antigravity_tools/token_stats.db")
 HERMES_DB_PATH = os.path.expanduser("~/.hermes/state.db")
 ZCODE_DB_PATH = os.path.expanduser("~/.zcode/cli/db/db.sqlite")
 WORKBUDDY_DB_PATH = os.path.expanduser("~/.workbuddy/workbuddy.db")
@@ -60,6 +61,34 @@ def _open_sqlite_readonly(path, attempts=3):
             if attempt + 1 < attempts:
                 time.sleep(0.05 * (attempt + 1))
     raise last_error
+
+
+def _open_antigravity_sqlite():
+    """只读打开 antigravity-tools 的 token_stats.db, 失败返回 None。
+
+    该库是 WAL 格式: 代理进程运行时有 -shm/-wal 伴生文件, mode=ro 正常;
+    代理未运行时 -shm 缺失, mode=ro 会报 'unable to open database file'
+    (本机实测)。此时回退 mode=ro&immutable=1 —— 回退只在 ro 失败 (即没有
+    活动写者持有 -shm) 时触发, 读到瞬时快照可接受, 竞争窗口极小。
+    绝不读写打开: 会在用户目录留下 -shm/-wal 副产物。
+    """
+    for suffix in ("?mode=ro", "?mode=ro&immutable=1"):
+        conn = None
+        try:
+            conn = sqlite3.connect(f"file:{ANTIGRAVITY_DB_PATH}{suffix}", uri=True, timeout=2)
+            conn.execute("PRAGMA busy_timeout=2000")
+            # WAL 缺 -shm 的报错发生在首次读事务, connect 本身不报;
+            # 这里强制触发一次读, 让回退逻辑能在 open 阶段生效。
+            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            return conn
+        except sqlite3.OperationalError:
+            if conn is not None:
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
+            continue
+    return None
 
 
 def _has_sqlite_index(conn, index_name):
@@ -471,7 +500,9 @@ def _normalize_app_type(app_type):
     """统一 app_type -> 显示名, 三条 cc-switch 路径共用, 避免首页和列表显示不一致。
 
     已知映射: claude-desktop / claude -> Claude (统一为客户端名, 不区分 desktop/cli),
-    codex -> Codex, hermes -> Hermes, antigravity -> Antigravity,
+    codex -> Codex, hermes -> Hermes, antigravity -> 冰茶 AI (cc-switch 里的
+    antigravity app_type 指冰茶 AI 客户端; 与 scan_antigravity_tokens 的
+    antigravity-tools 代理库数据源是两回事, 后者直接产出 "Antigravity" 工具名),
     opencode -> OpenCode, zcode -> ZCode, minimax -> MiniMax Code,
     其他/空 -> Other
     """
@@ -544,47 +575,93 @@ def _resolve_cc_model(provider_id, raw_model, provider_model_map):
         return provider_model_map[provider_id]
     return raw_model
 
-def _get_ccswitch_today_models():
-    """从 cc-switch.db 拿今天出现过的 model 集合, 用于 Antigravity 去重判断。
-    返回 set() 表示 cc-switch 不可用 / 没数据。
+def scan_antigravity_tokens(start_timestamp, end_timestamp=None):
+    """只读扫描 Antigravity 代理 (~/.antigravity_tools/token_stats.db) 的逐请求 token 用量。
+
+    Antigravity (Google 的 agentic IDE) 本体不在本地落 token 用量 (配额在
+    Google 服务端), 数据源是 antigravity-tools 本地代理
+    (com.lbjlaq.antigravity-tools) 写的 token_usage 表:
+
+        token_usage(id, timestamp unix秒, account_email, model,
+                    input_tokens, output_tokens, total_tokens, cached_tokens)
+
+    口径:
+    - timestamp 本身就是 unix 秒 (实测), 与 cc-switch/Hermes 对齐, 零换算,
+      跨源去重 (≤2s 窗口) 直接生效。
+    - cached_tokens 视为 input_tokens 的子集 (Gemini promptTokenCount 含
+      cachedContentTokenCount 的风格): input_cached = min(cached, input),
+      input_uncached = input - input_cached。本机暂全为 warmup 0-token 记录,
+      该口径待首批真实数据核对 (若 total_tokens ≠ input+output 再调整)。
+    - 代理的 warmup 保活请求全 0 token, 跳过, 不污染会话列表与占比。
+    - antigravity-tools 与 cc-switch 是两个独立代理 (独立落盘/独立上游),
+      正常拓扑同一请求不会双写; 用户把两者链式串联的极端场景由
+      _dedup_events (±2s + 同 total_tokens) 兜底, 调用方把 cc-switch 排在
+      前面保证模型名以 cc-switch 为准。
+
+    历史注: v1.3.90-v1.5.19 期间本函数是空实现 (return []) —— 当时
+    "Antigravity" 指冰茶 AI 客户端 (BingchaAI usage_stats.json), 与
+    cc-switch.db 是同一批请求, 双计所以降级。v1.5.20 起重新接入的是
+    antigravity-tools 代理库这个独立数据源; cc-switch 里 app_type=antigravity
+    的流量仍归 "冰茶 AI" (_normalize_app_type), 两者并存不冲突。
     """
-    if not os.path.exists(CC_SWITCH_DB_PATH):
-        return set()
+    logs_data = []
+    if not os.path.exists(ANTIGRAVITY_DB_PATH):
+        return logs_data
+
     try:
-        today_start = get_today_midnight_timestamp()
-        conn = _open_sqlite_readonly(CC_SWITCH_DB_PATH)
+        conn = _open_antigravity_sqlite()
+        if conn is None:
+            print("[-] Antigravity 代理库无法只读打开 (WAL/-shm 状态异常), 跳过")
+            return logs_data
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT DISTINCT model FROM proxy_request_logs
-            WHERE created_at >= ? AND status_code = 200
-        """, (today_start,))
-        models = {row[0].lower() for row in cursor.fetchall() if row[0]}
+        query = """
+            SELECT id, timestamp, model, input_tokens, output_tokens,
+                   total_tokens, cached_tokens
+            FROM token_usage
+            WHERE timestamp >= ?
+        """
+        params = [int(start_timestamp)]
+        if end_timestamp is not None:
+            query += " AND timestamp < ?"
+            params.append(int(end_timestamp))
+        query += " ORDER BY timestamp ASC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
         conn.close()
-        return models
-    except Exception:
-        return set()
 
+        for row_id, occurred_at, model, input_t, output_t, total_t, cached_t in rows:
+            occurred_at = int(occurred_at or 0)
+            if occurred_at <= 0:
+                continue
+            input_t = int(input_t or 0)
+            output_t = int(output_t or 0)
+            total_t = int(total_t or 0)
+            cached_t = int(cached_t or 0)
+            # warmup / 0-token 保活记录跳过
+            if total_t <= 0 and input_t + output_t <= 0:
+                continue
+            i_cached = min(cached_t, input_t)
+            i_uncached = input_t - i_cached
+            total_calc = input_t + output_t
+            local_time = datetime.datetime.fromtimestamp(occurred_at).strftime("%H:%M:%S")
+            logs_data.append({
+                "time": local_time,
+                "timestamp": occurred_at,
+                "tool": "Antigravity",
+                "model": normalize_model_name(model) if model else "Unknown",
+                "input_tokens": input_t,
+                "output_tokens": output_t,
+                "total_tokens": total_calc,
+                "input_cached": i_cached,
+                "input_uncached": i_uncached,
+                "latency_ms": 0,
+                # 代理库无会话概念, 行 id 仅供追溯; 前端详情下钻会拿到空态
+                "session_id": str(row_id or ""),
+            })
+    except Exception as e:
+        print(f"[-] 扫描 Antigravity 代理库出错: {e}")
 
-def scan_antigravity_tokens(today_start):
-    """v1.3.90 起冰茶 AI 降级为数据源, scanner 不再产出 events。
-
-    冰茶 AI 客户端 (BingchaAI) 实际产品定位是 IDE / 代理配置入口, 调 LLM 都
-    经过 cc-switch Codex 代理. usage_stats.json 是 BingchaAI 客户端的本地
-    累计统计, 跟 cc-switch.db 代理记录**同一批请求** (request 数 精确一致,
-    total_tokens 接近), 算两遍就是双计.
-
-    之前 v1.3.89 试过按 model 检查 cc-switch.db 跳过重复, 但发现:
-    - BingchaAI stats 的 totalTokens 是 cc-switch 的 ~1.9x (部分请求没经代理)
-    - 跨源去重本身精度有限
-    - 冰茶 AI 既然只是代理入口, 不该作为独立"工具"维度出现
-
-    修法: 直接 return []. 全部流量归到真实调用工具 (Codex / Claude / Other).
-    usage_stats.json 文件**不再被 scanner 读取** (保留文件本身).
-
-    退化: 用户完全没装 cc-switch → 冰茶 AI 数据完全丢失 (无法统计).
-    这种情况极罕见, 用户可改在 BingchaAI 客户端 → 设置 → 配 cc-switch provider.
-    """
-    return []
+    return logs_data
 
 def scan_hermes_tokens(today_start):
     """只读扫描 Hermes 数据库中今天的会话记录，提取包含缓存细节的高精度 Token 消耗"""
@@ -1127,8 +1204,8 @@ def _dedup_events(events):
 def get_today_usage():
     """汇总今日所有的大模型 Token 消耗情况以及 DeepSeek 官方余额。
 
-    三源 (cc-switch / 冰茶 Antigravity / Hermes) 加和后做跨源去重,
-    避免同一笔请求被多个数据源重复计入。
+    多源 (cc-switch / Codex / Antigravity 代理 / Hermes / ZCode / MiniMax / WorkBuddy)
+    加和后做跨源去重, 避免同一笔请求被多个数据源重复计入。
     """
     today_start = get_today_midnight_timestamp()
 
@@ -1427,28 +1504,9 @@ def _get_historical_usage_legacy(days=30):
         model_data[m_norm][d_str] += tokens
 
     # --- 填充 Antigravity 数据 ---
-    # v1.3.90 起冰茶 AI 降级为数据源, scanner 不再产出 events. 仍保留这段读取
-    # 逻辑作为历史/调试用, 写 tool_data 改用 dict.setdefault 防止 KeyError
-    if os.path.exists(ANTIGRAVITY_STATS_PATH):
-        try:
-            with open(ANTIGRAVITY_STATS_PATH, 'r', encoding='utf-8') as f:
-                stats = json.load(f)
-            records = stats.get("records", {})
-            for d_str in daily_totals:
-                record = records.get(d_str)
-                if record:
-                    input_t = record.get("inputTokens", 0)
-                    output_t = record.get("outputTokens", 0)
-                    tokens = input_t + output_t
-                    daily_totals[d_str] += tokens
-                    # 注意: 写 tool_data 时用 setdefault, 避免 KeyError
-                    # (冰茶 AI 不在 tools list 里, 这条访问会抛错)
-                    tool_data.setdefault("Antigravity", {}).setdefault(d_str, 0)
-                    tool_data["Antigravity"][d_str] += tokens
-                    model_data.setdefault("gemini 3.5 flash", {}).setdefault(d_str, 0)
-                    model_data["gemini 3.5 flash"][d_str] += tokens
-        except Exception as e:
-            print(f"[-] 历史扫描 冰茶 AI 出错: {e}")
+    # v1.5.20: 旧的 BingchaAI usage_stats.json 读取块已删除 (常量已不存在,
+    # 且本 legacy 函数无任何调用方)。新 Antigravity 数据源走
+    # scan_antigravity_tokens (antigravity-tools 代理库), 由 get_historical_usage 消费。
 
     # 转换为按天排序的 values 序列
     res_tool = {}
@@ -1490,7 +1548,7 @@ def get_historical_usage(days=30):
         + scan_workbuddy_tokens(start_timestamp)
     )
 
-    default_tools = ["Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Other"]
+    default_tools = ["Hermes", "Codex", "ZCode", "MiniMax Code", "Claude", "OpenCode", "WorkBuddy", "Antigravity", "Other"]
     tools = default_tools + sorted({event["tool"] for event in events} - set(default_tools))
     model_names = sorted({event["model"] for event in events if event["model"] != "Other"})
     models = model_names + ["Other"]
@@ -1636,7 +1694,8 @@ def get_session_list(days=1, page=1, page_size=50):
     # --- WorkBuddy ---
     events.extend(scan_workbuddy_tokens(start_timestamp))
 
-    # --- Antigravity (按天粒度, 无逐条事件, 跳过) ---
+    # --- Antigravity (antigravity-tools 代理库, 逐请求粒度) ---
+    events.extend(scan_antigravity_tokens(start_timestamp))
 
     # 去重 (同 _dedup_events 逻辑)
     events = _dedup_events(events)
@@ -1681,6 +1740,7 @@ def get_heatmap_data(days=30):
     events = _dedup_events(
         scan_cc_switch_logs(start_timestamp)
         + scan_codex_tokens(start_timestamp)
+        + scan_antigravity_tokens(start_timestamp)
         + scan_hermes_tokens(start_timestamp)
         + scan_zcode_tokens(start_timestamp)
         + scan_minimax_tokens(start_timestamp)
@@ -2352,6 +2412,18 @@ def get_heatmap_detail(weekday=None, hour=None, days=30, page=1, page_size=50, d
 
     # --- ZCode ---
     for event in scan_zcode_tokens(scan_start_timestamp, scan_end_timestamp):
+        dt = datetime.datetime.fromtimestamp(event["timestamp"])
+        if date_start_ts is not None:
+            if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
+                continue
+        elif weekday is not None and (dt.weekday() != weekday or dt.hour != hour):
+            continue
+        event = dict(event)
+        event["time"] = dt.strftime("%m-%d %H:%M:%S")
+        events.append(event)
+
+    # --- Antigravity (antigravity-tools 代理库) ---
+    for event in scan_antigravity_tokens(scan_start_timestamp, scan_end_timestamp):
         dt = datetime.datetime.fromtimestamp(event["timestamp"])
         if date_start_ts is not None:
             if event["timestamp"] < date_start_ts or event["timestamp"] >= date_end_ts:
