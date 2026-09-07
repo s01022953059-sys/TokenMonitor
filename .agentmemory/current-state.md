@@ -4,9 +4,9 @@
 
 ## 正在进行
 
-- 发布基线 **v1.5.22**（HEAD `2418878b`），origin/GitCode 已同步（tag `v1.5.21`、`v1.5.22` 已在远端）；`github` 远端原落后 120 commit，2026-09-07 已推送同步
-- MAR（Multi-Agent-Rule）已于 2026-09-07 在本项目启用：固定副本 `mar/` @ `4606982`，采纳记录见 `AGENTS.md`，交接索引见 `HANDOFF.md`
-- 无在途编码任务；工作区本次整理后干净（memory/MAR 文件已提交，两个 9/6 冒烟测试临时重建的二进制已恢复 HEAD 版本，备份在 `/tmp/tm-backup-*-20260907`）
+- 发布基线 **v1.5.22**（tag commit `15178a17`），origin/GitCode 与 `github` 双远端已同步（github 原落后 120 commit，2026-09-07 补齐；其后新增文档 commit 亦已推送）
+- MAR（Multi-Agent-Rule）已于 2026-09-07 启用并完成四文档重构：`mar/` @ `4606982` 固定副本；`AGENTS.md`（指引）/ `PRD.md`（REQ-01~08）/ `TESTCASES.md`（TC/BUG）/ `HANDOFF.md`（交接+活动任务唯一台账），本目录 `.agentmemory/` 保留决策/版本史/事件/归档职责
+- 无在途编码任务；工作区干净（9/6 冒烟临时重建的二进制已恢复 HEAD 版本，备份 `/tmp/tm-backup-*-20260907`）
 
 ## v1.4.53 → v1.5.22 版本史摘要（57 次发版，按主题分组）
 
@@ -21,9 +21,7 @@
 
 ## 下一步
 
-1. P2 候选（发版需鹏帅明确说"发新版本"，攒批）：更新进度文案双端对齐（macOS"下载更新包"vs Windows"下载中"）；CDN 占位 retry 已降级为已知限制
-2. 暂缓项复捡条件见 `tasks.md`（TRAE / 豆包工作 / AgentMemory 阶段 3）
-3. 下次发版时按 GOV-05/09 在 `HANDOFF.md` 追加验证与发布记录
+活动任务与下一步**唯一台账见 `HANDOFF.md`**（GOV-04 不复制可变状态）；本文件只维护版本史与项目状态事实。
 
 ## 已知边界
 

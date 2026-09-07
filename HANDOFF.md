@@ -1,38 +1,39 @@
 # token_monitor 交接索引
 
-> 按 MAR 模板实例化（2026-09-07）。本文件是索引：代码状态以 Git 为准、测试以执行记录为准、项目历史状态见 `.agentmemory/current-state.md` 与 `docs/PROJECT_STATUS.md`，不在此复制。
+> MAR GOV-04 事实来源分工：**本文件 = 交接 + 活动任务唯一台账**；业务规格 → `PRD.md`；用例与缺陷 → `TESTCASES.md`；项目指引 → `AGENTS.md`；决策 → `.agentmemory/decisions.md`；版本史与项目状态 → `.agentmemory/current-state.md`；已完成任务归档 → `.agentmemory/tasks.md`。代码以 Git、测试以 `tests/reports/`、部署以 GitCode Release 为准，本文件不复制可变状态。
 
-## 当前快照
+## 当前快照（2026-09-07 核实）
 
-- 规则来源/commit/范围：`mar/`（Multi-Agent-Rule @ `4606982ea161962355411808e4c6d4277c1177e4`），适用于 token_monitor 全部开发/测试/发布任务，见 `AGENTS.md` MAR 采纳节
-- 实际分支/完整 commit/工作区差异：`main` @ `7a874d06`（v1.5.22 + MAR 采纳 + memory 同步两个文档 commit），**工作区干净**；origin/GitCode 与 github 双远端 2026-09-07 已同步（github 原落后 120 commit 已补齐）
-- 运行环境与实际部署：macOS（Swift 壳 + Python 后端）/ Windows（Go 单体），发布走 `release_all.sh` → GitCode Releases；最新已发布版本 v1.5.22
-- 集成负责人/当前写入者：鹏帅（唯一授权发布人）；单一写入者模式，无并发 Agent
+- 规则：MAR @ `4606982`（固定副本 `mar/`，采纳记录 `AGENTS.md`）
+- 代码：`main` @ `b78cf9c7`，工作区干净；origin/GitCode 与 github 双远端同步（github 原落后 120 commit，2026-09-07 补齐）
+- 发布：**v1.5.22** 已发布（2026-09-06，tag 已推 origin）；其后 3 个 commit 均为文档/memory，零业务代码变更
+- 写入者：单一写入者模式（鹏帅 + 其授权的会话 Agent），无并发
+- 验证有效性：业务代码测试以 v1.5.22 报告为准（7 项全过，`tests/reports/v1.5.22-pre-release-*.json`）；GOV-05 复用依据 = 此后无业务代码改动
 
-## 活动任务
+## 活动任务（唯一台账）
 
-| task_id | owner | 目标与验收条件 | 基线/修改范围 | 依赖 | 状态 | 证据索引 |
-| --- | --- | --- | --- | --- | --- | --- |
-| TASK-MAR-01 | Claude (本会话) | 在 token_monitor 启用 MAR：固定副本 + AGENTS.md 采纳记录 + HANDOFF 实例化 | 2418878b / `mar/`、`AGENTS.md`、`HANDOFF.md`、`.agentmemory/events.jsonl` | 无 | passed（文件级） | 7 文件 SHA-256 对齐 4606982（本会话终端输出） |
-| TASK-MAR-02 | Claude (本会话) | 遗留任务全面盘点：重建 `.agentmemory/tasks.md` 台账（P0 token / github 落后 / 工作区处置 / 记忆滞后 / v1.4.42 候选复核 / 暂缓项复捡条件） | 2418878b / `.agentmemory/tasks.md`、`HANDOFF.md` | 无 | passed（整理完成） | tasks.md 2026-09-07 版；grep/rev-list 实测见本会话 |
-| TASK-P1-01 | Claude (本会话) | 处理 P1：github push（120+2 commit）/ 二进制恢复 HEAD（备份 /tmp）/ zcode plan 补提交 / memory 同步至 v1.5.22（current-state + brief 重写） | 2418878b→7a874d06 / `.agentmemory/*`、远端 main | 鹏帅指令"请处理 P1 的内容" | passed | commit `dd1636e8`+`7a874d06`；push 复核双远端 0/0；evt-20260907-0002 |
+| task_id | 优先级 | owner | 目标与验收条件 | 状态 | 备注/复捡条件 |
+| --- | --- | --- | --- | --- | --- |
+| TM-2026-07-18-02a | P2 | 待指派 | 更新进度文案双端对齐：macOS `app_wrapper.swift`"下载更新包 (…)" vs Windows `update_windows.go`"下载中 x%"（2026-09-07 grep 复核仍未做）。验收 = REQ-03 双端一致 | not_run | 攒批，发版需鹏帅明确说"发新版本" |
+| TM-2026-07-18-02b | P3 | — | CDN 占位 retry 优化 | blocked（外部） | 即 `TESTCASES.md#BUG-01`，根因在 GitCode CDN 侧，已降级已知限制 |
+| TM-2026-07-18-04 | P3 | 待指派 | AgentMemory 阶段 3：`.codex/project_memory.md`"事实"蒸馏进 `decisions.md` | not_run | 需鹏帅发起，不自动执行 |
+| TM-2026-07-30-01 | 暂缓 | — | TRAE IDE 接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `decisions.md#D-2026-07-30-01` |
+| TM-2026-08-27-01 | 暂缓 | — | 豆包工作接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `decisions.md#D-2026-08-27-01` |
+| TM-LEGACY-01 | 长期 | 鹏帅 | SMAppService daemon 注册 | blocked（外部） | 需 Apple Developer Account |
 
-历史任务与决策：`.agentmemory/tasks.md`（2026-09-07 已重建为唯一任务台账）、`.agentmemory/decisions.md`。
+已关闭：TM-2026-09-07-01（明文 token，鹏帅决定忽略，`decisions.md#D-2026-09-07-01`，不再复提）。
+本日完成：TASK-MAR-01（MAR 启用）、TASK-MAR-02（任务盘点）、TASK-P1-01（github push / 工作区处置 / memory 同步至 v1.5.22），证据 `events.jsonl#evt-20260907-0001/0002`，详情归档 `.agentmemory/tasks.md`。
 
 ## 验证与授权
 
-- 候选源码 commit 或快照 SHA-256：`7a874d06`（工作区干净，HEAD 即测试对象基线；业务代码与 v1.5.22 发布版一致，本次仅文档/memory 变更）
-- 产物 SHA-256：v1.5.22 发布产物见 GitCode Release 与 `release_all.sh` 校验输出（本次未产新产物）
-- 测试命令/环境/时间/退出码/报告：本次 MAR 启用 + P1 处理**未运行**项目测试（纯文档/memory/仓库卫生，零业务代码变更）；项目冒烟测试要求见 memory `smoke-tests.md`，发版前必跑
-- 技术状态：not_run（业务代码未变更，无需重评）
-- 用户验收：confirmed（部分）— 鹏帅 2026-09-07 会话指令："请在现在这个项目启用"、"请先帮我整理一下遗留任务"、"明文 token 请忽略"（D-2026-09-07-01）、"请处理 P1 的内容"；范围 = MAR 启用 + 任务盘点 + P1 三项
-- 发布状态：not_run（无版本变更/tag/Release；发版仍需鹏帅明确说"发新版本"）
-- 外部动作授权：git push github+origin main 已执行完毕（鹏帅 P1 指令覆盖 TM-2026-07-18-03，2026-09-07，双远端复核 0/0）；无其他在途外部授权
+- 技术状态：v1.5.22 报告 passed（复用依据见快照）；当前文档 commit 无需测试（not_required，依据 GOV-05 低风险文档条款）
+- 用户验收：confirmed（2026-09-07 会话指令链：启用 MAR → 整理遗留任务 → token 忽略 → 处理 P1 → 按 MAR 刷新文档结构）
+- 发布状态：not_run；发布授权策略 = REQ-04（仅鹏帅明确说"发新版本"）
+- 外部动作：本日已执行 git push origin+github（P1 指令覆盖，已复核 0/0）；无在途外部授权
+- 二进制处置记录：9/6 冒烟临时构建的 `community_relay`/`go_build` 二进制已恢复 HEAD（惯例：v1.5.03 起不入库），备份 `/tmp/tm-backup-*-20260907`
 
 ## 中断与恢复
 
-- 已完成/失败/尚未执行：已完成 MAR 启用（TASK-MAR-01）、任务盘点（TASK-MAR-02）、P1 三项（TASK-P1-01：github push / 工作区处置 / memory 同步至 v1.5.22）；无失败项；P2 候选与暂缓项待鹏帅发起
-- 在途操作及结果未知项：无
-- 任务释放/接管人与时间：未发生
-- 下一步、阻塞、恢复验证：① P2 候选攒批（更新文案双端对齐；CDN retry 已降级已知限制），发版需鹏帅明确说"发新版本"；② 下次发版按 GOV-05/09 在本文件追加验证与发布记录；③ 明文 token 已按 D-2026-09-07-01 关闭，不再复提
-- 关联 PRD/TESTCASES/UI 证据及历史档案：PRD/TESTCASES 模板未实例化（按需再建）；UI 变更验证沿用现有 `tests/e2e_ui.sh` + 冒烟测试，UI 证据要求见 `mar/UNIVERSAL_UI_DESIGN_SYSTEM.md`
+- 在途操作：无；失败项：无
+- 下一步：① P2 文案对齐择机攒批；② 下次发版按 GOV-05/09 在本文件追记验证+发布记录并重跑冒烟（`tests/smoke.sh` 全过）
+- 接手顺序：本文件 → `AGENTS.md` → 按需查 PRD/TESTCASES/decisions/current-state
