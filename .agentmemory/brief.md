@@ -23,10 +23,11 @@
 - WorkBuddy：`~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage` 逐请求（v1.4.22 审计后落地）；旧版缺 projects 时回退 `workbuddy.db` 会话占用
 - cc-switch：`~/.cc-switch/cc-switch.db`（OpenAI input 已含 cache、Anthropic input 不含 cache read/create，按协议语义分别计算）
 - Antigravity：`~/Library/Application Support/BingchaAI/usage_stats.json`（macOS 专属）
+- MiniMax Code：`~/.minimax/v2/sqlite/runtime-state.sqlite`（SQLite 主源）+ JSONL 兜底，`mvs_` 前缀 turn_id 去重；模型名剥 `custom_provider:`/`custom-local:` 前缀（v1.5.11~v1.5.13，macOS/Windows 双端同步）
 - Hermes：`~/.hermes/state.db`（输入 = input + cache_read + cache_write；用量日期采用 `ended_at`）
 - 缓存语义：区分"请求内缓存"与"跨请求缓存"，避免重复计费
 - 本地 SQLite 在 WAL/原子替换瞬间可能短暂打不开，统一只读连接 + busy timeout + 3 次短重试，禁止单次失败直接归 0
 
 ## 当前阶段
 
-HEAD `fd17b1c`（v1.4.41 test: 放宽跨平台 API 性能抖动阈值），GitCode `origin/main` 同步到 HEAD，tag `v1.4.33`~`v1.4.41` 已存在。v1.4.32→v1.4.41 共 9 次发版，主线围绕：每日详情加速与缓存复用、大会话详情双端缓存、macOS fork 崩溃 + 高 CPU + 退出残留、热力图分页最后一页、首页圆环扩字段、调用详情组合筛选。工作区除本目录内存同步修改外已 commit 干净，10 个本地 commit 领先 `github/main`，**未** push。
+HEAD `2418878b`（**v1.5.22** 已发布，2026-09-06），origin/GitCode 与 `github` 双远端已同步（github 于 2026-09-07 推送补齐）。v1.4.53→v1.5.22 共 57 次发版，主线：排名趋势图表系列 → 图表刻度/轴 → 图例指标 + universal binary → **组队排名功能（v1.5.0~10）** → **MiniMax Code 数据源（v1.5.11~13）** → **macOS 自动更新 DMG 挂载大修（v1.5.14~18）** → Other 合并规则 + Antigravity 数据源 → 图例中轴对齐。详见 `current-state.md`（2026-09-07 全面同步）。MAR 协作规范已启用（`mar/` @ 4606982，见 `AGENTS.md`/`HANDOFF.md`）。

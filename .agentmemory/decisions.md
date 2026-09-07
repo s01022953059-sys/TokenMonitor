@@ -68,3 +68,17 @@
   - **对本项目的硬约束**：token_monitor **永远不要展示还没采集到的字段**。任何"未来要做"的维度（如延迟、TTFT、首 token 时间等）在后端数据源接通前不进 UI 列表/弹窗/KPI。
   - **反例价值**：WorkBuddy "延迟"列空值是公开的反面教材，下次有人提"要不要加个延迟列"时直接引用本决策。
   - 来源：鹏帅 2026-07-31 在 ZCode 会话中的截图与追问（WorkBuddy v5.3.3 调用详情弹窗）。
+
+## 已接受风险
+
+- **D-2026-09-07-01：`AGENTS.md` 明文 GitCode token 保持现状，不迁移、不轮换。** 来源：鹏帅 2026-09-07 在 Claude Code 会话中明确指示"请忽略"（MAR 启用后首次安全盘点提出）。范围：仅指该 token 的存放方式；不豁免其他凭据的未来安全审查。Agent 不再就此项重复提议，除非 token 泄露造成实际事故或鹏帅改变决定。
+
+## 豆包/豆包工作接入调研（2026-08-27）
+
+- **D-2026-08-27-01：暂缓接入豆包工作（DoubaoWork），本地无 token 数据，复捡条件见附。** 鹏帅提出参考 AgentsView 调研能否支持"豆包工作"统计，已完成调研，结论：**本地根本没有 token 计数字段，接入不可行（而非代价高）**。
+  - **AgentsView 横向事实**：`kenn-io/agentsview` 支持 40+ 工具（Aider/Claude Code/Codex/Cursor/Kimi Work/Trae/WorkBuddy/ZCode/Zed 等，全表见 README），**不支持豆包/豆包工作**；源码全库搜 `doubao`/`豆包`/`bytedance` 零命中，issues 无相关请求——没有现成解析实现可参考。
+  - **本机实测（macOS）**：装有 `/Applications/DoubaoWork.app`（2.2GB 数据）与 `/Applications/Doubao.app`（Application Support 下仅 public_config.json，数据近乎全在云端）。
+  - **数据源真相**：DoubaoWork 是 Chromium 壳，聊天存 `~/Library/Application Support/DoubaoWork/Default/IndexedDB/chrome_doubaowork-chat_0.indexeddb.leveldb`（LevelDB，Blink 编码 + V8 Structured Clone）。全库 strings 探测：只有 `first_token`（首字延迟计时）与 `system_prompt` 等 UI 字段，**不存在 input_tokens/output_tokens/usage 等任何用量数字**；Local Storage 里的 "token" 命中均为 access_token 类鉴权字段。字节埋点库 `Tea/tea.db` 被进程独占且格式私有滚动清理，无稳定口径。
+  - **决策理由**：① 豆包/豆包工作面向消费级/办公对话，产品本身不产生也不展示 token 计数（按对话次数/会员额度限流），本地无数字可提；② 若强行接入只能按消息字符数**估算** token，违反 D-2026-07-31-01"不展示未采集字段"的硬约束；③ 解析 Chromium IndexedDB LevelDB（goleveldb + Blink/V8 解码）工程重且随版本升级脆弱，与"轻量本地只读扫描"定位相悖。
+  - **复捡触发条件**：① 豆包工作推出本地会话/token 落盘（SQLite/JSONL）或官方用量导出；② 字节开放企业后台用量 API 且鹏帅认可走 API 模式；③ AgentsView 官方宣布支持（届时可直接参考其实现）。
+  - 发版授权：本调研**不**授权任何版本号变更、tag、Release 或 push。

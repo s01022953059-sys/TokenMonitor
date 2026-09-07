@@ -1,37 +1,35 @@
 # 当前状态
 
-更新时间：2026-07-25（增量记录；基础摘要仍需后续整体同步）
+更新时间：2026-09-07（MAR 启用 + P1 遗留任务处理时全面同步；上次快照停在 2026-07-25 / v1.4.52）
 
 ## 正在进行
 
-- 发布基线为 v1.4.41（HEAD `fd17b1c`），9 个 tag `v1.4.33`~`v1.4.41` 已在 GitCode `origin/main` 同步；本机 10 个本地 commit 领先 `github/main`，**未** push
-- 本次 memory 同步：把 `.agentmemory/` 从 v1.4.32 快照推进到 v1.4.41，补 fork/缓存/性能门禁/数据源/企业代理等关键决策
-- 工作区除本目录内存同步修改外已 commit 干净；仅剩 `.claude/` untracked（Claude Code 适配器目录，**不**自动提交）
-- 当前代码基线实际为 v1.4.52（HEAD `afe4ac9`）。TOP10 排名变化的未发布体验改造已完成：四段时间范围替代日期箭头和播放按钮，打开或切换范围后从最早帧自动播放到最新帧并停止；macOS/Windows 后端均支持 `days=30/90/180/365`。106 项 Python/前端/辅助器测试与 Go、社区中继回归全部通过，真实浏览器三帧验收确认排名会自动换位且零控制台错误；尚未 bump、commit、tag 或发布。
+- 发布基线 **v1.5.22**（HEAD `2418878b`），origin/GitCode 已同步（tag `v1.5.21`、`v1.5.22` 已在远端）；`github` 远端原落后 120 commit，2026-09-07 已推送同步
+- MAR（Multi-Agent-Rule）已于 2026-09-07 在本项目启用：固定副本 `mar/` @ `4606982`，采纳记录见 `AGENTS.md`，交接索引见 `HANDOFF.md`
+- 无在途编码任务；工作区本次整理后干净（memory/MAR 文件已提交，两个 9/6 冒烟测试临时重建的二进制已恢复 HEAD 版本，备份在 `/tmp/tm-backup-*-20260907`）
 
-## 已有产出
+## v1.4.53 → v1.5.22 版本史摘要（57 次发版，按主题分组）
 
-- macOS 应用壳：`app_wrapper.swift`
-- Python 后端：`scanner.py`（数据采集）、`server.py`（HTTP API，含 `server.py --heatmap-worker` 子进程模式）
-- Windows 端：`go_build/main.go` + `build_windows.sh` + 安装程序
-- 社区功能：`community.py` + `community/` 目录 + `community_dashboard.html` + `community_relay`
-- 测试：`tests/`（unit / api_contract / e2e；新增 `test_heatmap_detail_cache.py`、`test_heatmap_detail_filter.py`、`test_heatmap_detail_range.py`、`test_scanner_accuracy.py`、`test_codex_scanner.py`、`test_usage_cache.py` 等）
-- 发版脚本：`verify_release.sh` + `release_all.sh` + `build_dmg.sh` + `build_macos.sh`
-- 文档：`README.md`（必须与代码同步）、`AGENTS.md`（接手规则）、`docs/PROJECT_STATUS.md`（项目状态全量）
-- Codex 长期记忆：`.codex/project_memory.md`（28 KB 全量原文，未迁入 `.agentmemory/`）
+- **排名趋势图表系列**（v1.4.56~v1.4.72）：对数 Token 刻度、折线连续性与零值不断线、标签重叠/越界/边缘裁切修复、零用量排名补全 + 区间总榜、跟随系统主题
+- **图表刻度与轴**（v1.4.73~v1.4.81）：y 轴 10 的幂次等距刻度、线性+对数补丁拉大差距、x 轴中文日期标签、月初无归档修复、自定义刻度异常修复
+- **图例指标与 macOS 构建**（v1.4.82~v1.4.88）：图例二级菜单独立指标、聚合字段补齐修复 NaN、macOS universal binary（Intel + Apple Silicon）、更新后首页全 0 修复、社区成员统计丢失/波动修复
+- **组队排名功能**（v1.5.0~v1.5.10）：组队排名、一人多组、极简化组队 UI、页面内加入 + 组内排名 + 零网络调用、Top10 按组 Tab 筛选、加入组队卡住/无响应多轮修复
+- **MiniMax Code 数据源**（v1.5.11~v1.5.13）：SQLite v2 主源 + JSONL 兜底 + `mvs_` turn_id 去重、模型名剥 `custom_provider:`/`custom-local:` 前缀、Windows Go 端同步
+- **macOS 自动更新大修**（v1.5.14~v1.5.18）：GitCode `type=source` 归档必 302 到占位页 → 改 DMG 附件挂载安装（hdiutil+ditto）、旧 Foundation 空格 URL `%20` 兼容、跨平台加入组修复、双副本版本误读、macOS 27 立即更新必崩修复
+- **统计口径与新数据源**（v1.5.19~v1.5.20）：工具/模型 Other 合并规则统一 <0.1%、更新下载兜底 + Antigravity 数据源
+- **收尾**（v1.5.21~v1.5.22）：DMG 自动更新挂载死锁 + plist 新格式、图例数字/百分比中轴对齐
 
 ## 下一步
 
-1. 鹏帅先体验 TOP10 排名变化的新交互；确认后如需发版，再单独授权版本号、commit、tag 与 Release。
-2. 鹏帅明确说"发新版本"后才能发布新版本；普通修复**不**改版本号、**不**打 tag、**不**推 Release
-3. 评估后续候选：UI 文案简化（"下载更新包" → "下载中"）、CDN 占位 retry 不稳定
-4. 接入 AgentMemory 阶段 3：可考虑把 `.codex/project_memory.md` 中"事实"蒸馏进 `.agentmemory/decisions.md`（非任务相关，**不**自动执行）
-5. 同步尚未推送到 `github` 的本地提交（不涉及发版，仅同步）
+1. P2 候选（发版需鹏帅明确说"发新版本"，攒批）：更新进度文案双端对齐（macOS"下载更新包"vs Windows"下载中"）；CDN 占位 retry 已降级为已知限制
+2. 暂缓项复捡条件见 `tasks.md`（TRAE / 豆包工作 / AgentMemory 阶段 3）
+3. 下次发版时按 GOV-05/09 在 `HANDOFF.md` 追加验证与发布记录
 
 ## 已知边界
 
 - SMAppService daemon 注册（需 Apple Developer Account，**未做**）
-- `go_build/` 目录在 macOS 端不使用但**未**删
-- CDN 占位 retry 仍不稳定（同 IP 路由到 download-error 占位）
+- `go_build/` 目录 macOS 运行时不用但保留（Windows 构建源）
+- CDN 占位 retry 不稳定（同 IP 路由到 download-error 占位；v1.5.15/16 DMG 主路径已缓解主要事故面）
+- macOS v1.5.13 及更早客户端无法应用内自更新（选择器命中损坏源码归档），需手动下载 DMG 升级一次；Windows 不受影响
 - 修复统计口径前**禁止**用"看起来差不多"的字段名硬猜；不确定就查 AgentsView
-- v1.4.41 后无新功能发版，调用详情筛选与缓存口径在 v1.4.42 候选期需保持稳定
+- `AGENTS.md` 明文 GitCode token：鹏帅 2026-09-07 决定保持现状（`decisions.md#D-2026-09-07-01`），不再复提

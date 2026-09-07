@@ -1,18 +1,39 @@
 # 任务
 
+> 2026-09-07 全面整理（MAR 启用后首次盘点，基线 v1.5.22 @ 2418878b）。旧"进行中"TM-2026-07-18-01 已有完成证据（events.jsonl#evt-20260718-0001 memory.synchronized），移入已完成。
+
 ## 进行中
 
-- TM-2026-07-18-01：memory 同步 v1.4.32→v1.4.41（本次）：补 brief.md / current-state.md / decisions.md / tasks.md / events.jsonl，**不**改业务文件、**不**授权发版
+（空 — 无在途编码任务；最近发版 v1.5.22 已完成，tag 已推 origin）
 
 ## 待处理
 
-- TM-2026-07-18-02：评估 v1.4.42 候选修复（UI 文案简化、CDN 占位 retry 稳定性）—— 需要鹏帅明确说"发新版本"才能发布
-- TM-2026-07-18-03：把 10 个本地 commit push 到 `github` 远端（仅同步，不涉及发版授权）
-- TM-2026-07-18-04：接入 AgentMemory 阶段 3，把 `.codex/project_memory.md` 中"事实"蒸馏进 `.agentmemory/decisions.md`（非任务相关，**不**自动执行）
-- TM-2026-07-30-01：调研 TRAE IDE 接入可行性（已调研，结论见 `decisions.md#D-2026-07-30-01`）。当前**暂缓**；触发复捡条件之一：① 社区出现 macOS 上 Trae CN SQLCipher 密钥提取方案；② 鹏帅确认 Trae 能配置走 cc-switch 代理并需验证间接统计效果；③ 鹏帅决定先做 Windows-only Trae CN 扫描器（需接受两版不对齐）。**不**自动执行，需鹏帅发起。
+### P0 安全
+- ~~TM-2026-09-07-01：`AGENTS.md` 明文 GitCode token 迁移+轮换~~ — **已关闭**：鹏帅 2026-09-07 明确指示忽略（见 `decisions.md#D-2026-09-07-01`），作为项目已接受风险，不再复提。
+
+### P1 同步与仓库卫生 —— **已全部完成（2026-09-07，鹏帅指令"请处理 P1 的内容"）**
+- ✅ TM-2026-07-18-03：push `github` 远端（实测落后 120 commit + 本次新增 2 commit，已推送；origin 一并同步）。
+- ✅ TM-2026-09-07-02：工作区处置 — ① memory/MAR 文件已提交；② 两个二进制判定为 9/6 冒烟临时构建（源码零改动、最后入库 v1.5.02、近 20 版惯例不入库），备份 `/tmp/tm-backup-*-20260907` 后恢复 HEAD；③ `.zcode/plans/plan-sess_521e2754*` 按其他 plan 已跟踪惯例补提交（未删除）。
+- ✅ TM-2026-09-07-03：记忆同步完成 — `current-state.md` 重写至 v1.5.22（v1.4.53~v1.5.22 共 57 版按主题分组摘要），`brief.md` 补 MiniMax Code 数据源 + 当前阶段重写。
+
+### P2 产品候选（继承自 v1.4.42 候选期，2026-09-07 复核仍未做）
+- TM-2026-07-18-02a：更新进度 UI 文案简化与双端对齐 — macOS `app_wrapper.swift` 仍显示"下载更新包 (…)"，Windows `update_windows.go` 已是"下载中 x%"，两端文案不一致（实测 grep 确认）。发版需鹏帅明确说"发新版本"。
+- TM-2026-07-18-02b：CDN 占位 retry 不稳定（同 IP 路由到 download-error 占位，retry 1 次仍可能失败）。v1.5.15/16 DMG 附件主路径已缓解主要事故面，降级为已知限制，择机优化。
+
+### 记忆与知识
+- TM-2026-07-18-04：接入 AgentMemory 阶段 3，把 `.codex/project_memory.md` 中"事实"蒸馏进 `.agentmemory/decisions.md`（非任务相关，**不**自动执行）。
+
+### 暂缓（复捡条件触发式，需鹏帅发起）
+- TM-2026-07-30-01：TRAE IDE 接入暂缓（`decisions.md#D-2026-07-30-01`）。复捡条件：① 社区出现 macOS Trae CN SQLCipher 密钥提取方案；② 鹏帅确认 Trae 可走 cc-switch 代理需验证间接统计；③ 鹏帅决定做 Windows-only 扫描器（接受双端不对齐）。
+- TM-2026-08-27-01：豆包工作接入暂缓（`decisions.md#D-2026-08-27-01`）。复捡条件：① 豆包工作本地落盘 token 数据或官方导出；② 字节开放企业用量 API 且鹏帅认可；③ AgentsView 官方支持。
+
+### 长期已知边界
+- SMAppService daemon 注册（需 Apple Developer Account，未做）。
+- `go_build/` 在 macOS 端运行时不使用但保留（Windows 构建源，不删）。
 
 ## 已完成
 
+- TM-2026-07-18-01：memory 同步 v1.4.32→v1.4.41 —— 证据：events.jsonl#evt-20260718-0001 memory.synchronized（2026-09-07 盘点时补记）
 - TM-000：v1.4.32 commit（`1da6bfb`）—— 改善社区用量同步提示
 - TM-AM-001：token monitor 接入 AgentMemory（轻接入，建包 + push + AM-001 验收）
   - 提交：`5eb3fa3`（建包）+ `6018f74`（AGENTS.md append）
