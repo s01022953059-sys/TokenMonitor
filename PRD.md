@@ -4,7 +4,7 @@
 
 ## 目标与边界
 
-- **用户**：本机运行多个 AI 编码工具（Codex、Claude Code、WorkBuddy、cc-switch、Antigravity、Hermes、MiniMax Code 等）的开发者，需要跨工具 token 用量统计与可视化。
+- **用户**：本机运行多个 AI 编码工具（Codex、Claude Code、WorkBuddy、Antigravity、Hermes、MiniMax Code、ZCode、OpenCode、冰茶 AI 等，及经 cc-switch 代理的流量）的开发者，需要跨工具 token 用量统计与可视化。
 - **业务价值**：本地只读扫描各工具日志 → 统一口径统计 → Web 控制台展示（趋势/热力图/调用详情/排名）+ 可选社区匿名排行。
 - **非目标**：不做云端聚合服务；不读取需要进程内存取证/解密的数据源（TRAE、豆包工作，见暂缓决策）；不展示未采集字段。
 - **已知约束**：轻量本地只读定位；macOS/Windows 双端功能必须对齐；发布权仅鹏帅。
@@ -33,17 +33,19 @@
 - 新缺陷改变业务定义时：更新本文件对应 REQ + `TESTCASES.md` 缺陷记录 + 链接 `docs/DECISIONS.md` 决策 ID。
 - 暂缓数据源（TRAE `D-2026-07-30-01`、豆包工作 `D-2026-08-27-01`）复捡时：先补 REQ 再实施。
 
-## 附录 A：数据源口径（2026-09-07 自原 brief.md 迁入）
+## 附录 A：数据源口径（2026-09-07 自原 brief.md 迁入；同日对照 scanner.py 逐条核实刷新）
 
-- **Codex**：`logs_2.sqlite` + rollout JSONL 始终合并去重（漏统已修，v1.4.21）
-- **Claude Code**：原生日志路径
-- **WorkBuddy**：`~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage` 逐请求（v1.4.22 审计后落地）；旧版缺 projects 时回退 `workbuddy.db` 会话占用
-- **cc-switch**：`~/.cc-switch/cc-switch.db`（OpenAI input 已含 cache、Anthropic input 不含 cache read/create，按协议语义分别计算）
-- **Antigravity**：`~/Library/Application Support/BingchaAI/usage_stats.json`（macOS 专属，v1.5.20 接入）
-- **MiniMax Code**：`~/.minimax/v2/sqlite/runtime-state.sqlite`（SQLite 主源）+ JSONL 兜底，`mvs_` 前缀 turn_id 去重；模型名剥 `custom_provider:`/`custom-local:` 前缀（v1.5.11~v1.5.13，双端同步）
-- **Hermes**：`~/.hermes/state.db`（输入 = input + cache_read + cache_write；用量日期采用 `ended_at`）
+- **Codex**：`~/.codex/logs_2.sqlite` + rollout JSONL（`~/.codex/sessions` + `~/.codex/archived_sessions`）始终合并去重（漏统已修，v1.4.21）
+- **Claude Code**：`~/.claude/projects/**/*.jsonl` 原生日志
+- **WorkBuddy**：`~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage` 逐请求（v1.4.22 审计后落地）；旧版缺 projects 时回退 `~/.workbuddy/workbuddy.db` 会话占用
+- **cc-switch**：`~/.cc-switch/cc-switch.db`（OpenAI input 已含 cache、Anthropic input 不含 cache read/create，按协议语义分别计算）；`app_type` 归一化映射见 `scanner.py#_normalize_app_type`（claude→Claude 不区分 desktop/cli、antigravity→**冰茶 AI**、opencode→OpenCode、zcode→ZCode、minimax→MiniMax Code、其他→Other）
+- **Antigravity**：`~/.antigravity_tools/token_stats.db`（antigravity-tools 本地代理 `com.lbjlaq.antigravity-tools`，Google agentic IDE 生态，v1.5.20 接入）。⚠️ 历史辨析：v1.3.90 前 "Antigravity" 曾指冰茶 AI 客户端（`BingchaAI/usage_stats.json`），因与 cc-switch 双计被降级为空实现、v1.5.20 删除旧读取块；cc-switch 里 `app_type=antigravity` 的流量仍归"冰茶 AI"，与本数据源是两个独立代理，互不冲突（scanner.py L14-21 注释为准）
+- **MiniMax Code**：`~/.minimax/v2/sqlite/runtime-state.sqlite`（SQLite 主源）+ `~/.pi/agent/sessions/**/*.jsonl` 兜底，`mvs_` 前缀 turn_id 去重；模型名剥 `custom_provider:`/`custom-local:` 前缀（v1.5.11~v1.5.13，双端同步）
+- **ZCode**：`~/.zcode/cli/db/db.sqlite`
+- **Hermes**：`~/.hermes/state.db`（输入 = input + cache_read + cache_write；用量日期优先 `ended_at`、为 0/空时回退 `started_at`）
 - **缓存语义**：区分"请求内缓存"与"跨请求缓存"，避免重复计费
 - **健壮性**：本地 SQLite 在 WAL/原子替换瞬间可能短暂打不开，统一只读连接 + busy timeout + 3 次短重试，禁止单次失败直接归 0
+- **口径权威**：本附录为摘要，路径与归一化以 `scanner.py`（macOS）/`go_build/main.go`（Windows）源码为准；两端不一致即 REQ-03 缺陷
 
 ## 附录 B：术语表（2026-09-07 自原 glossary.md 迁入，剔除过时条目）
 
