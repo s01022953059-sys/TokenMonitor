@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "governance": [
+    "GOV-01",
+    "GOV-02",
+    "GOV-03",
+    "GOV-04",
+    "GOV-05",
+    "GOV-06",
+    "GOV-07",
+    "GOV-08",
+    "GOV-09",
+    "GOV-10",
+    "GOV-11",
+    "GOV-12"
+  ],
+  "ui": [
+    {
+      "id": "UI-01",
+      "evidence": [
+        "tokens",
+        "components"
+      ]
+    },
+    {
+      "id": "UI-02",
+      "evidence": [
+        "browser"
+      ]
+    },
+    {
+      "id": "UI-03",
+      "evidence": [
+        "browser",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "UI-04",
+      "evidence": [
+        "browser"
+      ]
+    },
+    {
+      "id": "UI-05",
+      "evidence": [
+        "browser",
+        "api"
+      ]
+    },
+    {
+      "id": "UI-06",
+      "evidence": [
+        "browser"
+      ]
+    },
+    {
+      "id": "UI-07",
+      "evidence": [
+        "browser",
+        "screenshot"
+      ]
+    },
+    {
+      "id": "UI-08",
+      "evidence": [
+        "coverage"
+      ]
+    }
+  ]
+}
