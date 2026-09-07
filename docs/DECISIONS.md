@@ -1,3 +1,5 @@
+> 决策记录（稳定 ID）。2026-09-07 自 `.agentmemory/decisions.md` 原文迁入（AgentMemory 目录已按鹏帅指示删除；原文亦存于 Git 历史 commit 3571278c）。新增决策继续追加本文件。
+
 # 已确认决策
 
 ## 协作与发版

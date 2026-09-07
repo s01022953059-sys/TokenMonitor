@@ -1,6 +1,6 @@
 # token_monitor 交接索引
 
-> MAR GOV-04 事实来源分工：**本文件 = 交接 + 活动任务唯一台账**；业务规格 → `PRD.md`；用例与缺陷 → `TESTCASES.md`；项目指引 → `AGENTS.md`；决策 → `.agentmemory/decisions.md`；版本史与项目状态 → `.agentmemory/current-state.md`；已完成任务归档 → `.agentmemory/tasks.md`。代码以 Git、测试以 `tests/reports/`、部署以 GitCode Release 为准，本文件不复制可变状态。
+> MAR GOV-04 事实来源分工：**本文件 = 交接 + 活动任务唯一台账**；业务规格 → `PRD.md`；用例与缺陷 → `TESTCASES.md`；项目指引 → `AGENTS.md`；决策 → `docs/DECISIONS.md`；事件审计 → `docs/events.jsonl`；版本史与已完成归档 → `docs/HISTORY.md`。代码以 Git、测试以 `tests/reports/`、部署以 GitCode Release 为准，本文件不复制可变状态。
 
 ## 当前快照（2026-09-07 核实）
 
@@ -17,12 +17,12 @@
 | TM-2026-07-18-02a | P2 | 待指派 | 更新进度文案双端对齐：macOS `app_wrapper.swift`"下载更新包 (…)" vs Windows `update_windows.go`"下载中 x%"（2026-09-07 grep 复核仍未做）。验收 = REQ-03 双端一致 | not_run | 攒批，发版需鹏帅明确说"发新版本" |
 | TM-2026-07-18-02b | P3 | — | CDN 占位 retry 优化 | blocked（外部） | 即 `TESTCASES.md#BUG-01`，根因在 GitCode CDN 侧，已降级已知限制 |
 | TM-2026-07-18-04 | P3 | 待指派 | AgentMemory 阶段 3：`.codex/project_memory.md`"事实"蒸馏进 `decisions.md` | not_run | 需鹏帅发起，不自动执行 |
-| TM-2026-07-30-01 | 暂缓 | — | TRAE IDE 接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `decisions.md#D-2026-07-30-01` |
-| TM-2026-08-27-01 | 暂缓 | — | 豆包工作接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `decisions.md#D-2026-08-27-01` |
+| TM-2026-07-30-01 | 暂缓 | — | TRAE IDE 接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `docs/DECISIONS.md#D-2026-07-30-01` |
+| TM-2026-08-27-01 | 暂缓 | — | 豆包工作接入 | blocked（暂缓） | 复捡条件 ①②③ 见 `docs/DECISIONS.md#D-2026-08-27-01` |
 | TM-LEGACY-01 | 长期 | 鹏帅 | SMAppService daemon 注册 | blocked（外部） | 需 Apple Developer Account |
 
-已关闭：TM-2026-09-07-01（明文 token，鹏帅决定忽略，`decisions.md#D-2026-09-07-01`，不再复提）。
-本日完成：TASK-MAR-01（MAR 启用）、TASK-MAR-02（任务盘点）、TASK-P1-01（github push / 工作区处置 / memory 同步至 v1.5.22），证据 `events.jsonl#evt-20260907-0001/0002`，详情归档 `.agentmemory/tasks.md`。
+已关闭：TM-2026-09-07-01（明文 token，鹏帅决定忽略，`docs/DECISIONS.md#D-2026-09-07-01`，不再复提）。
+本日完成：TASK-MAR-01（MAR 启用）、TASK-MAR-02（任务盘点）、TASK-P1-01（github push / 工作区处置 / memory 同步至 v1.5.22）、TASK-MAR-03（四文档重构）、TASK-MAR-04（**AgentMemory 迁移删除**：`.agentmemory/` 全部信息迁入 MAR 文档体系，映射表见 `docs/HISTORY.md`，删除前已提交 `3571278c` 可恢复），证据 `docs/events.jsonl#evt-20260907-0001~0004`，归档 `docs/HISTORY.md`。
 
 ## 验证与授权
 
@@ -36,4 +36,4 @@
 
 - 在途操作：无；失败项：无
 - 下一步：① P2 文案对齐择机攒批；② 下次发版按 GOV-05/09 在本文件追记验证+发布记录并重跑冒烟（`tests/smoke.sh` 全过）
-- 接手顺序：本文件 → `AGENTS.md` → 按需查 PRD/TESTCASES/decisions/current-state
+- 接手顺序：本文件 → `AGENTS.md` → 按需查 `PRD.md` / `TESTCASES.md` / `docs/DECISIONS.md` / `docs/HISTORY.md`

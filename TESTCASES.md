@@ -17,7 +17,7 @@
 ## 缺陷记录
 
 - **BUG-01（open，已降级为已知限制）**：CDN 占位 retry 不稳定 — GitCode CDN 对某些 IP 路由到 download-error 占位页（<10KB），retry 1 次仍可能拿到同占位。影响面已被 v1.5.15/16 DMG 附件主路径缓解；残余场景用户多点几次可恢复。根因在 GitCode CDN 侧，无法本地修复。关联：TM-2026-07-18-02b。
-- **BUG-02（won't-fix，文档化）**：macOS v1.5.13 及更早客户端无法应用内自更新 — 其资产选择器永远命中 `type=source` 源码归档（对 tag 发布必 302 到占位页）。修复方式：用户手动下载 DMG 升级一次即进入 v1.5.15+ 正常链路；Windows 不受影响。关联：`events.jsonl#evt-20260827-0001`。
+- **BUG-02（won't-fix，文档化）**：macOS v1.5.13 及更早客户端无法应用内自更新 — 其资产选择器永远命中 `type=source` 源码归档（对 tag 发布必 302 到占位页）。修复方式：用户手动下载 DMG 升级一次即进入 v1.5.15+ 正常链路；Windows 不受影响。关联：`docs/events.jsonl#evt-20260827-0001`。
 
 ## 结果
 
