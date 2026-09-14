@@ -25,7 +25,7 @@
 | task_id | 优先级 | owner | 目标与验收条件 | 状态 | 备注/复捡条件 |
 | --- | --- | --- | --- | --- | --- |
 | TASK-CODEX-PROJECTS-01 | P1 | Codex | 本地 Codex 项目/模型/会话用量及重置参考入口 | pending 用户验收 | 技术验证见当前接手记录；不发布、不代订阅 |
-| TASK-OPS-01 | P0 | 鹏帅+Claude | GitCode 凭据失效事故恢复：PAT 三姿势 401 + 钥匙串条目丢失 → VPS 中继 `storage_unavailable` → 社区上报全断（2026-09-14 发现）。恢复链：新建 PAT → 写回钥匙串 + VPS `GITCODE_TOKEN` → 重启中继 → 补报端到端验证 | **进行中**：新 PAT 已验证（API 200）+ 钥匙串已写回 + push 通道恢复（dry-run up-to-date）+ AGENTS.md 凭据记录刷新；**剩 VPS `/etc/token-monitor-community.env` 更新 + 重启中继 + 补报验证** | 证据：本会话探针（旧 token 401×3 / push --dry-run 失败 / 中继 /health ok / report 复现 storage_unavailable）；修复前禁止发版 |
+| TASK-OPS-01 | P0 | 鹏帅+Claude | GitCode 凭据失效事故恢复（2026-09-14）：新建 PAT → 钥匙串写回 → push 通道恢复 → VPS 中继 env 更新+重启 → 补报端到端验证 | **closed（2026-09-14）** | 证据：补报 synced @06:30:36Z；聚合 total_users=19/active=1/我的用量 237123333/rank=1/榜首巴乔回显；双远端 push 4d3750c2 起恢复。附带产出：VPS（华为云 121.37.142.174，经主机密钥指纹+HTTPS 直连双重判定）装机专用密钥 `~/.ssh/vps_taqi`（root 密钥登录验证通过；sshd 配置未动）；遗留待查：直连 IP 的 SNI 场景证书链告警（curl exit 60，nginx 正常路径无此问题） |
 | TM-2026-07-18-02a | P2 | 待指派 | 更新进度文案双端对齐：macOS `app_wrapper.swift`"下载更新包 (…)" vs Windows `update_windows.go`"下载中 x%"（2026-09-07 grep 复核仍未做）。验收 = REQ-03 双端一致 | not_run | 攒批，发版需鹏帅明确说"发新版本" |
 | TM-2026-07-18-02b | P3 | — | CDN 占位 retry 优化 | blocked（外部） | 即 `TESTCASES.md#BUG-01`，根因在 GitCode CDN 侧，已降级已知限制 |
 | TM-2026-07-18-04 | P3 | 待指派 | AgentMemory 阶段 3：`.codex/project_memory.md`"事实"蒸馏进 `decisions.md` | not_run | 需鹏帅发起，不自动执行 |
