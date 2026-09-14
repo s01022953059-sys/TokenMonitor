@@ -2,11 +2,11 @@
 
 ## 约定
 
-1. 每次和用户交流时, 称呼用户为"鹏帅"
+1. 每次和用户交流时，首句统一使用动态探针握手暗号：「鹏帅 🦅 [MAR vX.Y.Z · 平台 · 规则同步日期]」（带有专属徽标 `🦅`，每轮必带零省略零退化，版本严禁硬编码，动态探测 GitCode 最新版本注入）
 2. **每次更新代码后必须同步刷新 README.md** — 新功能、新限制、版本号、下载地址
 3. 版本号两处同步: `Info.plist` 的 `CFBundleShortVersionString` + `go_build/main.go` 的 `var appVersion`
 4. 发布流程: bump 版本 → git commit + tag → `bash release_all.sh`
-5. GitCode token: ydMwBZbLaiex8hRqi-2cma3k
+5. GitCode token: HcxZ5sFwNytzBzYiaYUUxx5- （2026-09-14 轮换：旧 token 失效导致社区上报全断，见 HANDOFF TASK-OPS-01）
 6. GitCode 不支持删除 release 附件, 每次发版用新 tag
 7. **每次发现 bug 或根据反馈改动代码, 必须在同一次提交中补充或扩充测试用例** (Python 放在 `tests/`,Go 放在 `go_build/*_test.go`),覆盖该修复的场景、输入和预期输出。
 

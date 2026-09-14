@@ -4,6 +4,16 @@
 
 ## 当前快照（2026-09-07 核实）
 
+### 2026-09-12 接手：TASK-CODEX-PROJECTS-01
+
+- 授权：本会话用户要求开发 Codex 项目消耗分析，并参考 codex-reset.com。
+- 基线：c87a6182ba788dd3a1503ddc0e40e51b670c6d4d；原有 AGENTS.md 修改和未跟踪 CLAUDE.md 不属于本任务，保持不动。
+- owner：Codex 主代理集成，Luna 分别负责 Python 采集、Go 采集、共享 UI；文件范围互不重叠。
+- 范围：只读用量解析、双端 API、项目/会话/模型页面、第三方参考外链、打包清单与测试。无版本变更、安装、提交、推送或发布授权。
+- 技术验证：2026-09-12 `bash tests/run_unit_tests.sh` 通过（259 Python + Go + relay + 更新辅助器 + 前端契约）；审查修正后重跑 19 项 Codex Python/UI、双端 API 各 8 项、Go 全测试及 Windows amd64 交叉编译均通过，`git diff --check` 通过。日志中的断连 BrokenPipe 和故障注入输出不导致测试失败。
+- UI：本地浏览器实测真实数据渲染、项目展开、会话 ID 展示、近七天切换；截图发现长数字断行后改为桌面三列，6 项 UI 契约测试通过。原生 macOS/Windows 打包安装验收 not_run。用户体验确认 pending；发布 not_run。下方旧快照及历史测试不能代表本次代码状态。
+- 审查处置：修正文件 mtime 导致漏计、Go 未归属名称/会话聚合差异、双端 OPTIONS 不一致；诊断折叠，Windows 构建同步新页面。无 ID 镜像去重歧义、标识冲突保守未归属、个人官方额度未接入已记录 README，不能把 Token 占比折算成订阅额度占比。
+
 - 规则：MAR @ `4606982`（固定副本 `mar/`，采纳记录 `AGENTS.md`）
 - 代码：`main` @ `b78cf9c7`，工作区干净；origin/GitCode 与 github 双远端同步（github 原落后 120 commit，2026-09-07 补齐）
 - 发布：**v1.5.22** 已发布（2026-09-06，tag 已推 origin）；其后 3 个 commit 均为文档/memory，零业务代码变更
@@ -14,6 +24,8 @@
 
 | task_id | 优先级 | owner | 目标与验收条件 | 状态 | 备注/复捡条件 |
 | --- | --- | --- | --- | --- | --- |
+| TASK-CODEX-PROJECTS-01 | P1 | Codex | 本地 Codex 项目/模型/会话用量及重置参考入口 | pending 用户验收 | 技术验证见当前接手记录；不发布、不代订阅 |
+| TASK-OPS-01 | P0 | 鹏帅+Claude | GitCode 凭据失效事故恢复：PAT 三姿势 401 + 钥匙串条目丢失 → VPS 中继 `storage_unavailable` → 社区上报全断（2026-09-14 发现）。恢复链：新建 PAT → 写回钥匙串 + VPS `GITCODE_TOKEN` → 重启中继 → 补报端到端验证 | **进行中**：新 PAT 已验证（API 200）+ 钥匙串已写回 + push 通道恢复（dry-run up-to-date）+ AGENTS.md 凭据记录刷新；**剩 VPS `/etc/token-monitor-community.env` 更新 + 重启中继 + 补报验证** | 证据：本会话探针（旧 token 401×3 / push --dry-run 失败 / 中继 /health ok / report 复现 storage_unavailable）；修复前禁止发版 |
 | TM-2026-07-18-02a | P2 | 待指派 | 更新进度文案双端对齐：macOS `app_wrapper.swift`"下载更新包 (…)" vs Windows `update_windows.go`"下载中 x%"（2026-09-07 grep 复核仍未做）。验收 = REQ-03 双端一致 | not_run | 攒批，发版需鹏帅明确说"发新版本" |
 | TM-2026-07-18-02b | P3 | — | CDN 占位 retry 优化 | blocked（外部） | 即 `TESTCASES.md#BUG-01`，根因在 GitCode CDN 侧，已降级已知限制 |
 | TM-2026-07-18-04 | P3 | 待指派 | AgentMemory 阶段 3：`.codex/project_memory.md`"事实"蒸馏进 `decisions.md` | not_run | 需鹏帅发起，不自动执行 |
